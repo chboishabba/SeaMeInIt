@@ -8,11 +8,15 @@ from typing import Any
 
 import json
 
-import yaml
+try:
+    import yaml  # type: ignore[import-not-found]
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    yaml = None  # type: ignore[assignment]
 from jsonschema import Draft202012Validator, ValidationError
 
 DEFAULT_SCHEMA_NAME = "body_unified.yaml"
 SUIT_MATERIAL_SCHEMA_NAME = "suit_materials.yaml"
+HARD_LAYER_ATTACHMENT_SCHEMA_NAME = "hard_layer_interfaces.yaml"
 
 __all__ = [
     "DEFAULT_SCHEMA_NAME",
@@ -21,9 +25,11 @@ __all__ = [
     "load_schema",
     "load_measurement_catalog",
     "load_material_catalog",
+    "load_attachment_catalog",
     "load_payload",
     "validate_body_payload",
     "validate_material_catalog",
+    "validate_attachment_catalog",
     "validate_file",
 ]
 
@@ -58,7 +64,9 @@ def load_schema(name: str = DEFAULT_SCHEMA_NAME) -> Mapping[str, Any]:
         raise FileNotFoundError(f"Schema '{name}' not found at {schema_path}")
 
     with schema_path.open("r", encoding="utf-8") as handle:
-        schema = yaml.safe_load(handle)
+        schema_text = handle.read()
+
+    schema = _parse_yaml_text(schema_text, source=schema_path)
 
     if not isinstance(schema, Mapping):
         raise TypeError(f"Schema '{name}' must decode to a mapping, received {type(schema)!r}")
@@ -192,7 +200,7 @@ def load_payload(path: Path) -> Any:
     suffix = path.suffix.lower()
     with path.open("r", encoding="utf-8") as handle:
         if suffix in {".yaml", ".yml"}:
-            return yaml.safe_load(handle)
+            return _parse_yaml_text(handle.read(), source=path)
         if suffix == ".json":
             return json.load(handle)
     raise ValueError(f"Unsupported payload extension '{suffix}' for {path}")
@@ -218,6 +226,16 @@ def validate_material_catalog(instance: Any, *, schema_name: str = SUIT_MATERIAL
         raise SchemaValidationError(errors)
 
 
+def validate_attachment_catalog(instance: Any, *, schema_name: str = HARD_LAYER_ATTACHMENT_SCHEMA_NAME) -> None:
+    """Validate *instance* against the hard-layer attachment schema."""
+
+    schema = load_schema(schema_name)
+    validator = Draft202012Validator(schema)
+    errors = sorted(validator.iter_errors(instance), key=lambda exc: exc.path)
+    if errors:
+        raise SchemaValidationError(errors)
+
+
 def load_material_catalog(path: Path) -> Mapping[str, Any]:
     """Load and validate a suit material catalog payload from *path*."""
 
@@ -226,6 +244,17 @@ def load_material_catalog(path: Path) -> Mapping[str, Any]:
         raise TypeError("Material catalog payload must be a mapping.")
 
     validate_material_catalog(instance)
+    return instance
+
+
+def load_attachment_catalog(path: Path) -> Mapping[str, Any]:
+    """Load and validate a hard-layer attachment catalog payload from *path*."""
+
+    instance = load_payload(path)
+    if not isinstance(instance, Mapping):
+        raise TypeError("Attachment catalog payload must be a mapping.")
+
+    validate_attachment_catalog(instance)
     return instance
 
 
@@ -241,3 +270,14 @@ def _format_error(error: ValidationError) -> str:
     location = " / ".join(str(component) for component in error.absolute_path)
     prefix = f"[{location}] " if location else ""
     return f"{prefix}{error.message}"
+
+
+def _parse_yaml_text(text: str, *, source: Path | None = None) -> Any:
+    if yaml is not None:
+        return yaml.safe_load(text)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:  # pragma: no cover - exercised when PyYAML missing
+        raise ModuleNotFoundError(
+            "PyYAML is required to parse YAML files; install the 'pyyaml' extra to proceed."
+        ) from exc
