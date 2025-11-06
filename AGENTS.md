@@ -2,6 +2,11 @@
 
 These instructions apply to the entire repository. Any nested `AGENTS.md` files may override or extend these rules for their respective subdirectories.
 
+# CRITICAL
+- DO NOT COMMIT BINARY FILES - this is against agent policy in most environments and will prevent your PR.
+- If you wish to commit binary files, instead, ensure CLI commands exist to replicate, and the user will run these commands on their local machine.
+- Add commands to be run to the TODO.md, and remove them when the appropriate files have been generated/commands run.
+
 ## Project Structure
 - Python orchestration code lives in `src/`, with packages such as `smii`
 - Shared utilities reside in `scripts/`; CLI entry points are under `smii/`.
