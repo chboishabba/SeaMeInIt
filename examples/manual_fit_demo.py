@@ -1,4 +1,9 @@
-"""Command line demo for fitting SMPL-X parameters from manual measurements."""
+"""Command line demo for fitting SMPL-X parameters from manual measurements.
+
+Measurement identifiers and required fields mirror the canonical definitions in
+``schemas/body_unified.yaml``. Use ``schemas.validators.load_measurement_catalog``
+to inspect the full list of supported measurements.
+"""
 
 from __future__ import annotations
 
