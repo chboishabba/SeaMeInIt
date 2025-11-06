@@ -13,6 +13,7 @@ from .patterns import (
     PatternExporter,
     SimplePlaneProjectionBackend,
 )
+from .tent_bundle import export_suit_tent_bundle
 from .unity_unreal_export import (
     EngineConfig,
     ExportFormat,
@@ -36,4 +37,5 @@ __all__ = [
     "HardLayerExportError",
     "HardLayerExporter",
     "ShellPanel",
+    "export_suit_tent_bundle",
 ]

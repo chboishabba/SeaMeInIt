@@ -1,0 +1,50 @@
+{
+  "name": "inflatable_tent_canopy",
+  "description": "Lightweight multi-panel canopy sized for the modular expedition suit.",
+  "panels": [
+    {
+      "name": "canopy_spine",
+      "vertices": [
+        [0.0, 1.45, 0.12],
+        [0.0, 1.82, -0.18],
+        [0.36, 1.46, 0.11],
+        [-0.36, 1.46, 0.11]
+      ],
+      "faces": [
+        [0, 1, 2],
+        [0, 1, 3]
+      ]
+    },
+    {
+      "name": "canopy_rib_left",
+      "vertices": [
+        [-0.32, 1.44, 0.09],
+        [-0.78, 1.42, 0.02],
+        [-0.44, 1.12, 0.18]
+      ],
+      "faces": [
+        [0, 1, 2]
+      ]
+    },
+    {
+      "name": "canopy_rib_right",
+      "vertices": [
+        [0.32, 1.44, 0.09],
+        [0.78, 1.42, 0.02],
+        [0.44, 1.12, 0.18]
+      ],
+      "faces": [
+        [0, 1, 2]
+      ]
+    }
+  ],
+  "metadata": {
+    "reference_landmarks": [
+      "c7_vertebra",
+      "sternum",
+      "left_acromion",
+      "right_acromion"
+    ],
+    "surface": "210T ripstop nylon with integrated aramid webbing"
+  }
+}
