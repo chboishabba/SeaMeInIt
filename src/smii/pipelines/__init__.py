@@ -12,6 +12,7 @@ from .fit_from_scan import (
     create_parametric_mesh,
     fit_scan_to_smplx,
 )
+from .export_patterns import main as export_patterns_main
 
 __all__ = [
     "FitResult",
@@ -23,4 +24,5 @@ __all__ = [
     "RegistrationResult",
     "create_parametric_mesh",
     "fit_scan_to_smplx",
+    "export_patterns_main",
 ]
