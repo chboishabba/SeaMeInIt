@@ -1,26 +1,61 @@
 """Pipeline utilities for fitting SMPL-X models."""
 
-from .fit_from_images import (
-    AfflecImageMeasurementExtractor,
-    MeasurementExtractionError,
-    extract_measurements_from_afflec_images,
-)
-from .fit_from_measurements import FitResult, fit_smplx_from_measurements
-from .fit_from_scan import (
-    ICPSettings,
-    RegistrationResult,
-    create_parametric_mesh,
-    fit_scan_to_smplx,
-)
+from __future__ import annotations
+
+from importlib import import_module
+from typing import Any, Dict, Tuple
 
 __all__ = [
-    "FitResult",
-    "fit_smplx_from_measurements",
     "AfflecImageMeasurementExtractor",
-    "MeasurementExtractionError",
-    "extract_measurements_from_afflec_images",
+    "FitResult",
     "ICPSettings",
+    "MeasurementExtractionError",
     "RegistrationResult",
+    "UndersuitGenerationResult",
+    "UndersuitMesh",
+    "UndersuitPipeline",
     "create_parametric_mesh",
+    "extract_measurements_from_afflec_images",
     "fit_scan_to_smplx",
+    "fit_smplx_from_measurements",
 ]
+
+_LAZY_IMPORTS: Dict[str, Tuple[str, str]] = {
+    "AfflecImageMeasurementExtractor": (
+        "smii.pipelines.fit_from_images",
+        "AfflecImageMeasurementExtractor",
+    ),
+    "MeasurementExtractionError": ("smii.pipelines.fit_from_images", "MeasurementExtractionError"),
+    "extract_measurements_from_afflec_images": (
+        "smii.pipelines.fit_from_images",
+        "extract_measurements_from_afflec_images",
+    ),
+    "FitResult": ("smii.pipelines.fit_from_measurements", "FitResult"),
+    "fit_smplx_from_measurements": (
+        "smii.pipelines.fit_from_measurements",
+        "fit_smplx_from_measurements",
+    ),
+    "ICPSettings": ("smii.pipelines.fit_from_scan", "ICPSettings"),
+    "RegistrationResult": ("smii.pipelines.fit_from_scan", "RegistrationResult"),
+    "create_parametric_mesh": ("smii.pipelines.fit_from_scan", "create_parametric_mesh"),
+    "fit_scan_to_smplx": ("smii.pipelines.fit_from_scan", "fit_scan_to_smplx"),
+    "UndersuitGenerationResult": ("smii.pipelines.undersuit", "UndersuitGenerationResult"),
+    "UndersuitMesh": ("smii.pipelines.undersuit", "UndersuitMesh"),
+    "UndersuitPipeline": ("smii.pipelines.undersuit", "UndersuitPipeline"),
+}
+
+
+def __getattr__(name: str) -> Any:  # pragma: no cover - simple delegation
+    try:
+        module_name, attribute = _LAZY_IMPORTS[name]
+    except KeyError as exc:  # pragma: no cover - attribute errors fall through
+        raise AttributeError(f"module 'smii.pipelines' has no attribute {name!r}") from exc
+
+    module = import_module(module_name)
+    value = getattr(module, attribute)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:  # pragma: no cover - interactive helper
+    return sorted(__all__)
