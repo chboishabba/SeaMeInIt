@@ -1,5 +1,5 @@
 # SeaMeInIt
-SMII(gol?)  Parametric design of next-generation, made-to-fit clothing.
+SMII(gol?)  Parametric design of next-generation, made-to-fit clothing. We aim to address major factors such as climate adaptation and refugees, accessiblity, as well as hobbyists and cosplayers.
 
 
 ## 🛡️ License Summary
