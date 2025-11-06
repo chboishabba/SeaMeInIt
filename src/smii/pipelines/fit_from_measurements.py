@@ -11,6 +11,8 @@ import numpy as np
 
 from schemas.validators import load_measurement_catalog
 
+from .fit_from_images import extract_measurements_from_afflec_images
+
 SCHEMA_PATH = Path(__file__).resolve().parents[3] / "data" / "schemas" / "body_measurements.json"
 SMPLX_NUM_BETAS = 10
 
@@ -162,7 +164,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     import argparse
 
     parser = argparse.ArgumentParser(description="Fit SMPL-X parameters from manual measurements.")
-    parser.add_argument("input", type=Path, help="Path to a JSON file containing measurement values.")
+    parser.add_argument(
+        "input",
+        type=Path,
+        nargs="?",
+        help="Path to a JSON file containing measurement values.",
+    )
     parser.add_argument(
         "--output",
         type=Path,
@@ -175,9 +182,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=SMPLX_NUM_BETAS,
         help="Number of shape coefficients to estimate (default: 10).",
     )
+    parser.add_argument(
+        "--images",
+        type=Path,
+        nargs="+",
+        help="One or more Afflec preprocessed images containing measurement headers.",
+    )
     args = parser.parse_args(argv)
 
-    measurements = _load_measurements_from_json(args.input)
+    if args.images:
+        measurements = extract_measurements_from_afflec_images(args.images)
+    elif args.input is not None:
+        measurements = _load_measurements_from_json(args.input)
+    else:
+        parser.error("Either a measurement JSON file or --images must be provided.")
     result = fit_smplx_from_measurements(measurements, num_shape_coeffs=args.coeff_count)
     save_fit(result, args.output)
     print(f"Saved SMPL-X parameters to {args.output}")
