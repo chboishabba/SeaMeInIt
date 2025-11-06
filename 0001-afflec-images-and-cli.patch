@@ -1,0 +1,493 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Your Name <you@example.com>
+Date: Thu, 6 Nov 2025 18:45:00 +1100
+Subject: [PATCH] feat(pipelines): add Afflec image extractor and CLI integration; docs + tests
+
+---
+ docs/afflec_image_preprocessing.md           |  35 +++++
+ src/smii/pipelines/__init__.py               |  38 ++++++
+ src/smii/pipelines/fit_from_images.py        | 107 ++++++++++++++
+ src/smii/pipelines/fit_from_measurements.py  |  56 ++++++--
+ tests/fixtures/afflec/subject_front.png      |   0
+ tests/fixtures/afflec/subject_front.measurements.json |   5 +
+ tests/fixtures/afflec/subject_side.png       |   0
+ tests/fixtures/afflec/subject_side.measurements.json  |   6 +
+ tests/test_fit_from_images.py                |  43 ++++++
+ tests/test_fit_from_measurements_cli.py      | 123 ++++++++++++++++
+ 10 files changed, 411 insertions(+), 2 deletions(-)
+ create mode 100644 docs/afflec_image_preprocessing.md
+ create mode 100644 src/smii/pipelines/__init__.py
+ create mode 100644 src/smii/pipelines/fit_from_images.py
+ create mode 100644 tests/fixtures/afflec/subject_front.png
+ create mode 100644 tests/fixtures/afflec/subject_front.measurements.json
+ create mode 100644 tests/fixtures/afflec/subject_side.png
+ create mode 100644 tests/fixtures/afflec/subject_side.measurements.json
+ create mode 100644 tests/test_fit_from_images.py
+ create mode 100644 tests/test_fit_from_measurements_cli.py
+
+diff --git a/docs/afflec_image_preprocessing.md b/docs/afflec_image_preprocessing.md
+new file mode 100644
+index 0000000..f1f1f1f
+--- /dev/null
++++ b/docs/afflec_image_preprocessing.md
+@@ -0,0 +1,35 @@
++# Afflec Image Preprocessing
++
++This guide documents the expected preprocessing steps before running the `fit-from-measurements` CLI with Afflec capture images.
++
++## Capture Requirements
++
++1. **Calibration board** – Perform Afflec's projector calibration routine for the current capture session and export the corrected frames.
++2. **Consistent naming** – Save the exported PNG or JPG files with a shared stem (for example, `subject_front.png`, `subject_side.png`).
++3. **Measurement sidecars** – For each exported frame, Afflec writes a JSON sidecar describing the detected anthropometric measurements. The measurement file must reside next to the image and follow the naming pattern `<image-stem>.measurements.json`.
++
++Each JSON sidecar is expected to contain a mapping of measurement names to centimeter values:
++
++```json
++{
++  "height": 168.4,
++  "chest_circumference": 92.1,
++  "waist_circumference": 78.3
++}
++```
++
++All measurements use centimeters and mirror the schema defined in `data/schemas/body_measurements.json`. Missing measurements are ignored; when multiple images provide the same measurement the extractor averages their values.
++
++## Batch Preparation Checklist
++
++- [ ] Ensure files are de-noised and cropped according to Afflec's export instructions.
++- [ ] Verify that every image has a corresponding `.measurements.json` sidecar.
++- [ ] Remove any unrelated assets from the target directory to avoid parsing errors.
++
++Once the assets are prepared, invoke the CLI with the `--images` flag:
++
++```bash
++python -m src.smii.pipelines.fit_from_measurements --images captures/subject_front.png captures/subject_side.png --output outputs/meshes/subject.json
++```
++
++The CLI reads the Afflec metadata, converts it into the manual measurement dictionary, and then forwards the data to `fit_smplx_from_measurements`. You can also supply a manual measurement JSON file alongside `--images`; overlapping keys from the manual file override the values inferred from images so you can fine-tune specific measurements without discarding the Afflec estimates.
+diff --git a/src/smii/pipelines/__init__.py b/src/smii/pipelines/__init__.py
+new file mode 100644
+index 0000000..b2b2b2b
+--- /dev/null
++++ b/src/smii/pipelines/__init__.py
+@@ -0,0 +1,38 @@
++"""Pipeline utilities for fitting SMPL-X models."""
++
++from .fit_from_images import (
++    AFFLEC_SUPPORTED_SUFFIXES,
++    AfflecImagePayload,
++    extract_measurements_from_afflec,
++    load_afflec_measurements,
++)
++from .fit_from_measurements import FitResult, fit_smplx_from_measurements
++from .fit_from_scan import (
++    ICPSettings,
++    RegistrationResult,
++    create_parametric_mesh,
++    fit_scan_to_smplx,
++)
++
++__all__ = [
++    "AFFLEC_SUPPORTED_SUFFIXES",
++    "AfflecImagePayload",
++    "extract_measurements_from_afflec",
++    "load_afflec_measurements",
++    "FitResult",
++    "fit_smplx_from_measurements",
++    "ICPSettings",
++    "RegistrationResult",
++    "create_parametric_mesh",
++    "fit_scan_to_smplx",
++]
+diff --git a/src/smii/pipelines/fit_from_images.py b/src/smii/pipelines/fit_from_images.py
+new file mode 100644
+index 0000000..c3c3c3c
+--- /dev/null
++++ b/src/smii/pipelines/fit_from_images.py
+@@ -0,0 +1,107 @@
++"""Extract manual measurements from Afflec image exports."""
++
++from __future__ import annotations
++
++import json
++from collections import defaultdict
++from collections.abc import Iterable, Mapping, Sequence
++from dataclasses import dataclass
++from pathlib import Path
++
++AFFLEC_SUPPORTED_SUFFIXES = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".avif"}
++SIDE_CAR_SUFFIX = ".measurements.json"
++
++__all__ = [
++    "AFFLEC_SUPPORTED_SUFFIXES",
++    "extract_measurements_from_afflec",
++    "load_afflec_measurements",
++]
++
++
++@dataclass(frozen=True)
++class AfflecImagePayload:
++    """Container storing the parsed measurement metadata for an Afflec frame."""
++
++    image_path: Path
++    measurements: Mapping[str, float]
++
++
++def _iter_image_files(paths: Sequence[Path]) -> list[Path]:
++    images: list[Path] = []
++    for path in paths:
++        if path.is_dir():
++            for candidate in sorted(path.iterdir()):
++                if candidate.suffix.lower() in AFFLEC_SUPPORTED_SUFFIXES and candidate.is_file():
++                    images.append(candidate)
++        elif path.suffix.lower() in AFFLEC_SUPPORTED_SUFFIXES and path.is_file():
++            images.append(path)
++        else:
++            raise ValueError(f"Unsupported Afflec image input: {path}")
++    if not images:
++        raise ValueError("No Afflec images discovered from the provided paths.")
++    return images
++
++
++def _sidecar_path(image_path: Path) -> Path:
++    """Return the expected JSON sidecar path for a given image."""
++
++    candidates = [
++        image_path.with_name(f"{image_path.stem}{SIDE_CAR_SUFFIX}"),
++        image_path.with_suffix(image_path.suffix + ".json"),
++        image_path.with_suffix(".json"),
++    ]
++    for candidate in candidates:
++        if candidate.exists():
++            return candidate
++    raise FileNotFoundError(f"Missing Afflec measurement sidecar for {image_path}")
++
++
++def _load_sidecar(path: Path) -> Mapping[str, float]:
++    with path.open("r", encoding="utf-8") as stream:
++        payload = json.load(stream)
++    if not isinstance(payload, Mapping):
++        raise TypeError(f"Expected mapping in {path}, received {type(payload)!r}")
++    measurements: dict[str, float] = {}
++    for name, value in payload.items():
++        try:
++            measurements[str(name)] = float(value)
++        except (TypeError, ValueError) as exc:  # pragma: no cover - defensive guard
++            raise ValueError(f"Measurement '{name}' in {path} is not numeric") from exc
++    return measurements
++
++
++def load_afflec_measurements(paths: Sequence[Path]) -> list[AfflecImagePayload]:
++    """Load Afflec measurement sidecars for the provided images or directories."""
++
++    images = _iter_image_files(paths)
++    payloads: list[AfflecImagePayload] = []
++    for image_path in images:
++        metadata_path = _sidecar_path(image_path)
++        measurements = _load_sidecar(metadata_path)
++        payloads.append(AfflecImagePayload(image_path=image_path, measurements=measurements))
++    return payloads
++
++
++def extract_measurements_from_afflec(paths: Sequence[Path]) -> dict[str, float]:
++    """Aggregate manual measurements from Afflec image exports."""
++
++    payloads = load_afflec_measurements(paths)
++    aggregated: dict[str, list[float]] = defaultdict(list)
++    for payload in payloads:
++        for name, value in payload.measurements.items():
++            aggregated[name].append(value)
++
++    if not aggregated:
++        raise ValueError("Afflec metadata did not contain any measurements.")
++
++    return {name: sum(values) / len(values) for name, values in aggregated.items()}
++
++
++def summarize_payloads(payloads: Iterable[AfflecImagePayload]) -> Mapping[str, list[float]]:
++    """Return a breakdown of the measurements keyed by measurement name."""
++
++    aggregated: dict[str, list[float]] = defaultdict(list)
++    for payload in payloads:
++        for name, value in payload.measurements.items():
++            aggregated[name].append(value)
++    return aggregated
+diff --git a/src/smii/pipelines/fit_from_measurements.py b/src/smii/pipelines/fit_from_measurements.py
+index d4d4d4d..e5e5e5e 100644
+--- a/src/smii/pipelines/fit_from_measurements.py
++++ b/src/smii/pipelines/fit_from_measurements.py
+@@ -1,22 +1,30 @@
+ """Fit SMPL-X parameters from manual body measurements."""
+ 
+ from __future__ import annotations
+ 
+ import json
+-from collections.abc import Iterable, Mapping, Sequence
++from collections.abc import Iterable, Mapping, Sequence
+ from dataclasses import dataclass
+ from pathlib import Path
+ 
+ import numpy as np
+ 
++from .fit_from_images import extract_measurements_from_afflec
++
+ SCHEMA_PATH = Path(__file__).resolve().parents[2] / "data" / "schemas" / "body_measurements.json"
+ SMPLX_NUM_BETAS = 10
+@@ -120,7 +128,29 @@ def main(argv: Sequence[str] | None = None) -> int:
+-    parser = argparse.ArgumentParser(description="Fit SMPL-X parameters from manual measurements.")
+-    parser.add_argument("input", type=Path, help="Path to a JSON file containing measurement values.")
++    parser = argparse.ArgumentParser(description="Fit SMPL-X parameters from manual measurements.")
++    parser.add_argument(
++        "input",
++        type=Path,
++        nargs="?",
++        help="Path to a JSON file containing measurement values.",
++    )
++    parser.add_argument(
++        "--images",
++        type=Path,
++        nargs="+",
++        help=(
++            "One or more Afflec export images or directories. Each image must provide a "
++            ".measurements.json sidecar."
++        ),
++    )
+     parser.add_argument(
+         "--output",
+         type=Path,
+         default=Path("outputs/meshes/manual_measurement_fit.json"),
+         help="Where to store the fitted parameter dictionary.",
+     )
+@@ -131,11 +161,21 @@ def main(argv: Sequence[str] | None = None) -> int:
+         help="Number of shape coefficients to estimate (default: 10).",
+     )
+     args = parser.parse_args(argv)
+-
+-    measurements = _load_measurements_from_json(args.input)
++    measurements: dict[str, float] = {}
++
++    if args.images:
++        image_measurements = extract_measurements_from_afflec(args.images)
++        measurements.update(image_measurements)
++
++    if args.input:
++        manual_measurements = _load_measurements_from_json(args.input)
++        measurements.update(manual_measurements)
++
++    if not measurements:
++        parser.error("Provide at least one measurement JSON file or use the --images flag.")
+ 
+     result = fit_smplx_from_measurements(measurements, num_shape_coeffs=args.coeff_count)
+     save_fit(result, args.output)
+     print(f"Saved SMPL-X parameters to {args.output}")
+     return 0
+diff --git a/tests/fixtures/afflec/subject_front.png b/tests/fixtures/afflec/subject_front.png
+new file mode 100644
+index 0000000..e69de29
+diff --git a/tests/fixtures/afflec/subject_front.measurements.json b/tests/fixtures/afflec/subject_front.measurements.json
+new file mode 100644
+index 0000000..1a2a3b4
+--- /dev/null
++++ b/tests/fixtures/afflec/subject_front.measurements.json
+@@ -0,0 +1,5 @@
++{
++  "height": 168.4,
++  "chest_circumference": 92.1,
++  "waist_circumference": 78.3
++}
+diff --git a/tests/fixtures/afflec/subject_side.png b/tests/fixtures/afflec/subject_side.png
+new file mode 100644
+index 0000000..e69de29
+diff --git a/tests/fixtures/afflec/subject_side.measurements.json b/tests/fixtures/afflec/subject_side.measurements.json
+new file mode 100644
+index 0000000..2b3c4d5
+--- /dev/null
++++ b/tests/fixtures/afflec/subject_side.measurements.json
+@@ -0,0 +1,6 @@
++{
++  "height": 168.8,
++  "hip_circumference": 97.6,
++  "shoulder_width": 41.2,
++  "arm_length": 60.5
++}
+diff --git a/tests/test_fit_from_images.py b/tests/test_fit_from_images.py
+new file mode 100644
+index 0000000..6d6d6d6
+--- /dev/null
++++ b/tests/test_fit_from_images.py
+@@ -0,0 +1,43 @@
++from __future__ import annotations
++
++from pathlib import Path
++
++import pytest
++
++from src.smii.pipelines.fit_from_images import (
++    AfflecImagePayload,
++    extract_measurements_from_afflec,
++    load_afflec_measurements,
++    summarize_payloads,
++)
++
++
++@pytest.fixture()
++def afflec_assets() -> list[Path]:
++    base = Path("tests/fixtures/afflec")
++    return [base / "subject_front.png", base / "subject_side.png"]
++
++
++def test_extract_measurements_from_afflec_averages_overlapping_values(afflec_assets: list[Path]):
++    measurements = extract_measurements_from_afflec(afflec_assets)
++    assert set(measurements) == {
++        "height",
++        "chest_circumference",
++        "waist_circumference",
++        "hip_circumference",
++        "shoulder_width",
++        "arm_length",
++    }
++    assert measurements["height"] == pytest.approx((168.4 + 168.8) / 2)
++    assert measurements["chest_circumference"] == pytest.approx(92.1)
++    assert measurements["hip_circumference"] == pytest.approx(97.6)
++
++
++def test_load_afflec_measurements_exposes_payload_details(afflec_assets: list[Path]):
++    payloads = load_afflec_measurements(afflec_assets)
++    assert len(payloads) == 2
++    assert all(isinstance(payload, AfflecImagePayload) for payload in payloads)
++
++    summary = summarize_payloads(payloads)
++    assert "height" in summary
++    assert summary["height"] == [168.4, 168.8]
+diff --git a/tests/test_fit_from_measurements_cli.py b/tests/test_fit_from_measurements_cli.py
+new file mode 100644
+index 0000000..7e7e7e7
+--- /dev/null
++++ b/tests/test_fit_from_measurements_cli.py
+@@ -0,0 +1,123 @@
++from __future__ import annotations
++
++import json
++from pathlib import Path
++
++import numpy as np
++
++from src.smii.pipelines import fit_from_measurements
++
++
++def test_main_routes_image_arguments(monkeypatch, tmp_path, capsys):
++    captured: dict[str, object] = {}
++
++    def fake_extract(paths: list[Path]):
++        captured["paths"] = list(paths)
++        return {
++            "height": 170.0,
++            "chest_circumference": 90.0,
++            "waist_circumference": 78.0,
++            "hip_circumference": 96.0,
++        }
++
++    def fake_fit(measurements, **kwargs):
++        captured["measurements"] = dict(measurements)
++        captured["kwargs"] = kwargs
++        return fit_from_measurements.FitResult(
++            betas=np.zeros(kwargs.get("num_shape_coeffs", fit_from_measurements.SMPLX_NUM_BETAS)),
++            scale=1.0,
++            translation=np.zeros(3),
++            residual=0.0,
++            measurements_used=tuple(sorted(measurements)),
++        )
++
++    monkeypatch.setattr(
++        fit_from_measurements, "extract_measurements_from_afflec", fake_extract
++    )
++    monkeypatch.setattr(
++        fit_from_measurements, "fit_smplx_from_measurements", fake_fit
++    )
++
++    output_path = tmp_path / "result.json"
++    exit_code = fit_from_measurements.main(
++        [
++            "--images",
++            "img_a.png",
++            "img_b.png",
++            "--output",
++            str(output_path),
++            "--coeff-count",
++            "4",
++        ]
++    )
++
++    assert exit_code == 0
++    out = json.loads(output_path.read_text(encoding="utf-8"))
++    assert out["measurements_used"] == sorted(captured["measurements"].keys())
++
++    assert all(isinstance(path, Path) for path in captured["paths"])
++    assert captured["measurements"] == {
++        "height": 170.0,
++        "chest_circumference": 90.0,
++        "waist_circumference": 78.0,
++        "hip_circumference": 96.0,
++    }
++    assert captured["kwargs"]["num_shape_coeffs"] == 4
++
++    captured_stdout = capsys.readouterr().out
++    assert "Saved SMPL-X parameters" in captured_stdout
++
++
++def test_main_merges_manual_and_image_measurements(monkeypatch, tmp_path):
++    captured: dict[str, object] = {}
++
++    def fake_extract(paths: list[Path]):
++        captured["paths"] = list(paths)
++        return {
++            "height": 168.0,
++            "waist_circumference": 80.0,
++        }
++
++    def fake_fit(measurements, **kwargs):
++        captured["measurements"] = dict(measurements)
++        return fit_from_measurements.FitResult(
++            betas=np.zeros(fit_from_measurements.SMPLX_NUM_BETAS),
++            scale=1.0,
++            translation=np.zeros(3),
++            residual=0.0,
++            measurements_used=tuple(sorted(measurements)),
++        )
++
++    monkeypatch.setattr(
++        fit_from_measurements, "extract_measurements_from_afflec", fake_extract
++    )
++    monkeypatch.setattr(
++        fit_from_measurements, "fit_smplx_from_measurements", fake_fit
++    )
++
++    manual_file = tmp_path / "manual.json"
++    manual_file.write_text(
++        json.dumps(
++            {
++                "waist_circumference": 76.0,
++                "hip_circumference": 94.0,
++            }
++        ),
++        encoding="utf-8",
++    )
++
++    exit_code = fit_from_measurements.main(
++        [
++            str(manual_file),
++            "--images",
++            "capture.png",
++        ]
++    )
++
++    assert exit_code == 0
++    assert captured["paths"] == [Path("capture.png")]
++    assert captured["measurements"] == {
++        "height": 168.0,
++        "waist_circumference": 76.0,
++        "hip_circumference": 94.0,
++    }
+-- 
+2.46.0
