@@ -17,19 +17,24 @@ from jsonschema import Draft202012Validator, ValidationError
 DEFAULT_SCHEMA_NAME = "body_unified.yaml"
 SUIT_MATERIAL_SCHEMA_NAME = "suit_materials.yaml"
 HARD_LAYER_ATTACHMENT_SCHEMA_NAME = "hard_layer_interfaces.yaml"
+POWER_MODULE_SCHEMA_NAME = "modules/power.yaml"
 
 __all__ = [
     "DEFAULT_SCHEMA_NAME",
     "SUIT_MATERIAL_SCHEMA_NAME",
+    "HARD_LAYER_ATTACHMENT_SCHEMA_NAME",
+    "POWER_MODULE_SCHEMA_NAME",
     "SchemaValidationError",
     "load_schema",
     "load_measurement_catalog",
     "load_material_catalog",
     "load_attachment_catalog",
+    "load_power_catalog",
     "load_payload",
     "validate_body_payload",
     "validate_material_catalog",
     "validate_attachment_catalog",
+    "validate_power_catalog",
     "validate_file",
 ]
 
@@ -236,6 +241,16 @@ def validate_attachment_catalog(instance: Any, *, schema_name: str = HARD_LAYER_
         raise SchemaValidationError(errors)
 
 
+def validate_power_catalog(instance: Any, *, schema_name: str = POWER_MODULE_SCHEMA_NAME) -> None:
+    """Validate *instance* against the power distribution schema."""
+
+    schema = load_schema(schema_name)
+    validator = Draft202012Validator(schema)
+    errors = sorted(validator.iter_errors(instance), key=lambda exc: exc.path)
+    if errors:
+        raise SchemaValidationError(errors)
+
+
 def load_material_catalog(path: Path) -> Mapping[str, Any]:
     """Load and validate a suit material catalog payload from *path*."""
 
@@ -255,6 +270,17 @@ def load_attachment_catalog(path: Path) -> Mapping[str, Any]:
         raise TypeError("Attachment catalog payload must be a mapping.")
 
     validate_attachment_catalog(instance)
+    return instance
+
+
+def load_power_catalog(path: Path) -> Mapping[str, Any]:
+    """Load and validate a power distribution catalog payload from *path*."""
+
+    instance = load_payload(path)
+    if not isinstance(instance, Mapping):
+        raise TypeError("Power catalog payload must be a mapping.")
+
+    validate_power_catalog(instance)
     return instance
 
 
