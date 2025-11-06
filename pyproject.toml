@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "seameinit"
+version = "0.1.0"
+description = "SeaMeInIt avatar modelling utilities"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{name = "SeaMeInIt", email = "engineering@seameinit.local"}]
+dependencies = [
+    "smplx>=0.1.28",
+]
+
+[project.optional-dependencies]
+tools = [
+    "requests>=2.31.0",
+]
+
+dynamic = []
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.black]
+line-length = 100
+
+[tool.ruff]
+line-length = 100
+
+[tool.isort]
+profile = "black"
