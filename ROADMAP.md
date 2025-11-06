@@ -2,6 +2,12 @@
 
 ---
 
+## **MAJOR MILESTONE 0: Roadmap Creation**
+
+* ✅ Generate README and ROADMAP
+* ⬜ Generate AGENTS.md
+---
+
 ## **MAJOR MILESTONE 1: Foundational Platform**
 
 * ⬜ Parametric human body model (SMPL-X or MetaHuman)
