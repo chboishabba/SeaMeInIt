@@ -12,14 +12,18 @@ import yaml
 from jsonschema import Draft202012Validator, ValidationError
 
 DEFAULT_SCHEMA_NAME = "body_unified.yaml"
+SUIT_MATERIAL_SCHEMA_NAME = "suit_materials.yaml"
 
 __all__ = [
     "DEFAULT_SCHEMA_NAME",
+    "SUIT_MATERIAL_SCHEMA_NAME",
     "SchemaValidationError",
     "load_schema",
     "load_measurement_catalog",
+    "load_material_catalog",
     "load_payload",
     "validate_body_payload",
+    "validate_material_catalog",
     "validate_file",
 ]
 
@@ -202,6 +206,27 @@ def validate_body_payload(instance: Any, *, schema_name: str = DEFAULT_SCHEMA_NA
     errors = sorted(validator.iter_errors(instance), key=lambda exc: exc.path)
     if errors:
         raise SchemaValidationError(errors)
+
+
+def validate_material_catalog(instance: Any, *, schema_name: str = SUIT_MATERIAL_SCHEMA_NAME) -> None:
+    """Validate *instance* against the suit material catalog schema."""
+
+    schema = load_schema(schema_name)
+    validator = Draft202012Validator(schema)
+    errors = sorted(validator.iter_errors(instance), key=lambda exc: exc.path)
+    if errors:
+        raise SchemaValidationError(errors)
+
+
+def load_material_catalog(path: Path) -> Mapping[str, Any]:
+    """Load and validate a suit material catalog payload from *path*."""
+
+    instance = load_payload(path)
+    if not isinstance(instance, Mapping):
+        raise TypeError("Material catalog payload must be a mapping.")
+
+    validate_material_catalog(instance)
+    return instance
 
 
 def validate_file(path: Path, *, schema_name: str = DEFAULT_SCHEMA_NAME) -> Any:
