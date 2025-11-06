@@ -1,6 +1,6 @@
 # Contributing to SeaMeInIt
 
-We welcome contributions that advance SensibLaw's mission. Before you begin, please review the repository guidelines in [`AGENTS.md`](AGENTS.md) for expectations around project structure, tooling, and review standards.
+We welcome contributions that advance smii's mission. Before you begin, please review the repository guidelines in [`AGENTS.md`](AGENTS.md) for expectations around project structure, tooling, and review standards.
 
 ## Getting Started
 1. Create a virtual environment compatible with Python 3.11.
@@ -22,14 +22,13 @@ This includes [Hypothesis](https://hypothesis.readthedocs.io/) for property-base
 ## Development Workflow
 - Format code with `ruff format` and lint via `ruff check --fix`. Run `ruff check --select I` to enforce import ordering when necessary.
 - Validate typing coverage with `mypy .`.
-- When working on Streamlit dashboards, launch them locally using `streamlit run streamlit_app.py`.
-- Explore CLI features with `python -m sensiblaw.cli --help`.
+- Explore CLI features with `python -m smii.cli --help`.
 
 ## Writing Tests
 New features and bug fixes must include automated tests.
 
 - Mirror source paths in the `tests/` directory and name modules `test_<feature>.py`.
-- Use descriptive test function names such as `test_handles_multi_column_toc`.
+- Use descriptive test function names.
 - Leverage fixtures from `tests/fixtures/` and templates from `tests/templates/` where possible.
 - Hypothesis is available for property-based coverage, and external I/O should be patched using `pytest-mock`.
 
@@ -48,9 +47,9 @@ ruff check
 Address any failures locally. Document intentionally skipped checks in your PR description.
 
 ## Commit and Pull Request Process
-- Use imperative commit messages (e.g., `Improve multi-column TOC parsing`) and keep each commit focused on a logical change set.
+- Use imperative commit messages and keep each commit focused on a logical change set.
 - Summarize changes clearly in the PR description, link related issues, and highlight behavior differences with before/after notes.
 - Include updated screenshots for UI changes.
 - Confirm all required checks pass locally prior to submission.
 
-Thank you for contributing to SensibLaw and helping to improve the platform!
+Thank you for contributing to smii and helping to improve the platform!
