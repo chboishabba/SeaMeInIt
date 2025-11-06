@@ -12,6 +12,7 @@ from .fit_from_scan import (
     create_parametric_mesh,
     fit_scan_to_smplx,
 )
+from .generate_undersuit import generate_undersuit, load_body_record
 
 __all__ = [
     "FitResult",
@@ -23,4 +24,6 @@ __all__ = [
     "RegistrationResult",
     "create_parametric_mesh",
     "fit_scan_to_smplx",
+    "generate_undersuit",
+    "load_body_record",
 ]
