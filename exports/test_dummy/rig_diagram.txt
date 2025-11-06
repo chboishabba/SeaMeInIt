@@ -1,0 +1,10 @@
+Hips
+└─ Spine
+   └─ Neck
+      └─ Head
+
+Mesh weights:
+- Vertex 0 → Hips
+- Vertex 1 → Spine
+- Vertex 2 → Neck
+- Vertex 3 → Head

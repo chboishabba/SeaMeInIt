@@ -1,0 +1,15 @@
+; FBX 7.4.0 project file
+; Exported for Unity
+
+Units:
+  Scale: 1.0
+  UpAxis: Y
+  FrontAxis: Z
+Bones:
+  - Hips (parent=None) pos=(0.0000, 0.0000, 0.0000)
+  - Spine (parent=Hips) pos=(0.0000, 0.1000, 0.0000)
+  - Neck (parent=Spine) pos=(0.0000, 0.2000, 0.0000)
+  - Head (parent=Neck) pos=(0.0000, 0.3000, 0.0000)
+Mesh:
+  Vertices: 4
+  Faces: 2
