@@ -9,128 +9,89 @@
 
 
 🟥 Cluster A: Body Model & Measurement Inference
-
-- (Milestone 1A/1B/1C foundation – should be completed first)
+(Milestone 1A/1B/1C foundation – should be completed first)
 
 🔧 Improve visual landmark coverage and variance estimation
-
 - Add confidence metrics and visualize interpolated vs exact
 
 📐 Extend unified schema to include flexibility/mobility constraints
-
 - E.g. shoulder max rotation, spine flexibility class
 
 ➕ Add measurement inference logic
-
 - Predict full sets from key inputs using PCA or GPR (see above)
 
 📦 Split Milestone 1 into:
-
 - 1A Mesh fitting & measurement inference
-
 - 1B Schema and export logic
-
 - 1C Rigged avatar viewer for suit preview
 
 🟧 Cluster B: Soft Suit Runtime Simulator
-
 - (Unifies MM2 + Cooling feedback + Pattern pipeline)
 
 🧵 Pattern + undersuit generator coverage
-
 - Add tests for edge-case sizes (tall, short, asymmetric)
 
 🔥 Thermal zoning UX
-
 - Connect schema to editable brush (likely Unity/Unreal GUI tool)
 
 💧 Cooling routing path planner
-
 - Validate layout logic, simulate cooling capacity over time/load
 
 - 🔄 Merge into: “Soft Suit Runtime Simulator”
-
 - Pattern generation
-
 - Cooling + thermal logic
-
 - Fabric constraint validation
-
 - Export + visual overlay
 
 ⚠️ Add QA flag for standoff errors and seam overlaps
 
 🟨 Cluster C: Hard Shell Kinetics & Motion-Aware Clearance
-
 - (Milestone 3 refinement for realism and safety simulation)
 
 🧪 Offset + segmentation test suite
-
 - Validate motion boundary at high ROM joints
 
 🧲 Ergonomic layer mapping
-
 - Define soft, tight, rigid layers and suit variants per body region
 
 🧮 Clearance stress visualizer
-
 - Show impact stress zones under movement
-
 - Hook into rig from Milestone 1C
 
 🟩 Cluster D: Optional – Cosplay & Defense Extensions
-
 🛡️ Add “parametric armor rigs”
-
 - WoW/halo/sci-fi inspired presets (low-effort PRs, high show value)
 
 🎯 Vulnerability visualizer (bullet cone calc)
-
 - For each armor hole/opening:
-
 - Simulate penetration cone
-
 - Color heatmap of impact risk
 
 🟥 Cluster E: Adaptive Modules Integration
-
 - (Milestone 4 wiring logic + UX)
 
-🧠 Link energy load simulation ↔ body heat zones
-
+🧠 Link energy load simulation ↔ body heat zone
 - Model energy demand curve and cooling synergy
 
 🔌 Add powerbank UX sketch
-
 - Let user drag preferred position, auto-reroute cable paths
 
 📄 Define “Suit Circuit” schema
-
 - JSON config describing:
-
 - Source/sink flow per module
-
 - Thermal/electric map
-
 - Physical attachment locations
 
 🧩 Suggested Execution Order:
-
 🔥 Start with Clusters A + B — they unlock garment realism and measurement UX
-
 🧪 Then Cluster C — adds realism to rigid protection
-
 🔁 Cluster E — once cooling and soft suit logic is stable
-
 🎨 Cluster D — good for demos, partners, and PR buzz
 
 
 ✨ Future-Ready Bonus Paths (non-blocking)
-
 * 🤝 Integrate with TailorNet or Meshcapade’s existing APIs for shape regression
-
 * 📦 Use open synthetic datasets (like RenderPeople, FAUST, or MakeHuman exports) for pretraining
-
 * 🔄 Add constraint-based “reverse fit” mode (e.g., shape estimation from inside a known shell)
 
 
