@@ -1,11 +1,12 @@
-# Wave 2 - Priority revision
+# Wave 2 - PRIORITY TRIAGE OVERVIEW
 
-✅ PRIORITY TRIAGE OVERVIEW
-Priority	Cluster	Theme
-🟥 Critical	Measurement Inference & Rig Foundations	Unlocks all suit mapping & physics
-🟧 High	Soft Suit Runtime & Cooling Logic	Tied to UX and feedback realism
-🟨 Medium	Hard Shell & Motion Mapping	More advanced but non-blocking
-🟩 Optional/Nice to Have	Cosplay, Ballistics, Armor UX	High-impact features, not critical
+| Priority                 | Cluster                                 | Theme                              |
+| ------------------------ | --------------------------------------- | ---------------------------------- |
+| 🟥 Critical              | Measurement Inference & Rig Foundations | Unlocks all suit mapping & physics |
+| 🟧 High                  | Soft Suit Runtime & Cooling Logic       | Tied to UX and feedback realism    |
+| 🟨 Medium                | Hard Shell & Motion Mapping             | More advanced but non-blocking     |
+| 🟩 Optional/Nice to Have | Cosplay, Ballistics, Armor UX           | High-impact features, not critical |
+
 
 🟥 Cluster A: Body Model & Measurement Inference
 
