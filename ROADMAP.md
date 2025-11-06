@@ -1,5 +1,7 @@
 # 📍 SeaMeInIt: Dev Roadmap (Features & Deliverables)
-
+✅ - Completed 
+🔵 - Underway 
+⬜ - Incomplete
 ---
 
 ## **MAJOR MILESTONE 0: Roadmap Creation**
