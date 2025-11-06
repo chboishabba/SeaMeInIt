@@ -1,5 +1,11 @@
 """Exporter utilities for engine integrations."""
 
+from .hard_layer_export import (
+    HardLayerCADBackend,
+    HardLayerExportError,
+    HardLayerExporter,
+    ShellPanel,
+)
 from .patterns import (
     CADBackend,
     Panel2D,
@@ -26,4 +32,8 @@ __all__ = [
     "Panel3D",
     "PatternExporter",
     "SimplePlaneProjectionBackend",
+    "HardLayerCADBackend",
+    "HardLayerExportError",
+    "HardLayerExporter",
+    "ShellPanel",
 ]
