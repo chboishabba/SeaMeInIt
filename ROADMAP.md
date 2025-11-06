@@ -83,10 +83,10 @@
 - Physical attachment locations
 
 🧩 Suggested Execution Order:
-🔥 Start with Clusters A + B — they unlock garment realism and measurement UX
-🧪 Then Cluster C — adds realism to rigid protection
-🔁 Cluster E — once cooling and soft suit logic is stable
-🎨 Cluster D — good for demos, partners, and PR buzz
+* 🔥 Start with Clusters A + B — they unlock garment realism and measurement UX
+* 🧪 Then Cluster C — adds realism to rigid protection
+* 🔁 Cluster E — once cooling and soft suit logic is stable
+* 🎨 Cluster D — good for demos, partners, and PR buzz
 
 
 ✨ Future-Ready Bonus Paths (non-blocking)
