@@ -90,6 +90,7 @@
 * ⬜ First responder variant (fireproof + cooling + pocket rig)
 * ⬜ Diver variant (insulated + heater + watertight seals)
 * ⬜ Climate suit (tent mode + filtration mask + passive insulation)
+* ⬜ Space tourism (bespoke spacesuits for astronauts)
 * ⬜ Manufacturing testbed (CNC/sewing + 3D print layout test)
 * ⬜ Field test feedback loop (thermal stress, mobility, durability)
 
