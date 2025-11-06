@@ -6,7 +6,7 @@ SMII(gol?)  Parametric design of next-generation, made-to-fit clothing. We aim t
 
 SeaMeInIt 🛠️ is currently licensed under GPL-3.0, with intention towards a custom [Business Source License](./LICENSE) or similar.
 
-> Commercial use is allowed under the same terms (with copyleft).  
+> Commercial use is allowed under the same terms (with copyleft).
 > We may migrate to a dual-license model in the future to better align with our ethical and sustainability goals.
 
 
@@ -17,6 +17,19 @@ SeaMeInIt 🛠️ is currently licensed under GPL-3.0, with intention towards a 
 - 🔓 After 3 years, each version becomes AGPL-3.0 open source
 
 This helps keep our work open, sustainable, and ethically aligned.
+
+## 🧊 SMPL-X assets and tooling
+
+We rely on the [SMPL-X](https://smpl-x.is.tue.mpg.de/) body model for avatar generation. The assets are distributed under their
+own license and must be downloaded with an authenticated account.
+
+1. Install the tooling extras: `pip install -e .[tools]`
+2. Export your authenticated download URL (or cookie-authenticated link) as `SMPLX_DOWNLOAD_URL`. Optionally, store the session
+   token in `SMPLX_AUTH_TOKEN` if your download flow requires it.
+3. Run the fetcher from the repository root: `python tools/download_smplx.py --dest assets/smplx`
+
+The script downloads the archive, verifies its checksum when available, and extracts the mesh packages into `assets/smplx/`. If
+you already have the archive locally, pass `--archive /path/to/SMPLX_NEUTRAL.npz` to reuse it without hitting the remote.
 
 
 # **Next-Generation Adaptive Suit Platform** - Vision and Roadmap
