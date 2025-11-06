@@ -24,7 +24,7 @@ properties:
     properties:
       schema_version:
         type: string
-        pattern: "^v?[0-9]+\.[0-9]+\.[0-9]+$"
+        pattern: '^v?[0-9]+\.[0-9]+\.[0-9]+$'
         description: Semantic version of the schema definition.
       coordinate_frame:
         type: string
@@ -74,7 +74,7 @@ properties:
 $defs:
   identifier:
     type: string
-    pattern: "^[a-z][a-z0-9_\-\.]*$"
+    pattern: '^[a-z][a-z0-9_\-\.]*$'
   anatomicalLandmark:
     type: object
     required:
@@ -153,12 +153,14 @@ $defs:
           - breadth
           - depth
           - angle
+          - mass
       unit:
         type: string
         enum:
           - mm
           - cm
           - m
+          - kg
           - deg
       primary_landmarks:
         type: array
@@ -291,3 +293,121 @@ $defs:
                 - mm
       notes:
         type: string
+x-measurements:
+  version: "1.0.0"
+  description: Schema enumerating manual tape measurements and scan landmarks required for SMPL-X fitting.
+  manual:
+    - name: height
+      unit: cm
+      required: true
+      category: length
+      description: Standing height measured from floor to top of head.
+    - name: weight
+      unit: kg
+      required: false
+      category: mass
+      description: Body mass including clothing worn during scan session.
+    - name: chest_circumference
+      unit: cm
+      required: true
+      category: circumference
+      description: Horizontal circumference measured at mid-chest passing through the nipples.
+    - name: waist_circumference
+      unit: cm
+      required: true
+      category: circumference
+      description: Horizontal circumference at the narrowest part of the torso above the iliac crest.
+    - name: hip_circumference
+      unit: cm
+      required: true
+      category: circumference
+      description: Circumference at the fullest part of the hips and glutes.
+    - name: neck_circumference
+      unit: cm
+      required: false
+      category: circumference
+      description: Circumference at the base of the neck passing through the larynx.
+    - name: shoulder_width
+      unit: cm
+      required: false
+      category: length
+      description: Biacromial shoulder width measured between left and right acromion processes.
+    - name: arm_length
+      unit: cm
+      required: false
+      category: length
+      description: Distance from the acromion to the wrist along the lateral arm.
+    - name: inseam_length
+      unit: cm
+      required: false
+      category: length
+      description: Distance from the crotch to the floor along the medial leg.
+    - name: thigh_circumference
+      unit: cm
+      required: false
+      category: circumference
+      description: Circumference of the thigh measured 10 cm below the inguinal fold.
+    - name: calf_circumference
+      unit: cm
+      required: false
+      category: circumference
+      description: Circumference at the fullest part of the calf.
+    - name: bicep_circumference
+      unit: cm
+      required: false
+      category: circumference
+      description: Circumference of the upper arm midway between shoulder and elbow.
+    - name: wrist_circumference
+      unit: cm
+      required: false
+      category: circumference
+      description: Circumference measured over the styloid processes.
+  scan_landmarks:
+    - name: head_top
+      unit: mm
+      required: true
+      description: Vertex of the skull used for global scaling.
+    - name: sternum_notch
+      unit: mm
+      required: true
+      description: Jugular notch at the superior sternum.
+    - name: navel
+      unit: mm
+      required: true
+      description: Center of the navel for anterior torso alignment.
+    - name: sacrum
+      unit: mm
+      required: true
+      description: Posterior pelvis landmark at the sacrum.
+    - name: left_acromion
+      unit: mm
+      required: true
+      description: Left shoulder acromion used for arm pose initialization.
+    - name: right_acromion
+      unit: mm
+      required: true
+      description: Right shoulder acromion used for arm pose initialization.
+    - name: left_iliac_crest
+      unit: mm
+      required: false
+      description: Left iliac crest peak to stabilize pelvic orientation.
+    - name: right_iliac_crest
+      unit: mm
+      required: false
+      description: Right iliac crest peak to stabilize pelvic orientation.
+    - name: left_wrist
+      unit: mm
+      required: false
+      description: Ulnar styloid process for lower arm alignment.
+    - name: right_wrist
+      unit: mm
+      required: false
+      description: Radial styloid process for lower arm alignment.
+    - name: left_ankle
+      unit: mm
+      required: false
+      description: Medial malleolus of the left ankle.
+    - name: right_ankle
+      unit: mm
+      required: false
+      description: Medial malleolus of the right ankle.
