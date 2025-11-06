@@ -17,6 +17,8 @@ from .fit_from_scan import (
     fit_scan_to_smplx,
 )
 from .export_patterns import main as export_patterns_main
+from .export_hard_layer import main as export_hard_layer_main
+from .generate_hard_shell import generate_hard_shell
 from .generate_undersuit import generate_undersuit, load_body_record
 
 __all__ = [
@@ -32,9 +34,14 @@ __all__ = [
     "extract_measurements_from_afflec_images",
     "fit_scan_to_smplx",
     "fit_smplx_from_measurements",
+    "export_hard_layer_main",
     "export_patterns_main",
+    "generate_hard_shell",
     "generate_undersuit",
     "load_body_record",
+    "run_clearance",
+    "load_mesh",
+    "load_transforms",
 ]
 
 _LAZY_IMPORTS: Dict[str, Tuple[str, str]] = {
@@ -59,6 +66,12 @@ _LAZY_IMPORTS: Dict[str, Tuple[str, str]] = {
     "UndersuitGenerationResult": ("smii.pipelines.undersuit", "UndersuitGenerationResult"),
     "UndersuitMesh": ("smii.pipelines.undersuit", "UndersuitMesh"),
     "UndersuitPipeline": ("smii.pipelines.undersuit", "UndersuitPipeline"),
+    "export_patterns_main": ("smii.pipelines.export_patterns", "main"),
+    "generate_undersuit": ("smii.pipelines.generate_undersuit", "generate_undersuit"),
+    "load_body_record": ("smii.pipelines.generate_undersuit", "load_body_record"),
+    "run_clearance": ("smii.pipelines.analyze_clearance", "run_clearance"),
+    "load_mesh": ("smii.pipelines.analyze_clearance", "load_mesh"),
+    "load_transforms": ("smii.pipelines.analyze_clearance", "load_transforms"),
 }
 
 
