@@ -37,6 +37,9 @@ __all__ = [
     "generate_hard_shell",
     "generate_undersuit",
     "load_body_record",
+    "run_clearance",
+    "load_mesh",
+    "load_transforms",
 ]
 
 _LAZY_IMPORTS: Dict[str, Tuple[str, str]] = {
@@ -61,6 +64,12 @@ _LAZY_IMPORTS: Dict[str, Tuple[str, str]] = {
     "UndersuitGenerationResult": ("smii.pipelines.undersuit", "UndersuitGenerationResult"),
     "UndersuitMesh": ("smii.pipelines.undersuit", "UndersuitMesh"),
     "UndersuitPipeline": ("smii.pipelines.undersuit", "UndersuitPipeline"),
+    "export_patterns_main": ("smii.pipelines.export_patterns", "main"),
+    "generate_undersuit": ("smii.pipelines.generate_undersuit", "generate_undersuit"),
+    "load_body_record": ("smii.pipelines.generate_undersuit", "load_body_record"),
+    "run_clearance": ("smii.pipelines.analyze_clearance", "run_clearance"),
+    "load_mesh": ("smii.pipelines.analyze_clearance", "load_mesh"),
+    "load_transforms": ("smii.pipelines.analyze_clearance", "load_transforms"),
 }
 
 
