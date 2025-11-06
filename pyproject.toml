@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 authors = [{name = "SeaMeInIt", email = "engineering@seameinit.local"}]
 dependencies = [
+    "numpy>=1.24",
     "smplx>=0.1.28",
 ]
 
