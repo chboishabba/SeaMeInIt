@@ -6,9 +6,25 @@ from pathlib import Path
 
 import pytest
 
+from modules.heating import (
+    HeatingController,
+    HeatingMeshPlanner,
+    HeaterTemplate,
+    LayerWattageConfig,
+    PanelGeometry,
+    ZoneConfig,
+)
 from smii.tools import ThermalBrushSession, load_brush_payload, load_weights
 from smii.pipelines.undersuit import UndersuitMesh, UndersuitPipeline
 from suit.thermal_zones import DEFAULT_THERMAL_ZONE_SPEC
+
+
+@pytest.fixture
+def sample_panels() -> list[PanelGeometry]:
+    return [
+        PanelGeometry(panel_id="torso_front", area=0.24, zone="core"),
+        PanelGeometry(panel_id="torso_back", area=0.22, zone="upper_torso_back"),
+    ]
 
 
 @pytest.fixture
@@ -64,7 +80,11 @@ def test_brush_session_roundtrip(tmp_path: Path) -> None:
     assert loaded_session.weights["left_leg"] == pytest.approx(0.5)
 
 
-def test_pipeline_integration_with_weights(sample_vertices: list[tuple[float, float, float]], tmp_path: Path) -> None:
+def test_pipeline_integration_with_weights(
+    sample_vertices: list[tuple[float, float, float]],
+    sample_panels: list[PanelGeometry],
+    tmp_path: Path,
+) -> None:
     """The undersuit pipeline should combine mesh data and brush weights."""
 
     mesh = UndersuitMesh(vertices=tuple(sample_vertices))
@@ -74,15 +94,45 @@ def test_pipeline_integration_with_weights(sample_vertices: list[tuple[float, fl
     brush_path = tmp_path / "core_weights.json"
     brush_session.save(brush_path)
 
-    pipeline = UndersuitPipeline()
+    templates = {
+        "carbon_large": HeaterTemplate("carbon_large", wattage=24.0, coverage_area=0.036),
+        "carbon_small": HeaterTemplate("carbon_small", wattage=12.0, coverage_area=0.018),
+    }
+    layers = (
+        LayerWattageConfig(
+            layer_id="base",
+            template_id="carbon_large",
+            coverage_ratio=0.5,
+            watt_density=180.0,
+        ),
+        LayerWattageConfig(
+            layer_id="booster",
+            template_id="carbon_small",
+            coverage_ratio=0.25,
+            watt_density=110.0,
+        ),
+    )
+    planner = HeatingMeshPlanner(templates, layers)
+    controller = HeatingController(
+        {
+            "core": ZoneConfig("core", max_watt_density=500.0, duty_cycle_limit=0.75),
+            "upper_torso_back": ZoneConfig(
+                "upper_torso_back", max_watt_density=420.0, duty_cycle_limit=0.9
+            ),
+        },
+        global_safety_margin=0.85,
+    )
+
+    pipeline = UndersuitPipeline(heating_planner=planner, heating_controller=controller)
     result = pipeline.generate(
         mesh,
         brush_path=brush_path,
         weight_overrides={"head_neck": 2.0},
+        panel_layout=sample_panels,
     )
 
     payload = result.to_payload()
-    assert "mesh" in payload and "thermal" in payload
+    assert "mesh" in payload and "thermal" in payload and "heating" in payload
 
     mesh_payload = payload["mesh"]
     assert len(mesh_payload["vertices"]) == len(sample_vertices)
@@ -102,3 +152,9 @@ def test_pipeline_integration_with_weights(sample_vertices: list[tuple[float, fl
 
     total_target = sum(zone["cooling_target"] for zone in zone_entries)
     assert thermal["total_effective_load"] == pytest.approx(total_target)
+
+    heating = payload["heating"]
+    assert heating["bom"]["total_wattage"] == pytest.approx(288.0)
+    zones = {entry["zone_id"]: entry for entry in heating["zones"]}
+    assert zones["core"]["recommended_power"] < zones["core"]["installed_power"]
+    assert heating["plan"]["panel_zones"]["torso_front"] == "core"

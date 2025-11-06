@@ -1,48 +1,54 @@
 # 📍 SeaMeInIt: Dev Roadmap (Features & Deliverables)
 
+✅ - Completed 
+
+🔵 - Underway 
+
+⬜ - Incomplete
+
 ---
 
 ## **MAJOR MILESTONE 0: Roadmap Creation**
 
 * ✅ Generate README and ROADMAP
-* ⬜ Generate AGENTS.md
+* ✅ Generate AGENTS.md
 ---
 
 ## **MAJOR MILESTONE 1: Foundational Platform**
 
-* ⬜ Parametric human body model (SMPL-X or MetaHuman)
-* ⬜ Measurement-to-mesh pipeline (manual input + scan-based fitting)
-* ⬜ Unified schema for measurements, landmarks, rig, and inferred ranges
-* ⬜ Neutral-pose, fully rigged test dummy exportable to Unity/Unreal
+* 🔵 Parametric human body model (SMPL-X or MetaHuman)
+* 🔵 Measurement-to-mesh pipeline (manual input + scan-based fitting)
+* 🔵 Unified schema for measurements, landmarks, rig, and inferred ranges
+* 🔵 Neutral-pose, fully rigged test dummy exportable to Unity/Unreal
 
 ---
 
 ## **MAJOR MILESTONE 2: Suit Core (Soft Layer)**
 
-* ⬜ Parametric base undersuit generator (bodysuit + layering)
-* ⬜ Material model: elastic, insulative, pressure-mapped comfort zones
-* ⬜ Thermal load zones + cooling priority brush interface
-* ⬜ PDF/SVG/DXF pattern export (via FreeSewing or Valentina interop)
-* ⬜ Cooling module interface points (modular routing design)
+* 🔵 Parametric base undersuit generator (bodysuit + layering)
+* 🔵 Material model: elastic, insulative, pressure-mapped comfort zones
+* 🔵 Thermal load zones + cooling priority brush interface
+* 🔵 PDF/SVG/DXF pattern export (via FreeSewing or Valentina interop)
+* 🔵 Cooling module interface points (modular routing design)
 
 ---
 
 ## **MAJOR MILESTONE 3: Suit Core (Hard Layer)**
 
-* ⬜ Offset shell generator (configurable thickness + exclusion zones)
-* ⬜ Articulation-aware segmentation (elbow/knee/shoulder motion arcs)
-* ⬜ Clearance map (simulate and resolve collision at 0°/45°/90°)
-* ⬜ Attachment/fastening primitives (strap slots, magnet beds, hinges)
-* ⬜ STL/STEP export with printable metadata (part labels, fit tests)
+* 🔵 Offset shell generator (configurable thickness + exclusion zones)
+* 🔵 Articulation-aware segmentation (elbow/knee/shoulder motion arcs)
+* 🔵 Clearance map (simulate and resolve collision at 0°/45°/90°)
+* 🔵 Attachment/fastening primitives (strap slots, magnet beds, hinges)
+* 🔵 STL/STEP export with printable metadata (part labels, fit tests)
 
 ---
 
 ## **MAJOR MILESTONE 4: Adaptive Modules**
 
-* ⬜ Active cooling integration (PCM vest + liquid tube loop + routing logic)
-* ⬜ Heating module (layered resistive heating pad config)
-* ⬜ Tent deployment module (packed canopy attachment, fold rules)
-* ⬜ Power interface (battery pack allocation + swappable connectors)
+* 🔵 Active cooling integration (PCM vest + liquid tube loop + routing logic)
+* 🔵 Heating module (layered resistive heating pad config)
+* 🔵 Tent deployment module (packed canopy attachment, fold rules)
+* 🔵 Power interface (battery pack allocation + swappable connectors)
 
 ---
 
@@ -90,6 +96,7 @@
 * ⬜ First responder variant (fireproof + cooling + pocket rig)
 * ⬜ Diver variant (insulated + heater + watertight seals)
 * ⬜ Climate suit (tent mode + filtration mask + passive insulation)
+* ⬜ Space tourism (bespoke spacesuits for astronauts)
 * ⬜ Manufacturing testbed (CNC/sewing + 3D print layout test)
 * ⬜ Field test feedback loop (thermal stress, mobility, durability)
 

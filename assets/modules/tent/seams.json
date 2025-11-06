@@ -1,0 +1,48 @@
+{
+  "canopy_spine": {
+    "seam_allowance": 0.015,
+    "fold_paths": [
+      {
+        "name": "spine_roll",
+        "order": 1,
+        "anchors": ["dorsal_mount", "ventral_mount"],
+        "points": [
+          [0.0, 1.70, -0.12],
+          [0.0, 1.58, -0.02],
+          [0.0, 1.46, 0.14]
+        ],
+        "description": "Roll the canopy along the spine to seat the structural ribbing.",
+        "dwell_time": 4.0
+      }
+    ]
+  },
+  "canopy_ribs": {
+    "seam_allowance": 0.012,
+    "fold_paths": [
+      {
+        "name": "left_rib_lock",
+        "order": 2,
+        "anchors": ["left_shoulder_mount", "ventral_mount"],
+        "points": [
+          [-0.32, 1.44, 0.10],
+          [-0.40, 1.30, 0.12],
+          [-0.18, 1.18, 0.16]
+        ],
+        "description": "Tension the left rib to pin the canopy edge to the ventral mount.",
+        "dwell_time": 2.5
+      },
+      {
+        "name": "right_rib_lock",
+        "order": 3,
+        "anchors": ["right_shoulder_mount", "ventral_mount"],
+        "points": [
+          [0.32, 1.44, 0.10],
+          [0.40, 1.30, 0.12],
+          [0.18, 1.18, 0.16]
+        ],
+        "description": "Mirror the rib lock on the right side to complete canopy tensioning.",
+        "dwell_time": 2.5
+      }
+    ]
+  }
+}
