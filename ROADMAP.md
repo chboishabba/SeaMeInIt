@@ -59,7 +59,7 @@
 - Hook into rig from Milestone 1C
 
 🟩 Cluster D: Optional – Cosplay & Defense Extensions
-🛡️ Add “parametric armor rigs”
+- 🛡️ Add “parametric armor rigs”
 - WoW/halo/sci-fi inspired presets (low-effort PRs, high show value)
 
 🎯 Vulnerability visualizer (bullet cone calc)
