@@ -1,0 +1,247 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Hard Layer Attachment Interface Catalog",
+  "description": "Catalog describing standardized attachment connectors, placement rules, and compatibility tags for SeaMeInIt hard-shell assemblies.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "connectors",
+    "placement_rules",
+    "compatibility_tags"
+  ],
+  "properties": {
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "connectors": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/connector"
+      }
+    },
+    "placement_rules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/placement_rule"
+      }
+    },
+    "compatibility_tags": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/compatibility_tag"
+      }
+    }
+  },
+  "definitions": {
+    "connector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "connector_type",
+        "fastener_pattern",
+        "compatibility_tags"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "connector_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "fastener_pattern": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "primitive",
+            "count",
+            "diameter"
+          ],
+          "properties": {
+            "primitive": {
+              "type": "string",
+              "enum": [
+                "bolt",
+                "rivet",
+                "clip",
+                "magnetic",
+                "latch"
+              ]
+            },
+            "count": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "diameter": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "spacing": {
+              "type": "number",
+              "minimum": 0
+            },
+            "material": {
+              "type": "string"
+            }
+          }
+        },
+        "placement": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "normal_offset": {
+              "type": "number"
+            },
+            "default_orientation": {
+              "type": "string"
+            },
+            "clearance": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        "compatibility_tags": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "payload_interfaces": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "placement_rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "allowed_connector_types",
+        "max_per_panel"
+      ],
+      "properties": {
+        "panel": {
+          "type": "string",
+          "minLength": 1
+        },
+        "panel_tags_any": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "panel_tags_all": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "allowed_connector_types": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required_compatibility": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "max_per_panel": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "spacing": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "edge_clearance": {
+          "type": "number",
+          "minimum": 0
+        },
+        "normal_offset": {
+          "type": "number"
+        },
+        "harness": {
+          "type": "string"
+        },
+        "routing_tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "orientation": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "longitudinal",
+            "transverse",
+            "u",
+            "v"
+          ]
+        },
+        "nominal_cable_length": {
+          "type": "number",
+          "minimum": 0
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "compatibility_tag": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
