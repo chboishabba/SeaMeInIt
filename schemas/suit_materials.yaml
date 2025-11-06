@@ -1,0 +1,128 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "https://seameinit.dev/schemas/suit_materials.yaml"
+title: "SeaMeInIt Suit Material Stack Schema"
+description: |
+  Defines the structure for cataloguing undersuit material stacks, including
+  layer compositions and the thermomechanical performance data required by the
+  generator.
+type: object
+additionalProperties: false
+required:
+  - version
+  - stacks
+properties:
+  version:
+    type: string
+    description: Version identifier for the catalog payload.
+  description:
+    type: string
+    description: Human readable summary of the catalog.
+  stacks:
+    type: array
+    minItems: 1
+    description: Collection of available material stacks.
+    items:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - layers
+        - elastic_modulus
+        - thermal_resistance
+        - pressure_comfort
+      properties:
+        id:
+          type: string
+          pattern: '^[a-z0-9_-]+$'
+          description: Unique identifier for the stack.
+        name:
+          type: string
+          description: Display label for the stack.
+        notes:
+          type: string
+          description: Optional notes about the stack.
+        applications:
+          type: array
+          items:
+            type: string
+          description: Optional list of recommended application regions.
+        layers:
+          type: array
+          minItems: 1
+          description: Ordered collection of fabrics making up the stack.
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - material
+              - thickness_mm
+            properties:
+              material:
+                type: string
+                description: Name or code of the fabric.
+              thickness_mm:
+                type: number
+                minimum: 0
+                description: Nominal thickness contribution of the layer.
+              description:
+                type: string
+                description: Optional layer notes.
+              density_kg_m3:
+                type: number
+                minimum: 0
+                description: Bulk density estimate.
+        elastic_modulus:
+          type: object
+          additionalProperties: false
+          required:
+            - warp
+            - weft
+          properties:
+            warp:
+              type: number
+              minimum: 0
+              description: In-plane modulus along the warp direction (MPa).
+            weft:
+              type: number
+              minimum: 0
+              description: In-plane modulus along the weft direction (MPa).
+            bias:
+              type: number
+              minimum: 0
+              description: Optional modulus along the bias direction (MPa).
+            unit:
+              type: string
+              description: Units used for the modulus values.
+        thermal_resistance:
+          type: object
+          additionalProperties: false
+          required:
+            - clo
+          properties:
+            clo:
+              type: number
+              minimum: 0
+              description: Thermal resistance expressed in clo.
+            r_value:
+              type: number
+              minimum: 0
+              description: Optional thermal resistance expressed as an R-value (m²·K/W).
+        pressure_comfort:
+          type: object
+          additionalProperties: false
+          required:
+            - preferred_kpa
+            - max_kpa
+          properties:
+            preferred_kpa:
+              type: number
+              minimum: 0
+              description: Recommended sustained interface pressure.
+            max_kpa:
+              type: number
+              minimum: 0
+              description: Maximum tolerable interface pressure before discomfort.
+            notes:
+              type: string
+              description: Optional rationale or experimental notes.
