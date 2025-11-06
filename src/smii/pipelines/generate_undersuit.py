@@ -10,9 +10,12 @@ from typing import Any
 
 import numpy as np
 
+from modules.cooling import plan_cooling_layout
 from suit import UnderSuitGenerator, UnderSuitOptions
+from suit.thermal_zones import DEFAULT_THERMAL_ZONE_SPEC
 
 OUTPUT_ROOT = Path("outputs/suits")
+COOLING_OUTPUT_ROOT = Path("outputs/modules/cooling")
 
 __all__ = ["generate_undersuit", "load_body_record", "main"]
 
@@ -81,6 +84,8 @@ def generate_undersuit(
     output_dir: Path | None = None,
     measurements: Mapping[str, float] | None = None,
     options: UnderSuitOptions | None = None,
+    embed_cooling: bool = False,
+    cooling_medium: str = "liquid",
 ) -> None:
     """Run the undersuit generation pipeline and persist all artefacts."""
 
@@ -120,7 +125,54 @@ def generate_undersuit(
         }
         for layer in result.layers()
     }
+    if embed_cooling:
+        _embed_cooling_manifest(
+            body_path=body_path,
+            target_dir=target_dir,
+            base_vertices=result.base_layer.vertices,
+            medium=cooling_medium,
+            metadata=metadata,
+        )
+
     _write_metadata(target_dir / "metadata.json", metadata)
+
+
+def _embed_cooling_manifest(
+    *,
+    body_path: Path,
+    target_dir: Path,
+    base_vertices: np.ndarray,
+    medium: str,
+    metadata: dict[str, Any],
+) -> None:
+    medium = medium.lower()
+    if medium not in {"liquid", "pcm"}:
+        raise ValueError("Cooling medium must be either 'liquid' or 'pcm'.")
+
+    plan = plan_cooling_layout(
+        DEFAULT_THERMAL_ZONE_SPEC,
+        base_vertices,
+        medium=medium,
+    )
+    manifest = plan.to_manifest()
+    manifest["body_record"] = str(body_path)
+    manifest["undersuit_output"] = str(target_dir)
+
+    cooling_dir = COOLING_OUTPUT_ROOT / target_dir.name
+    cooling_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = cooling_dir / f"{body_path.stem}_{medium}.json"
+    with manifest_path.open("w", encoding="utf-8") as stream:
+        json.dump(manifest, stream, indent=2)
+
+    cooling_meta = dict(metadata.get("cooling", {}))
+    cooling_meta.update(
+        {
+            "medium": medium,
+            "manifest": str(manifest_path),
+            "zones": manifest["spec"]["zones"],
+        }
+    )
+    metadata["cooling"] = cooling_meta
 
 
 def _parse_options_from_args(args: argparse.Namespace) -> UnderSuitOptions:
@@ -142,7 +194,9 @@ def _parse_options_from_args(args: argparse.Namespace) -> UnderSuitOptions:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Generate undersuit layers from a fitted body mesh.")
+    parser = argparse.ArgumentParser(
+        description="Generate undersuit layers from a fitted body mesh."
+    )
     parser.add_argument("body", type=Path, help="Path to the fitted body record (JSON or NPZ).")
     parser.add_argument(
         "--output",
@@ -154,10 +208,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         type=Path,
         help="Optional measurement JSON used to influence sizing ease.",
     )
-    parser.add_argument("--base-thickness", type=float, default=0.0015, help="Base layer shell thickness in metres.")
-    parser.add_argument("--insulation-thickness", type=float, default=0.003, help="Insulation layer thickness in metres.")
-    parser.add_argument("--comfort-thickness", type=float, default=0.001, help="Comfort liner thickness in metres.")
-    parser.add_argument("--ease-percent", type=float, default=0.03, help="Fractional ease applied uniformly to the body.")
+    parser.add_argument(
+        "--base-thickness", type=float, default=0.0015, help="Base layer shell thickness in metres."
+    )
+    parser.add_argument(
+        "--insulation-thickness",
+        type=float,
+        default=0.003,
+        help="Insulation layer thickness in metres.",
+    )
+    parser.add_argument(
+        "--comfort-thickness", type=float, default=0.001, help="Comfort liner thickness in metres."
+    )
+    parser.add_argument(
+        "--ease-percent",
+        type=float,
+        default=0.03,
+        help="Fractional ease applied uniformly to the body.",
+    )
     parser.add_argument(
         "--no-insulation",
         action="store_true",
@@ -174,6 +242,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         metavar="MEASUREMENT=WEIGHT",
         help="Optional weighting overrides for measurement-driven scaling.",
     )
+    parser.add_argument(
+        "--embed-cooling",
+        action="store_true",
+        help="Generate a cooling routing manifest alongside undersuit layers.",
+    )
+    parser.add_argument(
+        "--cooling-medium",
+        choices=("liquid", "pcm"),
+        default="liquid",
+        help="Cooling medium used when embedding circuits.",
+    )
     args = parser.parse_args(argv)
 
     measurements = _load_measurements(args.measurements)
@@ -184,6 +263,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         output_dir=args.output,
         measurements=measurements,
         options=options,
+        embed_cooling=args.embed_cooling,
+        cooling_medium=args.cooling_medium,
     )
 
     return 0
