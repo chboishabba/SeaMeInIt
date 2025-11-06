@@ -9,7 +9,9 @@ from pathlib import Path
 
 import numpy as np
 
-SCHEMA_PATH = Path(__file__).resolve().parents[2] / "data" / "schemas" / "body_measurements.json"
+from schemas.validators import load_measurement_catalog
+
+SCHEMA_PATH = Path(__file__).resolve().parents[3] / "data" / "schemas" / "body_measurements.json"
 SMPLX_NUM_BETAS = 10
 
 
@@ -63,9 +65,10 @@ class FitResult:
 
 
 def load_schema(path: Path | None = None) -> dict:
-    schema_path = path or SCHEMA_PATH
-    with schema_path.open("r", encoding="utf-8") as stream:
-        return json.load(stream)
+    if path is not None:
+        with path.open("r", encoding="utf-8") as stream:
+            return json.load(stream)
+    return load_measurement_catalog(measurement_path=SCHEMA_PATH)
 
 
 def required_measurements(schema: Mapping[str, Iterable[Mapping[str, object]]]) -> set[str]:

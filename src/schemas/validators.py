@@ -17,6 +17,7 @@ __all__ = [
     "DEFAULT_SCHEMA_NAME",
     "SchemaValidationError",
     "load_schema",
+    "load_measurement_catalog",
     "load_payload",
     "validate_body_payload",
     "validate_file",
@@ -33,11 +34,15 @@ class SchemaValidationError(RuntimeError):
 
 
 def _repository_root() -> Path:
-    return Path(__file__).resolve().parents[3]
+    return Path(__file__).resolve().parents[2]
 
 
 def _schema_dir() -> Path:
     return _repository_root() / "schemas"
+
+
+def _measurement_schema_path() -> Path:
+    return _repository_root() / "data" / "schemas" / "body_measurements.json"
 
 
 @lru_cache(maxsize=4)
@@ -56,6 +61,126 @@ def load_schema(name: str = DEFAULT_SCHEMA_NAME) -> Mapping[str, Any]:
 
     return schema
 
+
+def load_measurement_catalog(
+    *,
+    schema_name: str = DEFAULT_SCHEMA_NAME,
+    measurement_path: Path | None = None,
+) -> dict[str, Any]:
+    """Load measurement metadata from the unified schema and validate artifacts.
+
+    Parameters
+    ----------
+    schema_name:
+        The unified YAML schema containing authoritative measurement definitions.
+    measurement_path:
+        Optional override for the generated JSON artifact. When provided, the
+        artifact is checked for parity with the unified schema. Defaults to the
+        repository's ``data/schemas/body_measurements.json`` file.
+    """
+
+    schema = load_schema(schema_name)
+    extension = schema.get("x-measurements")
+    if not isinstance(extension, Mapping):
+        raise KeyError("Unified schema is missing the 'x-measurements' extension.")
+
+    manual = _normalize_measurements(extension.get("manual", []), context="manual")
+    scan = _normalize_measurements(extension.get("scan_landmarks", []), context="scan_landmarks")
+
+    catalog: dict[str, Any] = {
+        "version": str(extension.get("version", "")),
+        "description": str(extension.get("description", "")),
+        "manual_measurements": manual,
+        "scan_landmarks": scan,
+    }
+
+    artifact_path = measurement_path or _measurement_schema_path()
+    artifact = _load_measurement_artifact(artifact_path)
+
+    _assert_measurement_parity(manual, artifact.get("manual_measurements", []), context="manual_measurements")
+    _assert_measurement_parity(scan, artifact.get("scan_landmarks", []), context="scan_landmarks")
+
+    if not catalog["version"] and isinstance(artifact.get("version"), str):
+        catalog["version"] = artifact["version"]
+    elif catalog["version"] and artifact.get("version") not in {None, catalog["version"]}:
+        raise ValueError(
+            "Measurement artifact version does not match unified schema: "
+            f"{artifact.get('version')!r} != {catalog['version']!r}"
+        )
+
+    if not catalog["description"] and isinstance(artifact.get("description"), str):
+        catalog["description"] = artifact["description"]
+
+    return catalog
+
+
+def _normalize_measurements(values: Any, *, context: str) -> list[dict[str, Any]]:
+    if not isinstance(values, Iterable):
+        raise TypeError(f"'{context}' must be an iterable of measurement mappings.")
+
+    normalized: list[dict[str, Any]] = []
+    for index, entry in enumerate(values):
+        if not isinstance(entry, Mapping):
+            raise TypeError(f"Entry {index} in '{context}' must be a mapping, received {type(entry)!r}.")
+        if "name" not in entry:
+            raise KeyError(f"Entry {index} in '{context}' is missing a 'name' field.")
+        if "unit" not in entry:
+            raise KeyError(f"Entry {index} in '{context}' is missing a 'unit' field.")
+
+        record: dict[str, Any] = {
+            "name": str(entry["name"]),
+            "unit": str(entry["unit"]),
+            "required": bool(entry.get("required", False)),
+        }
+        for optional_key in ("category", "description"):
+            if optional_key in entry:
+                record[optional_key] = entry[optional_key]
+        normalized.append(record)
+
+    return normalized
+
+
+def _load_measurement_artifact(path: Path) -> Mapping[str, Any]:
+    if not path.exists():
+        raise FileNotFoundError(f"Measurement artifact not found at {path}")
+
+    with path.open("r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+
+    if not isinstance(payload, Mapping):
+        raise TypeError(f"Measurement artifact at {path} must decode to a mapping.")
+
+    return payload
+
+
+def _assert_measurement_parity(
+    unified: Iterable[Mapping[str, Any]],
+    artifact: Iterable[Mapping[str, Any]],
+    *,
+    context: str,
+) -> None:
+    unified_index = {entry["name"]: entry for entry in _normalize_measurements(unified, context=context + "_unified")}
+    artifact_index = {entry["name"]: entry for entry in _normalize_measurements(artifact, context=context + "_artifact")}
+
+    if unified_index.keys() != artifact_index.keys():
+        missing_in_artifact = sorted(set(unified_index) - set(artifact_index))
+        missing_in_unified = sorted(set(artifact_index) - set(unified_index))
+        raise ValueError(
+            f"Mismatch in {context} identifiers. Missing in artifact: {missing_in_artifact}; "
+            f"missing in unified schema: {missing_in_unified}"
+        )
+
+    for name, unified_entry in unified_index.items():
+        artifact_entry = artifact_index[name]
+        if unified_entry.get("unit") != artifact_entry.get("unit"):
+            raise ValueError(
+                f"Unit mismatch for {name!r} in {context}: {artifact_entry.get('unit')!r} != {unified_entry.get('unit')!r}"
+            )
+        if bool(artifact_entry.get("required", False)) != bool(unified_entry.get("required", False)):
+            raise ValueError(
+                f"Required flag mismatch for {name!r} in {context}: "
+                f"{artifact_entry.get('required')!r} != {unified_entry.get('required')!r}"
+            )
 
 def load_payload(path: Path) -> Any:
     """Load a JSON or YAML payload from disk."""

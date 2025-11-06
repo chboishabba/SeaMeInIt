@@ -1,4 +1,9 @@
-"""Command line demo for fitting a scan point cloud to the SMPL-X template."""
+"""Command line demo for fitting a scan point cloud to the SMPL-X template.
+
+Manual measurement inputs provided to this script should follow the canonical
+definitions exposed in ``schemas/body_unified.yaml`` (see
+``schemas.validators.load_measurement_catalog``).
+"""
 
 from __future__ import annotations
 
