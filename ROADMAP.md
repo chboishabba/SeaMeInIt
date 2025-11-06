@@ -125,6 +125,15 @@
 🎨 Cluster D — good for demos, partners, and PR buzz
 
 
+✨ Future-Ready Bonus Paths (non-blocking)
+
+* 🤝 Integrate with TailorNet or Meshcapade’s existing APIs for shape regression
+
+* 📦 Use open synthetic datasets (like RenderPeople, FAUST, or MakeHuman exports) for pretraining
+
+* 🔄 Add constraint-based “reverse fit” mode (e.g., shape estimation from inside a known shell)
+
+
 # 📍 SeaMeInIt: Dev Roadmap (Features & Deliverables)
 
 ✅ - Completed 
@@ -141,10 +150,24 @@
 * ✅ Generate AGENTS.md
 ---
 
+
+
 ## **MAJOR MILESTONE 1: Foundational Platform**
 
 * 🔵 Parametric human body model (SMPL-X or MetaHuman)
+  * 🧠 1A.1: Statistical Body Inference Engine: Use 3–5 known measurements (e.g., chest, waist, bicep) to infer full body shape vector + remaining anthropometric values.
+  * Integrate SMPL PCA latent model or CAESAR-based regressor
+  * Implement projection logic from partial inputs → full latent shape vector
+  * Compute confidence ranges per inferred measurement
+  * Add override system to manually replace estimates
+* 🧮 1A.2: Fit Completion & Suggestion UX: Make the inference system interactive and adaptive.
+  * Add "Latent Fit" mode: shows which next input would improve certainty the most (active learning)
+  * Enable visual feedback for inferred vs explicit measurements
+  * Provide “body type” presets to guide regression (e.g., mesomorph, ectomorph, heavyset)
 * 🔵 Measurement-to-mesh pipeline (manual input + scan-based fitting)
+* 📈 1A.3: Training & Fine-Tuning Dataset Strategy: Allow the inference model to improve from user data (opt-in, privacy respecting).
+  * Define API schema for anonymized, de-identified measurement submission
+  * Store inference error deltas (inferred vs overridden) for improving future priors
 * 🔵 Unified schema for measurements, landmarks, rig, and inferred ranges
 * 🔵 Neutral-pose, fully rigged test dummy exportable to Unity/Unreal
 
