@@ -1,0 +1,257 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Suit Power Distribution Catalog",
+  "description": "Defines voltage domains, connectors, battery packs, and module compatibility for SeaMeInIt suit power systems.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "voltage_domains",
+    "connectors",
+    "module_profiles"
+  ],
+  "properties": {
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "voltage_domains": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/voltage_domain"
+      }
+    },
+    "connectors": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/connector"
+      }
+    },
+    "battery_packs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/battery_pack"
+      }
+    },
+    "module_profiles": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/module_profile"
+      }
+    },
+    "compatibility_rules": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/compatibility_rule"
+      }
+    }
+  },
+  "definitions": {
+    "voltage_domain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "nominal_voltage",
+        "min_voltage",
+        "max_voltage"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9_\\-]+$"
+        },
+        "nominal_voltage": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "min_voltage": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "max_voltage": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "connector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "voltage_domain",
+        "max_power_w",
+        "battery_pack",
+        "compatible_modules"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "voltage_domain": {
+          "type": "string",
+          "minLength": 1
+        },
+        "battery_pack": {
+          "type": "string",
+          "minLength": 1
+        },
+        "max_power_w": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "max_current_a": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "compatible_modules": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "battery_pack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "voltage_domain",
+        "capacity_wh",
+        "max_continuous_w"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9_\\-]+$"
+        },
+        "voltage_domain": {
+          "type": "string",
+          "minLength": 1
+        },
+        "capacity_wh": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "max_continuous_w": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "connectors": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "redundancy_group": {
+          "type": "string",
+          "minLength": 1
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "module_profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "module_type",
+        "voltage_domain",
+        "nominal_power_w"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9_\\-]+$"
+        },
+        "module_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "voltage_domain": {
+          "type": "string",
+          "minLength": 1
+        },
+        "nominal_power_w": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "peak_power_w": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "redundancy_paths": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "compatibility_rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "module_type",
+        "allowed_connectors"
+      ],
+      "properties": {
+        "module_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "allowed_connectors": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "minimum_paths": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "requires_redundancy": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}
