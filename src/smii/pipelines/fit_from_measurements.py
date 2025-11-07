@@ -11,6 +11,12 @@ import numpy as np
 
 from schemas.validators import load_measurement_catalog
 
+from pipelines.measurement_inference import (
+    GaussianMeasurementModel,
+    MeasurementReport,
+    load_default_model,
+)
+
 from .fit_from_images import extract_measurements_from_afflec_images
 
 SCHEMA_PATH = Path(__file__).resolve().parents[3] / "data" / "schemas" / "body_measurements.json"
@@ -55,6 +61,7 @@ class FitResult:
     translation: np.ndarray
     residual: float
     measurements_used: tuple[str, ...]
+    measurement_report: MeasurementReport
 
     def to_dict(self) -> dict:
         return {
@@ -63,6 +70,10 @@ class FitResult:
             "translation": self.translation.tolist(),
             "residual": float(self.residual),
             "measurements_used": list(self.measurements_used),
+            "measurement_report": {
+                "coverage": float(self.measurement_report.coverage),
+                "values": self.measurement_report.visualization_payload(),
+            },
         }
 
 
@@ -122,19 +133,27 @@ def fit_smplx_from_measurements(
     schema_path: Path | None = None,
     models: Sequence[MeasurementModel] = MEASUREMENT_MODELS,
     num_shape_coeffs: int = SMPLX_NUM_BETAS,
+    inference_model: GaussianMeasurementModel | None = None,
 ) -> FitResult:
     """Compute SMPL-X shape parameters from manual measurements."""
 
     schema = load_schema(schema_path)
-    validate_measurements(measurements, schema)
+    model = inference_model or load_default_model()
+    report = model.infer(measurements)
+    completed_measurements = report.values()
+    completed_measurements.update({name: float(value) for name, value in measurements.items()})
+
+    validate_measurements(completed_measurements, schema)
 
     coeffs, used_names, rms = fit_shape_coefficients(
-        measurements,
+        completed_measurements,
         models=models,
         num_shape_coeffs=num_shape_coeffs,
     )
 
-    scale = float(measurements.get("height", models_by_name(models)["height"].mean)) / models_by_name(models)["height"].mean
+    scale = float(
+        completed_measurements.get("height", models_by_name(models)["height"].mean)
+    ) / models_by_name(models)["height"].mean
     translation = np.zeros(3, dtype=float)
 
     return FitResult(
@@ -143,6 +162,7 @@ def fit_smplx_from_measurements(
         translation=translation,
         residual=rms,
         measurements_used=used_names,
+        measurement_report=report,
     )
 
 

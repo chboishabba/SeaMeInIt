@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from pipelines.measurement_inference import load_default_model
 from smii.pipelines.fit_from_measurements import (
     MEASUREMENT_MODELS,
     fit_shape_coefficients,
@@ -34,28 +35,36 @@ def test_fit_smplx_from_measurements_produces_expected_parameters() -> None:
         "hip_circumference": 98.0,
     }
 
-    result = fit_smplx_from_measurements(measurements, schema_path=SCHEMA_PATH)
+    inference_model = load_default_model()
+    result = fit_smplx_from_measurements(
+        measurements,
+        schema_path=SCHEMA_PATH,
+        inference_model=inference_model,
+    )
 
     expected_betas = np.array(
         [
-            1.8580307,
-            0.60650707,
-            -0.26539358,
-            -1.3971284,
-            5.66967583,
-            -1.26106621,
-            -3.12215697,
-            0.03928729,
-            0.68087977,
-            0.0,
+            1.55868667,
+            1.12056607,
+            0.17512983,
+            -0.92526525,
+            0.43574916,
+            2.43199782,
+            -0.68443765,
+            1.29737847,
+            2.5821451,
+            -10.93089473,
         ]
     )
 
-    assert result.measurements_used == tuple(sorted(measurements))
+    assert result.measurements_used == tuple(sorted(inference_model.names))
     assert result.betas == pytest.approx(expected_betas, rel=1e-6, abs=1e-6)
-    assert result.residual == pytest.approx(0.0, abs=1e-12)
+    assert result.residual == pytest.approx(0.21266870067297797, rel=1e-6)
     assert result.scale == pytest.approx(177.5 / 170.0)
     assert np.allclose(result.translation, np.zeros(3))
+    assert result.measurement_report.coverage == pytest.approx(4 / len(inference_model.names))
+    inferred = {estimate.name for estimate in result.measurement_report.inferred()}
+    assert {"shoulder_width", "arm_length", "inseam_length"} <= inferred
 
 
 def test_validate_measurements_reports_missing_entries() -> None:
