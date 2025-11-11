@@ -190,6 +190,14 @@ def plot_measurement_report(result: FitResult, output_dir: Path) -> Path | None:
     output_dir.mkdir(parents=True, exist_ok=True)
     values = [estimate.value for estimate in estimates]
     labels = [estimate.name for estimate in estimates]
+    yerr = []
+    for estimate in estimates:
+        variance = getattr(estimate, "variance", 0.0) or 0.0
+        if variance < 0:
+            variance = 0.0
+        yerr.append(float(np.sqrt(variance)))
+    yerr_array = np.asarray(yerr, dtype=float)
+    has_uncertainty = bool(np.any(yerr_array > 0))
 
     base_palette = {
         "measured": "#1f77b4",
@@ -208,10 +216,21 @@ def plot_measurement_report(result: FitResult, output_dir: Path) -> Path | None:
     fig_width = max(6.0, len(labels) * 0.6)
     fig, ax = plt.subplots(figsize=(fig_width, 4.5))
     indices = np.arange(len(labels))
-    bars = ax.bar(indices, values, color=colors, edgecolor="black", linewidth=0.6)
+    bars = ax.bar(
+        indices,
+        values,
+        color=colors,
+        edgecolor="black",
+        linewidth=0.6,
+        yerr=yerr_array,
+        capsize=4,
+    )
 
     ax.set_ylabel("Measurement value")
-    ax.set_title("Measurement report")
+    if has_uncertainty:
+        ax.set_title("Measurement report (bars show ±1σ)")
+    else:
+        ax.set_title("Measurement report")
     ax.set_xticks(indices, labels, rotation=45, ha="right")
     ax.grid(axis="y", linestyle="--", alpha=0.3)
 
