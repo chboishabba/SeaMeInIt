@@ -119,9 +119,10 @@ def run_afflec_fixture_demo(
     *,
     images: Iterable[Path] | None = None,
     output_dir: Path | None = None,
-    body_model_provider: str = "smplx",
+    model_assets: Path | None = None,
+    model_backend: str = "smplx",
 ) -> Path:
-    """Fit SMPL-X parameters from the bundled Afflec fixture images."""
+    """Fit SMPL family parameters from the bundled Afflec fixture images."""
 
     if importlib_util.find_spec("jsonschema") is None:
         raise ModuleNotFoundError(
@@ -154,12 +155,14 @@ def run_afflec_fixture_demo(
     print(f"Saved fitted parameters to {output_path}")
 
     mesh_path = target_dir / "afflec_body.npz"
+    asset_root = Path(model_assets) if model_assets is not None else Path("assets") / model_backend
     try:
-        vertices, faces = create_body_mesh(result, model_type=body_model_provider)
+        vertices, faces = create_body_mesh(result, model_path=asset_root)
     except FileNotFoundError as exc:
         raise FileNotFoundError(
-            "SMPL-X assets are required to generate the fitted body mesh. "
-            "Download the SMPL-X model files into assets/smplx to continue."
+            "SMPL-compatible assets are required to generate the fitted body mesh. "
+            f"Provision the '{model_backend}' bundle with `python tools/download_smplx.py --model {model_backend}` "
+            "and re-run the command (use --assets-root to supply a custom path)."
         ) from exc
     np.savez(mesh_path, vertices=vertices, faces=faces)
     print(f"Saved fitted body mesh to {mesh_path}")
@@ -205,17 +208,21 @@ def build_cli(argv: Sequence[str] | None = None) -> int:
         type=Path,
         help="Where to store the fitted parameter JSON",
     )
-    try:
-        from avatar_model.providers import available_providers
-
-        provider_choices = tuple(available_providers())
-    except Exception:  # pragma: no cover - defensive import fallback
-        provider_choices = ("smplx",)
     afflec.add_argument(
-        "--body-model-provider",
+        "--model-backend",
+        choices=("smplx", "smplerx"),
         default="smplx",
-        choices=provider_choices,
-        help="Registered body model provider to use for mesh generation",
+        help=(
+            "Which asset bundle to use when generating meshes. 'smplx' requires a licensed download; "
+            "'smplerx' installs the S-Lab 1.0 manifest. Use tools/download_smplx.py to provision the assets."
+        ),
+    )
+    afflec.add_argument(
+        "--assets-root",
+        type=Path,
+        help=(
+            "Override the asset directory. Defaults to assets/<model-backend> and must contain a manifest.json."
+        ),
     )
 
     args = parser.parse_args(argv)
@@ -234,7 +241,8 @@ def build_cli(argv: Sequence[str] | None = None) -> int:
         run_afflec_fixture_demo(
             images=args.images,
             output_dir=args.output,
-            body_model_provider=args.body_model_provider,
+            model_backend=args.model_backend,
+            model_assets=args.assets_root,
         )
         return 0
 

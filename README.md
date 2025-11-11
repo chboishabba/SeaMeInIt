@@ -18,18 +18,26 @@ SeaMeInIt 🛠️ is currently licensed under GPL-3.0, with intention towards a 
 
 This helps keep our work open, sustainable, and ethically aligned.
 
-## 🧊 SMPL-X assets and tooling
+## 🧊 Avatar body assets and tooling
 
-We rely on the [SMPL-X](https://smpl-x.is.tue.mpg.de/) body model for avatar generation. The assets are distributed under their
-own license and must be downloaded with an authenticated account.
+SeaMeInIt understands multiple SMPL-family asset bundles. Pick the bundle that matches your licensing constraints, then invoke
+the provisioning helper to download, verify, and extract the archive into `assets/<model>/`.
+
+| Bundle | Command | License | Notes |
+| ------ | ------- | ------- | ----- |
+| `smplx` | `python tools/download_smplx.py --model smplx --dest assets/smplx` | [SMPL-X model license](https://smpl-x.is.tue.mpg.de/) | Requires an authenticated download URL or cookie session. |
+| `smplerx` | `python tools/download_smplx.py --model smplerx --dest assets/smplerx` | [S-Lab License 1.0](https://raw.githubusercontent.com/caizhongang/SMPLer-X/main/LICENSE) | Open download; redistribution limited to non-commercial use. |
+
+Provisioning flow:
 
 1. Install the tooling extras: `pip install -e .[tools]`
-2. Export your authenticated download URL (or cookie-authenticated link) as `SMPLX_DOWNLOAD_URL`. Optionally, store the session
-   token in `SMPLX_AUTH_TOKEN` if your download flow requires it.
-3. Run the fetcher from the repository root: `python tools/download_smplx.py --dest assets/smplx`
+2. For licensed downloads export the authenticated link via `SMPLX_DOWNLOAD_URL` and optional `SMPLX_AUTH_TOKEN` cookie.
+   Override the canonical URLs with `--url` or reuse a local archive with `--archive`.
+3. (Optional) Supply `--sha256 <checksum>` to enforce integrity verification. Checksums can be recorded per manifest for future audits.
+4. Run the helper using one of the commands above. The script writes a `manifest.json` summarising the bundle (source URL,
+   license, checksum, top-level contents) so runtime tooling can automatically discover the assets.
 
-The script downloads the archive, verifies its checksum when available, and extracts the mesh packages into `assets/smplx/`. If
-you already have the archive locally, pass `--archive /path/to/SMPLX_NEUTRAL.npz` to reuse it without hitting the remote.
+Inspect the manifest at any time to confirm the bundle metadata, for example: `jq '.license, .sha256' assets/smplerx/manifest.json`.
 
 
 # **Next-Generation Adaptive Suit Platform** - Vision and Roadmap

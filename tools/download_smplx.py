@@ -1,19 +1,23 @@
-"""Download and extract licensed SMPL-X assets.
+"""Download and extract SeaMeInIt body model assets.
 
-The official distribution of SMPL-X requires a signed license and authenticated
-session.  This helper script streamlines fetching the archive once a user has a
-valid download URL or authenticated cookie.
+The helper understands both the licensed SMPL-X distribution (requiring an
+authenticated download URL) and open alternatives such as SMPLer-X. It handles
+fetching, checksum verification, extraction, and writes an asset manifest that
+other tooling can use to discover the installed bundle.
 """
 
 from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import shutil
 import sys
 import tarfile
 import tempfile
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 from urllib.parse import urlparse
@@ -21,8 +25,43 @@ import zipfile
 
 import requests
 
-DEFAULT_DEST = Path("assets/smplx")
 CHUNK_SIZE = 1024 * 1024  # 1 MiB
+
+
+@dataclass(frozen=True)
+class ModelSpec:
+    """Metadata describing a downloadable asset bundle."""
+
+    name: str
+    description: str
+    license: str
+    default_dest: Path
+    model_type: str = "smplx"
+    default_url: str | None = None
+    default_sha256: str | None = None
+    requires_authentication: bool = False
+
+
+MODEL_REGISTRY: dict[str, ModelSpec] = {
+    "smplx": ModelSpec(
+        name="smplx",
+        description="Official SMPL-X body model release.",
+        license=(
+            "SMPL-X Model License — requires registration at https://smpl-x.is.tue.mpg.de/."
+        ),
+        default_dest=Path("assets/smplx"),
+        requires_authentication=True,
+    ),
+    "smplerx": ModelSpec(
+        name="smplerx",
+        description="SMPLer-X pretrained checkpoint bundle (open download).",
+        license="S-Lab License 1.0 — redistribution for non-commercial use only.",
+        default_dest=Path("assets/smplerx"),
+        default_url=(
+            "https://huggingface.co/caizhongang/SMPLer-X/resolve/main/smplerx_models.zip?download=1"
+        ),
+    ),
+}
 
 
 class DownloadError(RuntimeError):
@@ -35,20 +74,66 @@ class ExtractionError(RuntimeError):
 
 def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--url", default=os.environ.get("SMPLX_DOWNLOAD_URL"), help="Authenticated download URL")
-    parser.add_argument("--token", default=os.environ.get("SMPLX_AUTH_TOKEN"), help="Optional session token (Cookie header)")
-    parser.add_argument("--archive", type=Path, help="Path to a pre-downloaded SMPL-X archive", default=None)
-    parser.add_argument("--dest", type=Path, default=DEFAULT_DEST, help="Destination directory for extracted assets")
-    parser.add_argument("--sha256", default=os.environ.get("SMPLX_ARCHIVE_SHA256"), help="Expected archive SHA-256 checksum")
-    parser.add_argument("--force", action="store_true", help="Overwrite the destination directory if it already exists")
+    parser.add_argument(
+        "--model",
+        choices=sorted(MODEL_REGISTRY),
+        default="smplx",
+        help=(
+            "Asset bundle to install. Defaults to 'smplx'; pass 'smplerx' to fetch the "
+            "open SMPLer-X release."
+        ),
+    )
+    parser.add_argument(
+        "--url",
+        default=os.environ.get("SMPLX_DOWNLOAD_URL"),
+        help=(
+            "Authenticated download URL. When omitted, the tool falls back to the "
+            "registry default for the selected model if one is available."
+        ),
+    )
+    parser.add_argument(
+        "--token",
+        default=os.environ.get("SMPLX_AUTH_TOKEN"),
+        help="Optional session token (Cookie header) for licensed downloads.",
+    )
+    parser.add_argument(
+        "--archive",
+        type=Path,
+        help="Path to a pre-downloaded archive to extract instead of fetching.",
+        default=None,
+    )
+    parser.add_argument(
+        "--dest",
+        type=Path,
+        default=None,
+        help="Destination directory for extracted assets (defaults to assets/<model>).",
+    )
+    parser.add_argument(
+        "--sha256",
+        default=os.environ.get("SMPLX_ARCHIVE_SHA256"),
+        help="Expected archive SHA-256 checksum for validation.",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite the destination directory if it already exists.",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: Iterable[str] | None = None) -> int:
     args = parse_args(argv)
-    dest = args.dest
+    spec = MODEL_REGISTRY[args.model]
 
-    if args.archive is None and not args.url:
+    if args.dest is None:
+        dest = spec.default_dest
+    else:
+        dest = args.dest
+
+    url = args.url or spec.default_url
+    sha256 = args.sha256 or spec.default_sha256
+
+    if args.archive is None and not url:
         raise DownloadError("A download URL or --archive path must be supplied.")
 
     if dest.exists():
@@ -61,13 +146,21 @@ def main(argv: Iterable[str] | None = None) -> int:
     if args.archive:
         archive_path = args.archive
     else:
-        archive_path = download_archive(args.url, args.token)
+        archive_path = download_archive(url, args.token)
 
-    if args.sha256:
-        verify_checksum(archive_path, args.sha256)
+    if sha256:
+        verify_checksum(archive_path, sha256)
 
     extract_archive(archive_path, dest)
+    manifest_path = write_manifest(
+        dest,
+        spec=spec,
+        source_url=url,
+        archive_path=archive_path if args.archive else None,
+        sha256=sha256,
+    )
     print(f"SMPL-X assets extracted to {dest.resolve()}")
+    print(f"Wrote asset manifest to {manifest_path}")
     return 0
 
 
@@ -141,6 +234,47 @@ def safe_extract(archive: tarfile.TarFile, dest: Path) -> None:
         if not str(member_path.resolve()).startswith(str(dest)):
             raise ExtractionError(f"Attempted path traversal in archive: {member.name}")
     archive.extractall(dest)
+
+
+def write_manifest(
+    dest: Path,
+    *,
+    spec: ModelSpec,
+    source_url: str | None,
+    archive_path: Path | None,
+    sha256: str | None,
+) -> Path:
+    """Persist metadata describing the installed asset bundle."""
+
+    entries: list[str] = []
+    try:
+        for child in dest.iterdir():
+            if child.name == "manifest.json":
+                continue
+            entries.append(str(child.relative_to(dest)))
+    except FileNotFoundError:
+        entries = []
+
+    manifest = {
+        "model": spec.name,
+        "model_type": spec.model_type,
+        "description": spec.description,
+        "license": spec.license,
+        "source_url": source_url,
+        "source_archive": str(archive_path) if archive_path else None,
+        "sha256": sha256,
+        "requires_authentication": spec.requires_authentication,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_by": "tools/download_smplx.py",
+        "contents": sorted(entries),
+    }
+
+    manifest_path = dest / "manifest.json"
+    dest.mkdir(parents=True, exist_ok=True)
+    with manifest_path.open("w", encoding="utf-8") as handle:
+        json.dump(manifest, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+    return manifest_path
 
 
 if __name__ == "__main__":  # pragma: no cover - CLI entry point

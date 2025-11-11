@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+import json
 from pathlib import Path
 from typing import Any, Mapping, TYPE_CHECKING
 
@@ -25,7 +26,7 @@ class BodyModelConfig:
     """Configuration options for :class:`BodyModel`."""
 
     model_path: Path
-    """Directory containing the body model assets."""
+    """Directory containing the SMPL-compatible model files."""
 
     model_type: str = "smplx"
     """Registered provider name to instantiate."""
@@ -49,11 +50,45 @@ class BodyModelConfig:
     """Floating point precision for model parameters."""
 
 
+def _load_manifest(root: Path) -> dict[str, object] | None:
+    """Return the asset manifest for ``root`` if one exists."""
+
+    manifest_path = root / "manifest.json"
+    if not manifest_path.exists():
+        return None
+    try:
+        with manifest_path.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return None
+    if isinstance(data, dict):
+        return data
+    return None
+
+
+def _bundle_name(manifest: dict[str, object] | None, assets_root: Path) -> str:
+    """Heuristic for the short name of the asset bundle."""
+
+    if manifest is not None:
+        value = manifest.get("model")
+        if isinstance(value, str) and value:
+            return value
+    return assets_root.name or "smplx"
+
+
 class BodyModel:
     """User-facing facade that delegates to registered model providers."""
 
     def __init__(self, config: BodyModelConfig | None = None, **kwargs: object) -> None:
-        """Instantiate a body model wrapper backed by a provider."""
+        """Instantiate a SMPL-X body model wrapper.
+
+        Parameters can either be supplied via a :class:`BodyModelConfig` or as
+        keyword arguments mirroring the dataclass fields.  ``model_path`` is the
+        only required option and should point to the folder containing SMPL
+        family assets (for example ``assets/smplx`` or ``assets/smplerx``).  The
+        provisioning helper writes a ``manifest.json`` alongside the assets,
+        which is used to provide clearer error messages when files are missing.
+        """
 
         if config is None:
             if "model_path" not in kwargs:
@@ -68,14 +103,52 @@ class BodyModel:
             config = replace(config, model_path=Path(config.model_path))
 
         self.config = config
+        self._verify_assets()
 
-        try:
-            self._provider: BodyModelProvider = create_provider(config.model_type, config)
-        except KeyError as exc:
-            options = ", ".join(available_providers()) or "<none>"
+        self.device = torch.device(config.device)
+        self.dtype = config.dtype
+        self.batch_size = config.batch_size
+
+        self._model = smplx.create(
+            model_path=str(config.model_path),
+            model_type=config.model_type,
+            gender=config.gender,
+            batch_size=config.batch_size,
+            num_betas=config.num_betas,
+            num_expression_coeffs=config.num_expression_coeffs,
+        ).to(self.device)
+        self._model.eval()
+
+        self._parameters: Dict[str, Tensor] = {}
+        self._initialise_parameters()
+
+    def _verify_assets(self) -> None:
+        """Ensure the configured SMPL-X assets are present before loading."""
+
+        assets_root = self.config.model_path
+        manifest = _load_manifest(assets_root)
+        bundle_name = _bundle_name(manifest, assets_root)
+
+        if not assets_root.exists():
             msg = (
-                f"Unknown body model provider '{config.model_type}'. "
-                f"Available providers: {options}."
+                "SMPL-compatible assets are required but were not found at"
+                f" {assets_root!s}. Provision them with"
+                f" `python tools/download_smplx.py --model {bundle_name}`"
+                " (add --dest to override the default location)."
+            )
+            raise FileNotFoundError(msg)
+
+        model_type = str(manifest.get("model_type", self.config.model_type)) if manifest else self.config.model_type
+        model_dir = assets_root / model_type
+        gender_suffix = self.config.gender.upper()
+        model_name = f"{model_type.upper()}_{gender_suffix}.npz"
+        model_file = model_dir / model_name
+        if not model_file.exists():
+            msg = (
+                f"Expected SMPL-X asset {model_name} in {model_dir!s}, but it was not"
+                " found. Ensure you have extracted the correct asset bundle"
+                f" (try `python tools/download_smplx.py --model {bundle_name}`)"
+                " and that the manifest matches the desired gender."
             )
             raise ValueError(msg) from exc
         except NotImplementedError as exc:
