@@ -7,6 +7,7 @@ from typing import Sequence
 import numpy as np
 import pytest
 
+from pipelines.measurement_inference import MeasurementEstimate, MeasurementReport
 import smii.pipelines.fit_from_measurements as cli
 
 
@@ -42,6 +43,19 @@ def test_cli_routes_image_arguments(monkeypatch: pytest.MonkeyPatch, tmp_path: P
             translation=np.zeros(3),
             residual=0.0,
             measurements_used=tuple(sorted(measurements)),
+            measurement_report=MeasurementReport(
+                estimates=tuple(
+                    MeasurementEstimate(
+                        name=name,
+                        value=float(value),
+                        source="measured",
+                        confidence=1.0,
+                        variance=0.0,
+                    )
+                    for name, value in measurements.items()
+                ),
+                coverage=1.0,
+            ),
         )
 
     recorder = RecordingSave()

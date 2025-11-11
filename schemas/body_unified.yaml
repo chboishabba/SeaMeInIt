@@ -71,6 +71,14 @@ properties:
     minItems: 1
     items:
       $ref: "#/$defs/motionRange"
+  mobility_constraints:
+    type: array
+    description: >-
+      Additional flexibility or mobility constraints derived from assessments
+      beyond the canonical motion ranges (e.g., shoulder max rotation
+      adjustments or spine mobility classifications).
+    items:
+      $ref: "#/$defs/mobilityConstraint"
 $defs:
   identifier:
     type: string
@@ -293,6 +301,86 @@ $defs:
                 - mm
       notes:
         type: string
+  mobilityConstraint:
+    type: object
+    required:
+      - id
+      - joint
+      - constraint_type
+    additionalProperties: false
+    properties:
+      id:
+        $ref: "#/$defs/identifier"
+      joint:
+        $ref: "#/$defs/identifier"
+      constraint_type:
+        type: string
+        enum:
+          - range_override
+          - mobility_class
+          - stiffness_adjustment
+      axis:
+        type: string
+        enum:
+          - flexion_extension
+          - abduction_adduction
+          - internal_external_rotation
+          - pronation_supination
+          - inversion_eversion
+          - translation_x
+          - translation_y
+          - translation_z
+        description: Axis affected by the constraint when applicable.
+      limit:
+        type: object
+        required:
+          - min
+          - max
+          - unit
+        additionalProperties: false
+        properties:
+          min:
+            type: number
+          max:
+            type: number
+          neutral:
+            type: number
+          unit:
+            type: string
+            enum:
+              - deg
+              - mm
+          confidence:
+            type: number
+            minimum: 0
+            maximum: 1
+        description: Range bounds overriding or refining canonical motion limits.
+      classification:
+        $ref: "#/$defs/mobilityClassification"
+      confidence:
+        type: number
+        minimum: 0
+        maximum: 1
+      notes:
+        type: string
+  mobilityClassification:
+    type: object
+    required:
+      - id
+      - label
+    additionalProperties: false
+    properties:
+      id:
+        type: string
+        pattern: '^[A-Z0-9_\-]+$'
+      label:
+        type: string
+        minLength: 1
+      description:
+        type: string
+      reference:
+        type: string
+        description: External standard or assessment protocol identifier.
 x-measurements:
   version: "1.0.0"
   description: Schema enumerating manual tape measurements and scan landmarks required for SMPL-X fitting.

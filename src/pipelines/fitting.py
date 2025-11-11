@@ -27,6 +27,7 @@ class FittingPipeline:
         measurements: Sequence[Mapping[str, Any]],
         joints: Sequence[Mapping[str, Any]],
         motion_ranges: Sequence[Mapping[str, Any]],
+        mobility_constraints: Sequence[Mapping[str, Any]] | None = None,
     ) -> Dict[str, Any]:
         """Return a schema-compliant record for the fitted subject."""
 
@@ -37,6 +38,7 @@ class FittingPipeline:
             measurements=measurements,
             joints=joints,
             motion_ranges=motion_ranges,
+            mobility_constraints=mobility_constraints,
             solver=self.solver,
             schema_name=self.schema_name,
             overrides=self.metadata_overrides,
@@ -52,6 +54,7 @@ def build_body_record(
     measurements: Sequence[Mapping[str, Any]],
     joints: Sequence[Mapping[str, Any]],
     motion_ranges: Sequence[Mapping[str, Any]],
+    mobility_constraints: Sequence[Mapping[str, Any]] | None = None,
     solver: str,
     schema_name: str = DEFAULT_SCHEMA_NAME,
     overrides: Mapping[str, Any] | None = None,
@@ -59,6 +62,7 @@ def build_body_record(
     """Assemble and validate a body record suitable for downstream tools."""
 
     overrides = overrides or {}
+    mobility_constraints = mobility_constraints or ()
     enriched_metadata: Dict[str, Any] = {
         "schema_version": overrides.get("schema_version", metadata.get("schema_version", "v1.0.0")),
         "coordinate_frame": metadata.get("coordinate_frame", overrides.get("coordinate_frame", "smii_body_local")),
@@ -78,6 +82,7 @@ def build_body_record(
         "measurements": list(measurements),
         "joints": list(joints),
         "motion_ranges": list(motion_ranges),
+        "mobility_constraints": list(mobility_constraints),
     }
 
     validate_body_payload(record, schema_name=schema_name)
