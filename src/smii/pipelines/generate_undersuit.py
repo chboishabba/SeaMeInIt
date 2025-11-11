@@ -10,6 +10,7 @@ from typing import Any
 
 import numpy as np
 
+from exporters.patterns import PatternExporter
 from modules.cooling import plan_cooling_layout
 from suit import UnderSuitGenerator, UnderSuitOptions
 from suit.thermal_zones import DEFAULT_THERMAL_ZONE_SPEC
@@ -78,6 +79,109 @@ def _write_metadata(path: Path, metadata: Mapping[str, Any]) -> None:
         json.dump(serialisable, stream, indent=2)
 
 
+def _load_panel_definitions(path: Path | None) -> tuple[dict[str, Any], ...]:
+    if path is None:
+        return ()
+    with path.open("r", encoding="utf-8") as stream:
+        payload = json.load(stream)
+
+    panels_iter: list[Any]
+    if isinstance(payload, Mapping):
+        raw_panels = payload.get("panels", payload)
+        if isinstance(raw_panels, Mapping):
+            panels_iter = [
+                {"name": str(name), **(dict(definition) if isinstance(definition, Mapping) else {})}
+                for name, definition in raw_panels.items()
+            ]
+        elif isinstance(raw_panels, Sequence) and not isinstance(raw_panels, (str, bytes)):
+            panels_iter = [panel for panel in raw_panels]
+        else:
+            raise TypeError("Panel definition file must provide a 'panels' array or mapping.")
+    elif isinstance(payload, Sequence) and not isinstance(payload, (str, bytes)):
+        panels_iter = [panel for panel in payload]
+    else:
+        raise TypeError("Panel definition file must contain an object or array.")
+
+    result: list[dict[str, Any]] = []
+    for index, panel in enumerate(panels_iter):
+        if not isinstance(panel, Mapping):
+            raise TypeError("Each panel definition must be a JSON object.")
+        panel_dict = dict(panel)
+        name = str(panel_dict.get("name", f"panel_{index}"))
+        indices = panel_dict.get("indices") or panel_dict.get("vertex_indices")
+        if indices is None:
+            raise KeyError(f"Panel '{name}' must define an 'indices' array referencing base vertices.")
+        if not isinstance(indices, Sequence) or isinstance(indices, (str, bytes)):
+            raise TypeError(f"Panel '{name}' indices must be an array of integers.")
+        panel_dict["name"] = name
+        result.append(panel_dict)
+    return tuple(result)
+
+
+def _load_seam_overrides(path: Path | None) -> dict[str, dict[str, Any]] | None:
+    if path is None:
+        return None
+    with path.open("r", encoding="utf-8") as stream:
+        payload = json.load(stream)
+
+    if not isinstance(payload, Mapping):
+        raise TypeError("Seam override payload must be a JSON object.")
+
+    seams_obj = payload.get("panels", payload)
+    if not isinstance(seams_obj, Mapping):
+        raise TypeError("Seam overrides must map panel names to configuration objects.")
+
+    seams: dict[str, dict[str, Any]] = {}
+    for name, overrides in seams_obj.items():
+        if isinstance(overrides, Mapping):
+            seams[str(name)] = {key: value for key, value in overrides.items()}
+        else:
+            raise TypeError("Each seam override entry must be an object with configuration values.")
+    return seams
+
+
+def _fan_triangulation(vertex_count: int) -> list[tuple[int, int, int]]:
+    if vertex_count < 3:
+        return []
+    return [(0, i, i + 1) for i in range(1, vertex_count - 1)]
+
+
+def _build_panel_payload(
+    base_vertices: np.ndarray, definitions: Sequence[Mapping[str, Any]]
+) -> dict[str, Any]:
+    panels: list[dict[str, Any]] = []
+    for index, definition in enumerate(definitions):
+        name = str(definition.get("name", f"panel_{index}"))
+        raw_indices = definition.get("indices") or definition.get("vertex_indices")
+        if raw_indices is None:
+            raise KeyError(f"Panel '{name}' must define an 'indices' array.")
+        if not isinstance(raw_indices, Sequence) or isinstance(raw_indices, (str, bytes)):
+            raise TypeError(f"Panel '{name}' indices must be a sequence of integers.")
+        indices = [int(idx) for idx in raw_indices]
+        try:
+            panel_vertices = base_vertices[indices]
+        except IndexError as exc:  # pragma: no cover - defensive guard
+            raise IndexError(f"Panel '{name}' references an out-of-range vertex index.") from exc
+
+        vertices = [list(map(float, vertex)) for vertex in panel_vertices]
+        faces_payload = definition.get("faces") or definition.get("triangles")
+        if faces_payload is None:
+            faces = _fan_triangulation(len(indices))
+        elif not isinstance(faces_payload, Sequence) or isinstance(faces_payload, (str, bytes)):
+            raise TypeError(f"Panel '{name}' faces must be an array of index triples.")
+        else:
+            faces = [tuple(int(i) for i in face) for face in faces_payload]
+
+        panels.append(
+            {
+                "name": name,
+                "vertices": vertices,
+                "faces": [list(face) for face in faces],
+            }
+        )
+    return {"panels": panels}
+
+
 def generate_undersuit(
     body_path: Path,
     *,
@@ -86,6 +190,8 @@ def generate_undersuit(
     options: UnderSuitOptions | None = None,
     embed_cooling: bool = False,
     cooling_medium: str = "liquid",
+    panels_json: Path | None = None,
+    seams_json: Path | None = None,
 ) -> None:
     """Run the undersuit generation pipeline and persist all artefacts."""
 
@@ -133,6 +239,30 @@ def generate_undersuit(
             medium=cooling_medium,
             metadata=metadata,
         )
+
+    panel_definitions = _load_panel_definitions(panels_json)
+    if panel_definitions:
+        seams = _load_seam_overrides(seams_json)
+        mesh_payload = _build_panel_payload(result.base_layer.vertices, panel_definitions)
+        exporter = PatternExporter()
+        pattern_dir = target_dir / "patterns"
+        exported = exporter.export(
+            mesh_payload,
+            seams,
+            output_dir=pattern_dir,
+            metadata={"body_record": str(body_path)},
+        )
+        pattern_metadata: dict[str, Any] = {
+            "panel_source": str(panels_json),
+            "panels": [panel["name"] for panel in mesh_payload["panels"]],
+            "files": {fmt: str(path) for fmt, path in exported.items()},
+            "panel_count": len(mesh_payload["panels"]),
+        }
+        if seams_json is not None:
+            pattern_metadata["seam_source"] = str(seams_json)
+        if seams is not None:
+            pattern_metadata["seams"] = seams
+        metadata["patterns"] = pattern_metadata
 
     _write_metadata(target_dir / "metadata.json", metadata)
 
@@ -253,6 +383,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         default="liquid",
         help="Cooling medium used when embedding circuits.",
     )
+    parser.add_argument(
+        "--panels-json",
+        type=Path,
+        help="Optional JSON file describing undersuit panel vertex indices.",
+    )
+    parser.add_argument(
+        "--seams-json",
+        type=Path,
+        help="Optional JSON file mapping panel names to seam metadata overrides.",
+    )
     args = parser.parse_args(argv)
 
     measurements = _load_measurements(args.measurements)
@@ -265,6 +405,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         options=options,
         embed_cooling=args.embed_cooling,
         cooling_medium=args.cooling_medium,
+        panels_json=args.panels_json,
+        seams_json=args.seams_json,
     )
 
     return 0
