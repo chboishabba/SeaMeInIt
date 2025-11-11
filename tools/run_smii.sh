@@ -24,6 +24,10 @@ bootstrap_dependencies() {
 }
 
 ensure_environment() {
+    if [ "${SMII_SKIP_BOOTSTRAP:-}" = "1" ]; then
+        return
+    fi
+
     if [ ! -d "${VENV_DIR}" ]; then
         create_venv
     fi
@@ -50,34 +54,52 @@ and dispatches to a common helper. Recognised commands:
                 Fetch SMPL-X assets (python tools/download_smplx.py)
 
 Any other command is executed verbatim inside the virtual environment.
+
+Pass a leading "--" to forward dash-prefixed arguments to the target command,
+e.g. $(basename "$0") pytest -- --maxfail=1.
 USAGE
 }
 
 run_command() {
+    if [ $# -eq 0 ]; then
+        print_usage
+        exit 1
+    fi
+
+    if [ "${1:-}" = "--" ]; then
+        shift || true
+    fi
+
+    if [ $# -eq 0 ]; then
+        echo "No command provided after -- sentinel." >&2
+        print_usage
+        exit 1
+    fi
+
     local cmd="$1"
     shift || true
 
     case "${cmd}" in
         interactive|afflec-demo)
-            exec python -m smii "${cmd}" "$@"
+            exec -- python -m smii "${cmd}" "$@"
             ;;
         smii)
-            exec python -m smii "$@"
+            exec -- python -m smii "$@"
             ;;
         pytest)
-            exec python -m pytest "$@"
+            exec -- python -m pytest "$@"
             ;;
         download-smplx)
-            exec python "${ROOT_DIR}/tools/download_smplx.py" "$@"
+            exec -- python "${ROOT_DIR}/tools/download_smplx.py" "$@"
             ;;
         *)
-            exec "${cmd}" "$@"
+            exec -- "${cmd}" "$@"
             ;;
     esac
 }
 
 main() {
-    if [ $# -eq 0 ]; then
+    if [ $# -eq 0 ] || [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
         print_usage
         exit 0
     fi
