@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from importlib import util as importlib_util
 from pathlib import Path
 
 import numpy as np
@@ -170,6 +171,73 @@ def save_fit(result: FitResult, output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as stream:
         json.dump(result.to_dict(), stream, indent=2)
+
+
+def plot_measurement_report(result: FitResult, output_dir: Path) -> Path | None:
+    """Visualise the measurement report if matplotlib is available."""
+
+    if importlib_util.find_spec("matplotlib") is None:
+        return None
+
+    estimates = result.measurement_report.estimates
+    if not estimates:
+        return None
+
+    from matplotlib import colors as mcolors
+    from matplotlib import pyplot as plt
+    from matplotlib.patches import Patch
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    values = [estimate.value for estimate in estimates]
+    labels = [estimate.name for estimate in estimates]
+
+    base_palette = {
+        "measured": "#1f77b4",
+        "inferred": "#ff7f0e",
+    }
+    color_lookup: dict[str, tuple[float, float, float, float]] = {}
+    colors = []
+    for estimate in estimates:
+        base_color = base_palette.get(estimate.source, "#6c757d")
+        rgba = list(mcolors.to_rgba(base_color))
+        confidence = max(0.0, min(1.0, float(estimate.confidence)))
+        rgba[3] = 0.35 + 0.65 * confidence
+        colors.append(tuple(rgba))
+        color_lookup.setdefault(estimate.source, tuple(rgba))
+
+    fig_width = max(6.0, len(labels) * 0.6)
+    fig, ax = plt.subplots(figsize=(fig_width, 4.5))
+    indices = np.arange(len(labels))
+    bars = ax.bar(indices, values, color=colors, edgecolor="black", linewidth=0.6)
+
+    ax.set_ylabel("Measurement value")
+    ax.set_title("Measurement report")
+    ax.set_xticks(indices, labels, rotation=45, ha="right")
+    ax.grid(axis="y", linestyle="--", alpha=0.3)
+
+    legend_handles = [
+        Patch(facecolor=color_lookup[source], label=source.title())
+        for source in sorted(color_lookup)
+    ]
+    if legend_handles:
+        ax.legend(handles=legend_handles, title="Source", loc="best")
+
+    for bar, estimate in zip(bars, estimates):
+        ax.annotate(
+            f"{estimate.value:.1f}",
+            xy=(bar.get_x() + bar.get_width() / 2, bar.get_height()),
+            xytext=(0, 3),
+            textcoords="offset points",
+            ha="center",
+            va="bottom",
+            fontsize="small",
+        )
+
+    fig.tight_layout()
+    plot_path = output_dir / "measurement_report.png"
+    fig.savefig(plot_path, dpi=150)
+    plt.close(fig)
+    return plot_path
 
 
 def _load_measurements_from_json(path: Path) -> Mapping[str, float]:
