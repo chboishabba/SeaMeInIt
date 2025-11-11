@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from importlib import util as importlib_util
 from pathlib import Path
 from typing import Sequence
 
@@ -97,6 +98,69 @@ def _write_pose_table(path: Path, result_dict: dict[str, object]) -> None:
         stream.write("\n".join(rows))
 
 
+def _plot_clearance_metrics(directory: Path, result_dict: dict[str, object]) -> Path | None:
+    """Render a quick-look plot summarising clearance metrics."""
+
+    if importlib_util.find_spec("matplotlib") is None:
+        return None
+
+    import matplotlib.pyplot as plt  # type: ignore[import]
+
+    poses: list[dict[str, object]] = [
+        pose for pose in result_dict.get("poses", []) if isinstance(pose, dict)
+    ]
+    if not poses:
+        return None
+
+    indices = [int(pose.get("index", idx)) for idx, pose in enumerate(poses)]
+    min_clearances = [float(pose.get("min_clearance", 0.0)) for pose in poses]
+    max_penetrations = [float(pose.get("max_penetration", 0.0)) for pose in poses]
+    contact_counts = [int(pose.get("contact_count", 0)) for pose in poses]
+
+    fig, ax_clearance = plt.subplots(figsize=(10, 6))
+    ax_contacts = ax_clearance.twinx()
+
+    ax_clearance.plot(
+        indices,
+        min_clearances,
+        label="Min clearance (m)",
+        color="tab:blue",
+        marker="o",
+    )
+    ax_clearance.plot(
+        indices,
+        [-value for value in max_penetrations],
+        label="Max penetration (m)",
+        color="tab:red",
+        marker="s",
+    )
+    ax_clearance.axhline(0.0, color="black", linewidth=1, linestyle="--", alpha=0.5)
+    ax_clearance.set_xlabel("Pose index")
+    ax_clearance.set_ylabel("Clearance / Penetration (m)")
+
+    ax_contacts.bar(
+        indices,
+        contact_counts,
+        label="Contact count",
+        color="tab:green",
+        alpha=0.3,
+    )
+    ax_contacts.set_ylabel("Contact count")
+
+    lines, labels = ax_clearance.get_legend_handles_labels()
+    contacts_lines, contacts_labels = ax_contacts.get_legend_handles_labels()
+    ax_clearance.legend(lines + contacts_lines, labels + contacts_labels, loc="upper right")
+
+    ax_clearance.set_title("Hard-shell clearance summary")
+    fig.tight_layout()
+
+    directory.mkdir(parents=True, exist_ok=True)
+    plot_path = directory / "clearance_metrics.png"
+    fig.savefig(plot_path, dpi=200)
+    plt.close(fig)
+    return plot_path
+
+
 def run_clearance(
     shell_path: Path,
     target_path: Path,
@@ -116,6 +180,7 @@ def run_clearance(
     _write_json_report(target_dir / "report.json", payload)
     _write_text_report(target_dir / "report.txt", payload)
     _write_pose_table(target_dir / "poses.csv", payload)
+    _plot_clearance_metrics(target_dir, payload)
     return target_dir
 
 
