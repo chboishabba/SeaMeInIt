@@ -7,9 +7,10 @@ import pytest
 
 from pipelines.measurement_inference import load_default_model
 from smii.pipelines.fit_from_measurements import (
-    MEASUREMENT_MODELS,
+    DEFAULT_NUM_BETAS,
     fit_shape_coefficients,
     fit_smplx_from_measurements,
+    load_backend_config,
     load_schema,
     validate_measurements,
 )
@@ -18,9 +19,12 @@ SCHEMA_PATH = Path(__file__).resolve().parents[2] / "data" / "schemas" / "body_m
 
 
 def test_fit_shape_coefficients_at_mean_values_returns_zero_vector() -> None:
-    measurements = {model.name: model.mean for model in MEASUREMENT_MODELS}
+    backend_config = load_backend_config()
+    measurements = {model.name: model.mean for model in backend_config.models}
 
-    coeffs, used_names, residual = fit_shape_coefficients(measurements)
+    coeffs, used_names, residual = fit_shape_coefficients(
+        measurements, models=backend_config.models
+    )
 
     assert used_names == tuple(sorted(measurements))
     assert np.allclose(coeffs, np.zeros_like(coeffs))
@@ -65,6 +69,36 @@ def test_fit_smplx_from_measurements_produces_expected_parameters() -> None:
     assert result.measurement_report.coverage == pytest.approx(4 / len(inference_model.names))
     inferred = {estimate.name for estimate in result.measurement_report.inferred()}
     assert {"shoulder_width", "arm_length", "inseam_length"} <= inferred
+
+
+def test_alternative_backend_matches_default_coefficients() -> None:
+    measurements = {
+        "height": 177.5,
+        "chest_circumference": 103.0,
+        "waist_circumference": 87.0,
+        "hip_circumference": 98.0,
+    }
+
+    inference_model = load_default_model()
+    default_result = fit_smplx_from_measurements(
+        measurements,
+        schema_path=SCHEMA_PATH,
+        inference_model=inference_model,
+    )
+
+    alt_result = fit_smplx_from_measurements(
+        measurements,
+        backend="smplx_alt",
+        schema_path=SCHEMA_PATH,
+        inference_model=inference_model,
+    )
+
+    assert alt_result.measurements_used == default_result.measurements_used
+    np.testing.assert_allclose(alt_result.betas[:DEFAULT_NUM_BETAS], default_result.betas)
+    if alt_result.betas.size > DEFAULT_NUM_BETAS:
+        np.testing.assert_allclose(alt_result.betas[DEFAULT_NUM_BETAS:], 0.0)
+    assert alt_result.scale == pytest.approx(default_result.scale)
+    assert alt_result.residual == pytest.approx(default_result.residual)
 
 
 def test_validate_measurements_reports_missing_entries() -> None:
