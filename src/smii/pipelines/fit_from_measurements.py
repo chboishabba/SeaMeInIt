@@ -39,17 +39,39 @@ class MeasurementModel:
 
 MEASUREMENT_MODELS: tuple[MeasurementModel, ...] = (
     MeasurementModel("height", 170.0, 7.5, (0.45, 0.05, 0.02, 0.0, 0.03, 0.0, 0.01, 0.0, 0.0, 0.0)),
-    MeasurementModel("chest_circumference", 95.0, 8.0, (0.6, 0.2, 0.05, 0.03, 0.0, 0.02, 0.05, 0.01, 0.0, 0.0)),
-    MeasurementModel("waist_circumference", 80.0, 7.0, (0.1, 0.55, 0.05, 0.05, 0.1, 0.02, 0.0, 0.04, 0.03, 0.0)),
-    MeasurementModel("hip_circumference", 98.0, 8.5, (0.05, 0.05, 0.6, 0.08, 0.05, 0.02, 0.04, 0.02, 0.02, 0.0)),
-    MeasurementModel("shoulder_width", 42.0, 2.5, (0.15, 0.05, 0.02, 0.4, 0.02, 0.1, 0.05, 0.1, 0.0, 0.0)),
-    MeasurementModel("neck_circumference", 36.0, 2.5, (0.18, 0.02, 0.0, 0.05, 0.35, 0.05, 0.02, 0.0, 0.05, 0.0)),
-    MeasurementModel("arm_length", 60.0, 4.5, (0.05, 0.05, 0.0, 0.12, 0.02, 0.3, 0.08, 0.12, 0.05, 0.0)),
-    MeasurementModel("inseam_length", 78.0, 5.0, (0.05, 0.04, 0.08, 0.02, 0.0, 0.1, 0.4, 0.08, 0.08, 0.05)),
-    MeasurementModel("thigh_circumference", 55.0, 5.0, (0.0, 0.05, 0.45, 0.02, 0.0, 0.1, 0.3, 0.05, 0.02, 0.01)),
-    MeasurementModel("calf_circumference", 37.0, 3.5, (0.0, 0.02, 0.2, 0.01, 0.0, 0.05, 0.1, 0.4, 0.1, 0.02)),
-    MeasurementModel("bicep_circumference", 30.0, 3.0, (0.1, 0.05, 0.02, 0.15, 0.02, 0.25, 0.05, 0.12, 0.1, 0.02)),
-    MeasurementModel("wrist_circumference", 16.0, 1.0, (0.02, 0.01, 0.0, 0.06, 0.03, 0.15, 0.02, 0.2, 0.15, 0.1)),
+    MeasurementModel(
+        "chest_circumference", 95.0, 8.0, (0.6, 0.2, 0.05, 0.03, 0.0, 0.02, 0.05, 0.01, 0.0, 0.0)
+    ),
+    MeasurementModel(
+        "waist_circumference", 80.0, 7.0, (0.1, 0.55, 0.05, 0.05, 0.1, 0.02, 0.0, 0.04, 0.03, 0.0)
+    ),
+    MeasurementModel(
+        "hip_circumference", 98.0, 8.5, (0.05, 0.05, 0.6, 0.08, 0.05, 0.02, 0.04, 0.02, 0.02, 0.0)
+    ),
+    MeasurementModel(
+        "shoulder_width", 42.0, 2.5, (0.15, 0.05, 0.02, 0.4, 0.02, 0.1, 0.05, 0.1, 0.0, 0.0)
+    ),
+    MeasurementModel(
+        "neck_circumference", 36.0, 2.5, (0.18, 0.02, 0.0, 0.05, 0.35, 0.05, 0.02, 0.0, 0.05, 0.0)
+    ),
+    MeasurementModel(
+        "arm_length", 60.0, 4.5, (0.05, 0.05, 0.0, 0.12, 0.02, 0.3, 0.08, 0.12, 0.05, 0.0)
+    ),
+    MeasurementModel(
+        "inseam_length", 78.0, 5.0, (0.05, 0.04, 0.08, 0.02, 0.0, 0.1, 0.4, 0.08, 0.08, 0.05)
+    ),
+    MeasurementModel(
+        "thigh_circumference", 55.0, 5.0, (0.0, 0.05, 0.45, 0.02, 0.0, 0.1, 0.3, 0.05, 0.02, 0.01)
+    ),
+    MeasurementModel(
+        "calf_circumference", 37.0, 3.5, (0.0, 0.02, 0.2, 0.01, 0.0, 0.05, 0.1, 0.4, 0.1, 0.02)
+    ),
+    MeasurementModel(
+        "bicep_circumference", 30.0, 3.0, (0.1, 0.05, 0.02, 0.15, 0.02, 0.25, 0.05, 0.12, 0.1, 0.02)
+    ),
+    MeasurementModel(
+        "wrist_circumference", 16.0, 1.0, (0.02, 0.01, 0.0, 0.06, 0.03, 0.15, 0.02, 0.2, 0.15, 0.1)
+    ),
 )
 
 
@@ -82,6 +104,7 @@ def create_body_mesh(
     result: FitResult,
     *,
     model_path: Path | None = None,
+    model_type: str = "smplx",
     gender: str = "neutral",
 ) -> tuple[np.ndarray, np.ndarray]:
     """Generate a body mesh from fitted parameters.
@@ -91,8 +114,10 @@ def create_body_mesh(
     result:
         The fitted SMPL-X parameters to apply to the model.
     model_path:
-        Optional override for the SMPL-X asset directory. Defaults to
-        ``assets/smplx`` relative to the project root.
+        Optional override for the asset directory used by the provider.
+        Defaults to ``assets/<model_type>`` relative to the project root.
+    model_type:
+        The registered provider name to instantiate (``smplx`` by default).
     gender:
         Gendered SMPL-X model variant to load.
 
@@ -103,12 +128,7 @@ def create_body_mesh(
         arrays.
     """
 
-    assets = Path(model_path) if model_path is not None else Path("assets/smplx")
-    if not assets.exists():
-        raise FileNotFoundError(
-            "SMPL-X assets are required to construct a body mesh; "
-            f"no assets were found at {assets!s}."
-        )
+    assets = Path(model_path) if model_path is not None else Path("assets") / model_type
 
     from avatar_model import BodyModel
 
@@ -119,6 +139,7 @@ def create_body_mesh(
 
     model = BodyModel(
         model_path=assets,
+        model_type=model_type,
         gender=gender,
         batch_size=1,
         num_betas=num_betas,
@@ -149,11 +170,15 @@ def required_measurements(schema: Mapping[str, Iterable[Mapping[str, object]]]) 
     return {
         item["name"]
         for item in manual
-        if isinstance(item, Mapping) and item.get("required") is True and isinstance(item.get("name"), str)
+        if isinstance(item, Mapping)
+        and item.get("required") is True
+        and isinstance(item.get("name"), str)
     }
 
 
-def validate_measurements(measurements: Mapping[str, float], schema: Mapping[str, object] | None = None) -> None:
+def validate_measurements(
+    measurements: Mapping[str, float], schema: Mapping[str, object] | None = None
+) -> None:
     schema = schema or load_schema()
     missing = [name for name in required_measurements(schema) if name not in measurements]
     if missing:
@@ -211,9 +236,10 @@ def fit_smplx_from_measurements(
         num_shape_coeffs=num_shape_coeffs,
     )
 
-    scale = float(
-        completed_measurements.get("height", models_by_name(models)["height"].mean)
-    ) / models_by_name(models)["height"].mean
+    scale = (
+        float(completed_measurements.get("height", models_by_name(models)["height"].mean))
+        / models_by_name(models)["height"].mean
+    )
     translation = np.zeros(3, dtype=float)
 
     return FitResult(

@@ -1,4 +1,5 @@
 """Utilities to export SMPL-X meshes for Unity and Unreal."""
+
 from __future__ import annotations
 
 import json
@@ -37,6 +38,7 @@ class SMPLXTemplate:
     joint_positions: List[Tuple[float, float, float]]
     skin_weights: List[Tuple[float, float, float, float]]
     skin_joints: List[Tuple[int, int, int, int]]
+    model_type: str = "smplx"
 
     def validate(self) -> None:
         vertex_count = len(self.vertices)
@@ -106,8 +108,17 @@ def load_smplx_template(
     joint_positions: Sequence[Sequence[float]],
     skin_weights: Sequence[Sequence[float]],
     skin_joints: Sequence[Sequence[int]],
+    *,
+    model_type: str = "smplx",
 ) -> SMPLXTemplate:
-    """Create a :class:`SMPLXTemplate` from python sequences."""
+    """Create a :class:`SMPLXTemplate` from python sequences.
+
+    Parameters
+    ----------
+    model_type:
+        Registered provider name that produced the template (``smplx`` by
+        default). Stored as metadata on the resulting dataclass.
+    """
 
     template = SMPLXTemplate(
         vertices=[tuple(map(float, vertex)) for vertex in vertices],
@@ -117,6 +128,7 @@ def load_smplx_template(
         joint_positions=[tuple(map(float, pos)) for pos in joint_positions],
         skin_weights=[tuple(map(float, weight)) for weight in skin_weights],
         skin_joints=[tuple(int(idx) for idx in joint) for joint in skin_joints],
+        model_type=model_type,
     )
     template.validate()
     return template
@@ -225,8 +237,16 @@ class UnityUnrealExporter:
             return view_index, accessor_index
 
         pos_bytes = b"".join(struct.pack("<3f", *vertex) for vertex in positions_scaled)
-        min_pos = [min(coords) for coords in zip(*positions_scaled)] if positions_scaled else [0.0, 0.0, 0.0]
-        max_pos = [max(coords) for coords in zip(*positions_scaled)] if positions_scaled else [0.0, 0.0, 0.0]
+        min_pos = (
+            [min(coords) for coords in zip(*positions_scaled)]
+            if positions_scaled
+            else [0.0, 0.0, 0.0]
+        )
+        max_pos = (
+            [max(coords) for coords in zip(*positions_scaled)]
+            if positions_scaled
+            else [0.0, 0.0, 0.0]
+        )
         _, pos_accessor = add_buffer_view(
             pos_bytes,
             target=34962,
@@ -324,9 +344,7 @@ class UnityUnrealExporter:
         return b"".join([header, json_header, json_padded, bin_header, bin_chunk])
 
     def _compute_inverse_bind_matrices(self, bones: Sequence[Bone]) -> List[List[float]]:
-        global_positions: List[Tuple[float, float, float]] = [
-            (0.0, 0.0, 0.0) for _ in bones
-        ]
+        global_positions: List[Tuple[float, float, float]] = [(0.0, 0.0, 0.0) for _ in bones]
         for idx, bone in enumerate(bones):
             local = tuple(coord * self.config.unit_scale for coord in bone.position)
             if bone.parent_index is None:
@@ -415,4 +433,3 @@ class UnityUnrealExporter:
         if padding:
             data += pad * padding
         return data
-
