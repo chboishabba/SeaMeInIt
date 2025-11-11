@@ -13,12 +13,23 @@ create_venv() {
     "${PYTHON_BIN}" -m venv "${VENV_DIR}"
 }
 
+REQUIREMENTS_FILE="${SMII_REQUIREMENTS_FILE:-${ROOT_DIR}/requirements-dev.txt}"
+
 bootstrap_dependencies() {
     echo "Installing SeaMeInIt dependencies" >&2
+
+    if [ ! -f "${REQUIREMENTS_FILE}" ]; then
+        cat <<EOF >&2
+Could not find requirements file at ${REQUIREMENTS_FILE}.
+Create the file or set SMII_REQUIREMENTS_FILE to a valid path.
+EOF
+        exit 1
+    fi
+
     (\
         cd "${ROOT_DIR}" && \
         "${VENV_DIR}/bin/python" -m pip install --upgrade pip && \
-        "${VENV_DIR}/bin/python" -m pip install -e ".[dev,test]"
+        "${VENV_DIR}/bin/python" -m pip install -r "${REQUIREMENTS_FILE}"
     )
     touch "${BOOTSTRAP_MARKER}"
 }
@@ -54,6 +65,10 @@ and dispatches to a common helper. Recognised commands:
                 Fetch SMPL-X assets (python tools/download_smplx.py)
 
 Any other command is executed verbatim inside the virtual environment.
+
+The requirements manifest used during bootstrapping defaults to
+"requirements-dev.txt" at the repository root. Override this by setting the
+SMII_REQUIREMENTS_FILE environment variable.
 
 Pass a leading "--" to forward dash-prefixed arguments to the target command,
 e.g. $(basename "$0") pytest -- --maxfail=1.
