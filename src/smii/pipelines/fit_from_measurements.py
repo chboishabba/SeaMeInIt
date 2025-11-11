@@ -1,7 +1,8 @@
-"""Fit SMPL-X parameters from manual body measurements."""
+"""Fit body model parameters from manual body measurements."""
 
 from __future__ import annotations
 
+import importlib
 import json
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -21,12 +22,13 @@ from pipelines.measurement_inference import (
 from .fit_from_images import extract_measurements_from_afflec_images
 
 SCHEMA_PATH = Path(__file__).resolve().parents[3] / "data" / "schemas" / "body_measurements.json"
-SMPLX_NUM_BETAS = 10
+MEASUREMENT_MODEL_DIR = Path(__file__).resolve().parents[3] / "data" / "measurement_models"
+DEFAULT_BACKEND = "smplx"
 
 
 @dataclass(frozen=True)
 class MeasurementModel:
-    """Describes how a single measurement influences SMPL-X shape coefficients."""
+    """Describe how a single measurement influences body shape coefficients."""
 
     name: str
     mean: float
@@ -37,6 +39,144 @@ class MeasurementModel:
         return (value - self.mean) / self.std
 
 
+@dataclass(frozen=True)
+class BackendMeasurementConfig:
+    """Configuration payload for fitting measurements to a body model backend."""
+
+    backend: str
+    num_betas: int
+    scale_measurement: str
+    models: tuple[MeasurementModel, ...]
+
+
+_CONFIG_CACHE: dict[str, BackendMeasurementConfig] = {}
+
+
+def _resolve_backend_path(backend: str) -> Path:
+    normalized = backend.lower()
+    candidates = [
+        MEASUREMENT_MODEL_DIR / f"{normalized}.json",
+        MEASUREMENT_MODEL_DIR / f"{normalized}.yaml",
+        MEASUREMENT_MODEL_DIR / f"{normalized}.yml",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    raise FileNotFoundError(
+        f"No measurement model configuration found for backend '{backend}'. "
+        f"Searched: {[str(path) for path in candidates]}"
+    )
+
+
+def _load_backend_payload(path: Path) -> Mapping[str, object]:
+    text = path.read_text(encoding="utf-8")
+    suffix = path.suffix.lower()
+    if suffix == ".json":
+        data = json.loads(text)
+    elif suffix in {".yaml", ".yml"}:
+        yaml_module = importlib.import_module("yaml")
+        data = yaml_module.safe_load(text)
+    else:
+        raise ValueError(f"Unsupported configuration format for {path}")
+    if not isinstance(data, Mapping):
+        raise TypeError(
+            "Measurement model configuration must decode to a mapping. "
+            f"Received {type(data)!r} from {path}."
+        )
+    return data
+
+
+def _parse_measurement_models(
+    definitions: Iterable[Mapping[str, object]],
+) -> tuple[MeasurementModel, ...]:
+    models: list[MeasurementModel] = []
+    for index, entry in enumerate(definitions):
+        if not isinstance(entry, Mapping):
+            raise TypeError(
+                "Each measurement model definition must be a mapping. "
+                f"Entry {index} has type {type(entry)!r}."
+            )
+        try:
+            name = str(entry["name"])
+            mean = float(entry["mean"])
+            std = float(entry["std"])
+            weights_raw = entry["weights"]
+        except KeyError as exc:  # pragma: no cover - defensive
+            raise KeyError(
+                f"Measurement model entry {index} is missing key {exc.args[0]!r}."
+            ) from exc
+
+        if std <= 0:
+            raise ValueError(f"Standard deviation for measurement '{name}' must be positive.")
+
+        if not isinstance(weights_raw, Iterable):
+            raise TypeError(f"Weights for measurement '{name}' must be an iterable of numbers.")
+
+        weights = tuple(float(value) for value in weights_raw)
+        models.append(MeasurementModel(name=name, mean=mean, std=std, weights=weights))
+    return tuple(models)
+
+
+def load_backend_config(backend: str = DEFAULT_BACKEND) -> BackendMeasurementConfig:
+    """Load the measurement model configuration for a backend."""
+
+    normalized = backend.lower()
+    if normalized in _CONFIG_CACHE:
+        return _CONFIG_CACHE[normalized]
+
+    path = _resolve_backend_path(normalized)
+    payload = _load_backend_payload(path)
+
+    backend_name = str(payload.get("backend", normalized))
+    try:
+        num_betas = int(payload["num_betas"])
+    except KeyError as exc:  # pragma: no cover - defensive
+        raise KeyError(f"Configuration for backend '{backend}' is missing 'num_betas'.") from exc
+    if num_betas <= 0:
+        raise ValueError(
+            f"Configuration for backend '{backend}' must define a positive 'num_betas'."
+        )
+
+    scale_measurement = str(payload.get("scale_measurement", "height"))
+    model_definitions = payload.get("models", [])
+    if not isinstance(model_definitions, Iterable):
+        raise TypeError("'models' must be an iterable of measurement definitions.")
+
+    models = _parse_measurement_models(model_definitions)
+    if not models:
+        raise ValueError(f"Backend '{backend}' must declare at least one measurement model.")
+
+    config = BackendMeasurementConfig(
+        backend=backend_name,
+        num_betas=num_betas,
+        scale_measurement=scale_measurement,
+        models=models,
+    )
+    _CONFIG_CACHE[normalized] = config
+    return config
+
+
+def available_backends() -> tuple[str, ...]:
+    """Return the set of backend identifiers with available configuration files."""
+
+    if not MEASUREMENT_MODEL_DIR.exists():
+        return (DEFAULT_BACKEND,)
+
+    backends: set[str] = set()
+    for path in MEASUREMENT_MODEL_DIR.iterdir():
+        if path.is_file() and path.suffix.lower() in {".json", ".yaml", ".yml"}:
+            backends.add(path.stem.lower())
+
+    if not backends:
+        return (DEFAULT_BACKEND,)
+    return tuple(sorted(backends))
+
+
+DEFAULT_BACKEND_CONFIG = load_backend_config(DEFAULT_BACKEND)
+MEASUREMENT_MODELS: tuple[MeasurementModel, ...] = DEFAULT_BACKEND_CONFIG.models
+DEFAULT_NUM_BETAS = DEFAULT_BACKEND_CONFIG.num_betas
+# Backwards compatibility with existing imports.
+SMPLX_NUM_BETAS = DEFAULT_NUM_BETAS
 MEASUREMENT_MODELS: tuple[MeasurementModel, ...] = (
     MeasurementModel("height", 170.0, 7.5, (0.45, 0.05, 0.02, 0.0, 0.03, 0.0, 0.01, 0.0, 0.0, 0.0)),
     MeasurementModel(
@@ -77,7 +217,7 @@ MEASUREMENT_MODELS: tuple[MeasurementModel, ...] = (
 
 @dataclass(frozen=True)
 class FitResult:
-    """Container for the fitted SMPL-X parameters."""
+    """Container for the fitted body model parameters."""
 
     betas: np.ndarray
     scale: float
@@ -192,12 +332,15 @@ def models_by_name(models: Sequence[MeasurementModel]) -> dict[str, MeasurementM
 def fit_shape_coefficients(
     measurements: Mapping[str, float],
     *,
-    models: Sequence[MeasurementModel] = MEASUREMENT_MODELS,
-    num_shape_coeffs: int = SMPLX_NUM_BETAS,
+    models: Sequence[MeasurementModel] | None = None,
+    num_shape_coeffs: int | None = None,
 ) -> tuple[np.ndarray, tuple[str, ...], float]:
+    models = tuple(models or MEASUREMENT_MODELS)
+    num_shape_coeffs = int(num_shape_coeffs or DEFAULT_NUM_BETAS)
+
     available = {m.name: m for m in models if m.name in measurements}
     if not available:
-        raise ValueError("At least one measurement is required to fit SMPL-X shape coefficients.")
+        raise ValueError("At least one measurement is required to fit body shape coefficients.")
 
     used_names = tuple(sorted(available))
     A = np.vstack([available[name].weights[:num_shape_coeffs] for name in used_names])
@@ -215,12 +358,17 @@ def fit_shape_coefficients(
 def fit_smplx_from_measurements(
     measurements: Mapping[str, float],
     *,
+    backend: str = DEFAULT_BACKEND,
     schema_path: Path | None = None,
-    models: Sequence[MeasurementModel] = MEASUREMENT_MODELS,
-    num_shape_coeffs: int = SMPLX_NUM_BETAS,
+    models: Sequence[MeasurementModel] | None = None,
+    num_shape_coeffs: int | None = None,
     inference_model: GaussianMeasurementModel | None = None,
 ) -> FitResult:
     """Compute SMPL-X shape parameters from manual measurements."""
+
+    backend_config = load_backend_config(backend)
+    models = tuple(models or backend_config.models)
+    num_shape_coeffs = int(num_shape_coeffs or backend_config.num_betas)
 
     schema = load_schema(schema_path)
     model = inference_model or load_default_model()
@@ -355,7 +503,9 @@ def _load_measurements_from_json(path: Path) -> Mapping[str, float]:
 def main(argv: Sequence[str] | None = None) -> int:
     import argparse
 
-    parser = argparse.ArgumentParser(description="Fit SMPL-X parameters from manual measurements.")
+    parser = argparse.ArgumentParser(
+        description="Fit body model parameters from manual measurements."
+    )
     parser.add_argument(
         "input",
         type=Path,
@@ -369,10 +519,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Where to store the fitted parameter dictionary.",
     )
     parser.add_argument(
+        "--backend",
+        default=DEFAULT_BACKEND,
+        choices=available_backends(),
+        help="Body model backend to use when fitting coefficients.",
+    )
+    parser.add_argument(
         "--coeff-count",
         type=int,
-        default=SMPLX_NUM_BETAS,
-        help="Number of shape coefficients to estimate (default: 10).",
+        default=None,
+        help="Number of shape coefficients to estimate (defaults to backend configuration).",
     )
     parser.add_argument(
         "--images",
@@ -388,9 +544,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         measurements = _load_measurements_from_json(args.input)
     else:
         parser.error("Either a measurement JSON file or --images must be provided.")
-    result = fit_smplx_from_measurements(measurements, num_shape_coeffs=args.coeff_count)
+    result = fit_smplx_from_measurements(
+        measurements,
+        backend=args.backend,
+        num_shape_coeffs=args.coeff_count,
+    )
     save_fit(result, args.output)
-    print(f"Saved SMPL-X parameters to {args.output}")
+    print(f"Saved {args.backend} parameters to {args.output}")
     return 0
 
 
