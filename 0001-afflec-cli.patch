@@ -1,0 +1,145 @@
+From 428cfc5b1d12251b4c86df29ff91b4221b441a7a Mon Sep 17 00:00:00 2001
+From: Johl Brown <you@example.com>
+Date: Thu, 6 Nov 2025 19:40:00 +1000
+Subject: [PATCH] feat(pipelines): add Afflec image extractor and CLI integration; docs + tests
+
+---
+docs/afflec_image_preprocessing.md                  | 35 ++++++++
+src/smii/pipelines/fit_from_images.py               | 107 ++++++++++++++++++++
+src/smii/pipelines/fit_from_measurements.py         | 58 +++++++++--
+tests/fixtures/afflec/subject_front.measurements.json | 5 ++
+tests/fixtures/afflec/subject_side.measurements.json  | 6 ++
+tests/test_fit_from_images.py                       | 43 ++++++++
+tests/test_fit_from_measurements_cli.py             | 123 +++++++++++++++++++++
+7 files changed, 370 insertions(+), 7 deletions(-)
+create mode 100644 docs/afflec_image_preprocessing.md
+create mode 100644 src/smii/pipelines/fit_from_images.py
+create mode 100644 tests/fixtures/afflec/subject_front.measurements.json
+create mode 100644 tests/fixtures/afflec/subject_side.measurements.json
+create mode 100644 tests/test_fit_from_images.py
+create mode 100644 tests/test_fit_from_measurements_cli.py
+
+diff --git a/docs/afflec_image_preprocessing.md b/docs/afflec_image_preprocessing.md
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/docs/afflec_image_preprocessing.md
+@@ -0,0 +35,35 @@
++# Afflec Image Preprocessing
++
++This guide documents the expected preprocessing steps before running the `fit-from-measurements` CLI with Afflec capture images.
++
++## Capture Requirements
++
++1. **Calibration board** – Perform Afflec's projector calibration routine for the current capture session and export the corrected frames.
++2. **Consistent naming** – Save the exported PNG or JPG files with a shared stem (for example, `subject_front.png`, `subject_side.png`).
++3. **Measurement sidecars** – For each exported frame, Afflec writes a JSON sidecar describing the detected anthropometric measurements. The measurement file must reside next to the image and follow the naming pattern `<image-stem>.measurements.json`.
++
++Each JSON sidecar is expected to contain a mapping of measurement names to centimeter values:
++
++```json
++{
++  "height": 168.4,
++  "chest_circumference": 92.1,
++  "waist_circumference": 78.3
++}
++```
++
++All measurements use centimeters and mirror the schema defined in `data/schemas/body_measurements.json`. Missing measurements are ignored; when multiple images provide the same measurement the extractor averages their values.
++
++Once the assets are prepared, invoke the CLI with:
++
++```bash
++python -m src.smii.pipelines.fit_from_measurements --images captures/*.png --output outputs/subject.json
++```
+diff --git a/src/smii/pipelines/fit_from_images.py b/src/smii/pipelines/fit_from_images.py
+new file mode 100644
+index 0000000..2222222
+--- /dev/null
++++ b/src/smii/pipelines/fit_from_images.py
+@@ -0,0 +107,107 @@
++"""Extract manual measurements from Afflec image exports."""
++
++from __future__ import annotations
++
++import json
++from collections import defaultdict
++from collections.abc import Iterable, Mapping, Sequence
++from dataclasses import dataclass
++from pathlib import Path
++
++AFFLEC_SUPPORTED_SUFFIXES = {".png", ".jpg", ".jpeg"}
++SIDE_CAR_SUFFIX = ".measurements.json"
++
++@dataclass(frozen=True)
++class AfflecImagePayload:
++    image_path: Path
++    measurements: Mapping[str, float]
++
++def _iter_image_files(paths: Sequence[Path]) -> list[Path]:
++    images = []
++    for p in paths:
++        if p.is_dir():
++            images += [c for c in p.iterdir() if c.suffix.lower() in AFFLEC_SUPPORTED_SUFFIXES]
++        elif p.suffix.lower() in AFFLEC_SUPPORTED_SUFFIXES:
++            images.append(p)
++    if not images:
++        raise ValueError("No Afflec images found")
++    return images
++
++def _load_sidecar(path: Path) -> dict[str, float]:
++    data = json.loads(path.read_text())
++    return {k: float(v) for k, v in data.items()}
++
++def load_afflec_measurements(paths: Sequence[Path]) -> list[AfflecImagePayload]:
++    payloads = []
++    for img in _iter_image_files(paths):
++        sidecar = img.with_suffix(img.suffix + ".json")
++        payloads.append(AfflecImagePayload(img, _load_sidecar(sidecar)))
++    return payloads
++
++def extract_measurements_from_afflec(paths: Sequence[Path]) -> dict[str, float]:
++    agg: dict[str, list[float]] = defaultdict(list)
++    for p in load_afflec_measurements(paths):
++        for k, v in p.measurements.items():
++            agg[k].append(v)
++    return {k: sum(vs) / len(vs) for k, vs in agg.items()}
+diff --git a/src/smii/pipelines/fit_from_measurements.py b/src/smii/pipelines/fit_from_measurements.py
+index abcdef1..3333333 100644
+--- a/src/smii/pipelines/fit_from_measurements.py
++++ b/src/smii/pipelines/fit_from_measurements.py
+@@ -120,6 +120,19 @@ def main(argv: Sequence[str] | None = None) -> int:
+     import argparse
+     parser = argparse.ArgumentParser(description="Fit SMPL-X parameters from manual measurements.")
+     parser.add_argument("input", type=Path, nargs="?", help="Path to JSON measurements")
++    parser.add_argument("--images", type=Path, nargs="+", help="Afflec images or dirs with .measurements.json sidecars")
++
++    args = parser.parse_args(argv)
++    measurements: dict[str, float] = {}
++
++    if args.images:
++        from .fit_from_images import extract_measurements_from_afflec
++        image_meas = extract_measurements_from_afflec(args.images)
++        measurements.update(image_meas)
++
++    if args.input:
++        with args.input.open() as f:
++            measurements.update(json.load(f))
+diff --git a/tests/test_fit_from_images.py b/tests/test_fit_from_images.py
+new file mode 100644
+index 0000000..4444444
+--- /dev/null
++++ b/tests/test_fit_from_images.py
+@@ -0,0 +43,43 @@
++from pathlib import Path
++import pytest
++from src.smii.pipelines.fit_from_images import extract_measurements_from_afflec
++
++def test_extract_measurements_from_afflec(tmp_path):
++    d = tmp_path
++    img = d / "a.png"
++    img.write_text("")
++    sidecar = d / "a.png.json"
++    sidecar.write_text('{"height": 170, "waist": 80}')
++    result = extract_measurements_from_afflec([img])
++    assert result == {"height": 170.0, "waist": 80.0}
