@@ -1,13 +1,26 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
+from types import ModuleType
 from typing import Sequence
 
 import numpy as np
 import pytest
 
 from pipelines.measurement_inference import MeasurementEstimate, MeasurementReport
+
+if "jsonschema" not in sys.modules:
+    jsonschema_stub = ModuleType("jsonschema")
+
+    class _ValidationError(Exception):
+        """Placeholder validation error for jsonschema-free testing."""
+
+    jsonschema_stub.Draft202012Validator = object
+    jsonschema_stub.ValidationError = _ValidationError
+    sys.modules["jsonschema"] = jsonschema_stub
+
 import smii.pipelines.fit_from_measurements as cli
 
 
@@ -65,7 +78,7 @@ def test_cli_routes_image_arguments(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     monkeypatch.setattr(cli, "save_fit", recorder)
 
     output = tmp_path / "out.json"
-    exit_code = cli.main([*argv, "--output", output])
+    exit_code = cli.main([*argv, "--output", str(output)])
 
     assert exit_code == 0
     assert called["paths"] == tuple(Path(arg) for arg in argv[1:])

@@ -118,7 +118,7 @@ def run_afflec_fixture_demo(
         )
 
     from smii.pipelines import extract_measurements_from_afflec_images, fit_smplx_from_measurements
-    from smii.pipelines.fit_from_measurements import save_fit
+    from smii.pipelines.fit_from_measurements import plot_measurement_report, save_fit
 
     image_paths = list(images or _default_afflec_images())
     if not image_paths:
@@ -136,6 +136,9 @@ def run_afflec_fixture_demo(
     output_path = target_dir / "afflec_measurement_fit.json"
     save_fit(result, output_path)
     print(f"Saved fitted parameters to {output_path}")
+    plot_path = plot_measurement_report(result, target_dir)
+    if plot_path is not None:
+        print(f"Generated measurement report plot at {plot_path}")
     return output_path
 
 
