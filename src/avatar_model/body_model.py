@@ -1,20 +1,20 @@
-"""High level wrapper around the SMPL-X body model."""
+"""High level wrapper around avatar body model providers."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Dict, Mapping, TYPE_CHECKING
+from typing import Any, Mapping, TYPE_CHECKING
 
 import numpy as np
 import torch
 from torch import Tensor
 
-import smplx
+from .providers import BodyModelProvider, available_providers, create_provider
 
 if TYPE_CHECKING:
     from smplx.output import SMPLXOutput as _SMPLXOutput
-else:
+else:  # pragma: no cover - fallback when smplx is unavailable
     _SMPLXOutput = Any
 
 __all__ = ["BodyModel", "BodyModelConfig"]
@@ -25,10 +25,10 @@ class BodyModelConfig:
     """Configuration options for :class:`BodyModel`."""
 
     model_path: Path
-    """Directory containing the SMPL-X model files."""
+    """Directory containing the body model assets."""
 
     model_type: str = "smplx"
-    """SMPL family model type to instantiate."""
+    """Registered provider name to instantiate."""
 
     gender: str = "neutral"
     """Gendered model variant to load (``neutral``, ``male``, ``female``)."""
@@ -50,51 +50,10 @@ class BodyModelConfig:
 
 
 class BodyModel:
-    """User-friendly interface for loading and manipulating SMPL-X models.
-
-    The wrapper keeps track of pose and shape parameters as ``torch.Tensor``
-    instances while accepting input as either numpy arrays or tensors.  It also
-    provides convenience helpers for generating mesh vertices and joints from
-    the underlying SMPL-X module.
-    """
-
-    #: Parameter names managed by the wrapper.
-    _PARAMETER_KEYS: tuple[str, ...] = (
-        "betas",
-        "expression",
-        "global_orient",
-        "body_pose",
-        "left_hand_pose",
-        "right_hand_pose",
-        "jaw_pose",
-        "leye_pose",
-        "reye_pose",
-        "transl",
-    )
-
-    #: Fallback dimensionalities for parameters when not discoverable from the
-    #: SMPL-X module.  Shapes are interpreted as ``(batch_size, dim)``.
-    _DEFAULT_DIMS: Mapping[str, int] = {
-        "betas": 10,
-        "expression": 10,
-        "global_orient": 3,
-        "body_pose": 63,
-        "left_hand_pose": 45,
-        "right_hand_pose": 45,
-        "jaw_pose": 3,
-        "leye_pose": 3,
-        "reye_pose": 3,
-        "transl": 3,
-    }
+    """User-facing facade that delegates to registered model providers."""
 
     def __init__(self, config: BodyModelConfig | None = None, **kwargs: object) -> None:
-        """Instantiate a SMPL-X body model wrapper.
-
-        Parameters can either be supplied via a :class:`BodyModelConfig` or as
-        keyword arguments mirroring the dataclass fields.  ``model_path`` is the
-        only required option and should point to the folder containing SMPL-X
-        assets (typically ``assets/smplx``).
-        """
+        """Instantiate a body model wrapper backed by a provider."""
 
         if config is None:
             if "model_path" not in kwargs:
@@ -109,88 +68,68 @@ class BodyModel:
             config = replace(config, model_path=Path(config.model_path))
 
         self.config = config
-        self._verify_assets()
 
-        self.device = torch.device(config.device)
-        self.dtype = config.dtype
-        self.batch_size = config.batch_size
-
-        self._model = smplx.create(
-            model_path=str(config.model_path),
-            model_type=config.model_type,
-            gender=config.gender,
-            batch_size=config.batch_size,
-            num_betas=config.num_betas,
-            num_expression_coeffs=config.num_expression_coeffs,
-        ).to(self.device)
-        self._model.eval()
-
-        self._parameters: Dict[str, Tensor] = {}
-        self._initialise_parameters()
-
-    def _verify_assets(self) -> None:
-        """Ensure the configured SMPL-X assets are present before loading."""
-
-        assets_root = self.config.model_path
-        if not assets_root.exists():
+        try:
+            self._provider: BodyModelProvider = create_provider(config.model_type, config)
+        except KeyError as exc:
+            options = ", ".join(available_providers()) or "<none>"
             msg = (
-                "SMPL-X assets are required but were not found at"
-                f" {assets_root!s}. Download the official archive and extract it"
-                " with `python tools/download_smplx.py --dest assets/smplx`."
+                f"Unknown body model provider '{config.model_type}'. "
+                f"Available providers: {options}."
             )
-            raise FileNotFoundError(msg)
+            raise ValueError(msg) from exc
+        except NotImplementedError as exc:
+            raise NotImplementedError(str(exc)) from exc
 
-        model_dir = assets_root / self.config.model_type
-        gender_suffix = self.config.gender.upper()
-        model_name = f"{self.config.model_type.upper()}_{gender_suffix}.npz"
-        model_file = model_dir / model_name
-        if not model_file.exists():
-            msg = (
-                f"Expected SMPL-X asset {model_name} in {model_dir!s}, but it was not"
-                " found. Ensure you have extracted the official SMPL-X release for"
-                f" the {self.config.gender} model variant."
-            )
-            raise FileNotFoundError(msg)
+    # ------------------------------------------------------------------
+    @property
+    def provider(self) -> BodyModelProvider:
+        """Return the underlying provider instance."""
+
+        return self._provider
 
     @property
     def model(self) -> torch.nn.Module:
-        """Return the underlying SMPL-X module."""
+        """Expose the low-level model object from the provider."""
 
-        return self._model
+        return self._provider.model
 
+    @property
+    def device(self) -> torch.device:
+        """Device used by the provider."""
+
+        return self._provider.device
+
+    @property
+    def dtype(self) -> torch.dtype:
+        """Floating point precision configured on the provider."""
+
+        return self._provider.dtype
+
+    @property
+    def batch_size(self) -> int:
+        """Batch size configured on the provider."""
+
+        return self._provider.batch_size
+
+    # ------------------------------------------------------------------
     def parameter_shapes(self) -> Mapping[str, torch.Size]:
-        """Return the tensor shapes for each managed parameter."""
-
-        return {name: tensor.shape for name, tensor in self._parameters.items()}
+        return self._provider.parameter_shapes()
 
     def parameters(self, as_numpy: bool = False) -> Mapping[str, Tensor | np.ndarray]:
-        """Return a copy of the currently stored parameter tensors."""
-
-        if as_numpy:
-            return {name: tensor.detach().cpu().numpy().copy() for name, tensor in self._parameters.items()}
-        return {name: tensor.clone() for name, tensor in self._parameters.items()}
+        return self._provider.parameters(as_numpy=as_numpy)
 
     def set_parameters(self, updates: Mapping[str, np.ndarray | Tensor]) -> None:
-        """Replace the stored tensors with new values."""
-
-        for name, value in updates.items():
-            self._set_parameter(name, value, additive=False)
+        self._provider.set_parameters(updates)
 
     def adjust_parameters(self, deltas: Mapping[str, np.ndarray | Tensor]) -> None:
-        """Increment stored parameters by the provided deltas."""
-
-        for name, value in deltas.items():
-            self._set_parameter(name, value, additive=True)
+        self._provider.adjust_parameters(deltas)
 
     def set_shape(self, betas: np.ndarray | Tensor) -> None:
-        """Overwrite the body shape coefficients (``betas``)."""
-
-        self._set_parameter("betas", betas, additive=False)
+        self._provider.set_shape(betas)
 
     def adjust_shape(self, delta_betas: np.ndarray | Tensor) -> None:
-        """Add a delta to the shape coefficients."""
-
-        self._set_parameter("betas", delta_betas, additive=True)
+        self._provider.adjust_shape(delta_betas)
 
     def set_body_pose(
         self,
@@ -198,14 +137,9 @@ class BodyModel:
         global_orient: np.ndarray | Tensor | None = None,
         transl: np.ndarray | Tensor | None = None,
     ) -> None:
-        """Update the primary kinematic pose parameters."""
-
-        if body_pose is not None:
-            self._set_parameter("body_pose", body_pose, additive=False)
-        if global_orient is not None:
-            self._set_parameter("global_orient", global_orient, additive=False)
-        if transl is not None:
-            self._set_parameter("transl", transl, additive=False)
+        self._provider.set_body_pose(
+            body_pose=body_pose, global_orient=global_orient, transl=transl
+        )
 
     def adjust_pose(
         self,
@@ -213,70 +147,13 @@ class BodyModel:
         global_orient: np.ndarray | Tensor | None = None,
         transl: np.ndarray | Tensor | None = None,
     ) -> None:
-        """Add pose offsets to the current parameter values."""
+        self._provider.adjust_pose(body_pose=body_pose, global_orient=global_orient, transl=transl)
 
-        if body_pose is not None:
-            self._set_parameter("body_pose", body_pose, additive=True)
-        if global_orient is not None:
-            self._set_parameter("global_orient", global_orient, additive=True)
-        if transl is not None:
-            self._set_parameter("transl", transl, additive=True)
-
-    @torch.no_grad()
     def forward(self, **kwargs: object) -> _SMPLXOutput:
-        """Execute a forward pass through the SMPL-X model."""
+        return self._provider.forward(**kwargs)
 
-        return self._model(**self._parameters, **kwargs)
-
-    @torch.no_grad()
     def vertices(self) -> Tensor:
-        """Return the generated mesh vertices for the current parameters."""
+        return self._provider.vertices()
 
-        output = self.forward(return_verts=True)
-        return output.vertices
-
-    @torch.no_grad()
     def joints(self) -> Tensor:
-        """Return joint locations for the current parameters."""
-
-        output = self.forward(return_verts=True)
-        return output.joints
-
-    def _initialise_parameters(self) -> None:
-        for name in self._PARAMETER_KEYS:
-            template = getattr(self._model, name, None)
-            if isinstance(template, Tensor):
-                dim = template.shape[-1]
-            else:
-                dim = self._DEFAULT_DIMS[name]
-            shape = (self.batch_size, dim)
-            self._parameters[name] = torch.zeros(shape, dtype=self.dtype, device=self.device)
-
-    def _set_parameter(self, name: str, value: np.ndarray | Tensor, *, additive: bool) -> None:
-        if name not in self._parameters:
-            msg = f"Unknown SMPL-X parameter '{name}'."
-            raise KeyError(msg)
-
-        target = self._parameters[name]
-        tensor = self._coerce_to_tensor(value, target.dtype, target.device)
-        if tensor.shape != target.shape:
-            expected_elements = int(torch.prod(torch.tensor(target.shape, device="cpu")))
-            if tensor.numel() != expected_elements:
-                msg = (
-                    f"Parameter '{name}' has shape {tensor.shape}, expected {target.shape} "
-                    "or a compatible number of elements."
-                )
-                raise ValueError(msg)
-            tensor = tensor.reshape(target.shape)
-
-        if additive:
-            target.add_(tensor)
-        else:
-            target.copy_(tensor)
-
-    def _coerce_to_tensor(self, value: np.ndarray | Tensor, dtype: torch.dtype, device: torch.device) -> Tensor:
-        if isinstance(value, Tensor):
-            tensor = value.to(device=device, dtype=dtype)
-        else:
-            tensor = torch.as_tensor(value, dtype=dtype, device=device)
-        return tensor
+        return self._provider.joints()

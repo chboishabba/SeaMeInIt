@@ -55,12 +55,20 @@ def _collect_interactive_inputs(
     print("=== Hard-shell clearance interactive run ===")
     shell = shell or _prompt_path("Path to shell mesh (JSON/NPZ): ")
     target = target or _prompt_path("Path to target mesh (JSON/NPZ): ")
-    poses = poses if poses is not None else _prompt_optional_path("Optional pose JSON (leave blank for identity): ")
-    output = output if output is not None else _prompt_optional_path(
-        "Output directory (leave blank for auto-generated): "
+    poses = (
+        poses
+        if poses is not None
+        else _prompt_optional_path("Optional pose JSON (leave blank for identity): ")
     )
-    samples = samples if samples is not None else _prompt_int(
-        "Interpolated samples per keyframe segment", 0
+    output = (
+        output
+        if output is not None
+        else _prompt_optional_path("Output directory (leave blank for auto-generated): ")
+    )
+    samples = (
+        samples
+        if samples is not None
+        else _prompt_int("Interpolated samples per keyframe segment", 0)
     )
     return InteractiveSession(
         shell=shell,
@@ -111,6 +119,7 @@ def run_afflec_fixture_demo(
     *,
     images: Iterable[Path] | None = None,
     output_dir: Path | None = None,
+    body_model_provider: str = "smplx",
 ) -> Path:
     """Fit SMPL-X parameters from the bundled Afflec fixture images."""
 
@@ -146,7 +155,7 @@ def run_afflec_fixture_demo(
 
     mesh_path = target_dir / "afflec_body.npz"
     try:
-        vertices, faces = create_body_mesh(result)
+        vertices, faces = create_body_mesh(result, model_type=body_model_provider)
     except FileNotFoundError as exc:
         raise FileNotFoundError(
             "SMPL-X assets are required to generate the fitted body mesh. "
@@ -196,6 +205,18 @@ def build_cli(argv: Sequence[str] | None = None) -> int:
         type=Path,
         help="Where to store the fitted parameter JSON",
     )
+    try:
+        from avatar_model.providers import available_providers
+
+        provider_choices = tuple(available_providers())
+    except Exception:  # pragma: no cover - defensive import fallback
+        provider_choices = ("smplx",)
+    afflec.add_argument(
+        "--body-model-provider",
+        default="smplx",
+        choices=provider_choices,
+        help="Registered body model provider to use for mesh generation",
+    )
 
     args = parser.parse_args(argv)
 
@@ -210,10 +231,12 @@ def build_cli(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "afflec-demo":
-        run_afflec_fixture_demo(images=args.images, output_dir=args.output)
+        run_afflec_fixture_demo(
+            images=args.images,
+            output_dir=args.output,
+            body_model_provider=args.body_model_provider,
+        )
         return 0
 
     parser.error(f"Unknown command: {args.command}")
     return 0
-
-
