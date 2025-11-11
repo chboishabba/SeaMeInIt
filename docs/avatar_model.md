@@ -1,8 +1,8 @@
 # Avatar model integration
 
-This guide explains how to install the Python tooling, fetch the licensed SMPL-X
-assets, and generate parametric meshes using the `BodyModel` wrapper provided in
-`src/avatar_model/body_model.py`.
+This guide explains how to install the Python tooling, fetch either the licensed
+SMPL-X assets or an open SMPLer-X bundle, and generate parametric meshes using
+the `BodyModel` wrapper provided in `src/avatar_model/body_model.py`.
 
 ## Environment preparation
 
@@ -11,14 +11,21 @@ assets, and generate parametric meshes using the `BodyModel` wrapper provided in
    ```bash
    pip install -e .[tools]
    ```
-3. Download the SMPL-X assets into `assets/smplx/` using the helper script:
+3. Download a body-model bundle using the helper script:
    ```bash
-   export SMPLX_DOWNLOAD_URL="https://smpl-x.is.tue.mpg.de/..."  # Replace with your authenticated link
-   python tools/download_smplx.py --dest assets/smplx
+   # Licensed SMPL-X download (requires authenticated link)
+   export SMPLX_DOWNLOAD_URL="https://smpl-x.is.tue.mpg.de/..."
+   python tools/download_smplx.py --model smplx --dest assets/smplx --sha256 <optional-checksum>
+
+   # or fetch the open SMPLer-X bundle (S-Lab License 1.0, non-commercial use)
+   python tools/download_smplx.py --model smplerx --dest assets/smplerx --sha256 <optional-checksum>
    ```
-4. (Optional) Supply `SMPLX_ARCHIVE_SHA256` with a known checksum to enable
-   verification during download. The script will skip the network call when the
-   `--archive` option is provided.
+4. Each command writes an `assets/<model>/manifest.json` file recording the
+   source URL, checksum, license, and top-level contents. Use it to confirm the
+   bundle provenance before loading the model.
+5. (Optional) Supply `SMPLX_ARCHIVE_SHA256` or `--sha256` with a known checksum
+   to enable verification during download. The script skips the network call
+   when the `--archive` option is provided.
 
 ## Loading the body model
 
@@ -28,9 +35,14 @@ import numpy as np
 
 from avatar_model import BodyModel
 
+# Load the default SMPL-X bundle
 model = BodyModel(model_path=Path("assets/smplx"), batch_size=2)
 print(model.parameter_shapes())
 ```
+
+To use the SMPLer-X release, point `model_path` at `assets/smplerx`. The
+manifest ensures the loader checks the correct subdirectories and surfaces
+actionable error messages when files are missing.
 
 The `parameter_shapes()` method describes the tensor layout managed by the
 wrapper. By default the parameters contain zeros and represent the canonical

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+import json
 from pathlib import Path
 from typing import Any, Dict, Mapping, TYPE_CHECKING
 
@@ -25,7 +26,7 @@ class BodyModelConfig:
     """Configuration options for :class:`BodyModel`."""
 
     model_path: Path
-    """Directory containing the SMPL-X model files."""
+    """Directory containing the SMPL-compatible model files."""
 
     model_type: str = "smplx"
     """SMPL family model type to instantiate."""
@@ -47,6 +48,32 @@ class BodyModelConfig:
 
     dtype: torch.dtype = torch.float32
     """Floating point precision for model parameters."""
+
+
+def _load_manifest(root: Path) -> dict[str, object] | None:
+    """Return the asset manifest for ``root`` if one exists."""
+
+    manifest_path = root / "manifest.json"
+    if not manifest_path.exists():
+        return None
+    try:
+        with manifest_path.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return None
+    if isinstance(data, dict):
+        return data
+    return None
+
+
+def _bundle_name(manifest: dict[str, object] | None, assets_root: Path) -> str:
+    """Heuristic for the short name of the asset bundle."""
+
+    if manifest is not None:
+        value = manifest.get("model")
+        if isinstance(value, str) and value:
+            return value
+    return assets_root.name or "smplx"
 
 
 class BodyModel:
@@ -92,8 +119,10 @@ class BodyModel:
 
         Parameters can either be supplied via a :class:`BodyModelConfig` or as
         keyword arguments mirroring the dataclass fields.  ``model_path`` is the
-        only required option and should point to the folder containing SMPL-X
-        assets (typically ``assets/smplx``).
+        only required option and should point to the folder containing SMPL
+        family assets (for example ``assets/smplx`` or ``assets/smplerx``).  The
+        provisioning helper writes a ``manifest.json`` alongside the assets,
+        which is used to provide clearer error messages when files are missing.
         """
 
         if config is None:
@@ -132,23 +161,29 @@ class BodyModel:
         """Ensure the configured SMPL-X assets are present before loading."""
 
         assets_root = self.config.model_path
+        manifest = _load_manifest(assets_root)
+        bundle_name = _bundle_name(manifest, assets_root)
+
         if not assets_root.exists():
             msg = (
-                "SMPL-X assets are required but were not found at"
-                f" {assets_root!s}. Download the official archive and extract it"
-                " with `python tools/download_smplx.py --dest assets/smplx`."
+                "SMPL-compatible assets are required but were not found at"
+                f" {assets_root!s}. Provision them with"
+                f" `python tools/download_smplx.py --model {bundle_name}`"
+                " (add --dest to override the default location)."
             )
             raise FileNotFoundError(msg)
 
-        model_dir = assets_root / self.config.model_type
+        model_type = str(manifest.get("model_type", self.config.model_type)) if manifest else self.config.model_type
+        model_dir = assets_root / model_type
         gender_suffix = self.config.gender.upper()
-        model_name = f"{self.config.model_type.upper()}_{gender_suffix}.npz"
+        model_name = f"{model_type.upper()}_{gender_suffix}.npz"
         model_file = model_dir / model_name
         if not model_file.exists():
             msg = (
                 f"Expected SMPL-X asset {model_name} in {model_dir!s}, but it was not"
-                " found. Ensure you have extracted the official SMPL-X release for"
-                f" the {self.config.gender} model variant."
+                " found. Ensure you have extracted the correct asset bundle"
+                f" (try `python tools/download_smplx.py --model {bundle_name}`)"
+                " and that the manifest matches the desired gender."
             )
             raise FileNotFoundError(msg)
 
