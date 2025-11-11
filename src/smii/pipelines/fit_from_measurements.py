@@ -78,6 +78,65 @@ class FitResult:
         }
 
 
+def create_body_mesh(
+    result: FitResult,
+    *,
+    model_path: Path | None = None,
+    gender: str = "neutral",
+) -> tuple[np.ndarray, np.ndarray]:
+    """Generate a body mesh from fitted parameters.
+
+    Parameters
+    ----------
+    result:
+        The fitted SMPL-X parameters to apply to the model.
+    model_path:
+        Optional override for the SMPL-X asset directory. Defaults to
+        ``assets/smplx`` relative to the project root.
+    gender:
+        Gendered SMPL-X model variant to load.
+
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray]
+        A tuple containing the mesh vertices and triangular faces as numpy
+        arrays.
+    """
+
+    assets = Path(model_path) if model_path is not None else Path("assets/smplx")
+    if not assets.exists():
+        raise FileNotFoundError(
+            "SMPL-X assets are required to construct a body mesh; "
+            f"no assets were found at {assets!s}."
+        )
+
+    from avatar_model import BodyModel
+
+    betas = np.asarray(result.betas, dtype=float).reshape(1, -1)
+    num_betas = int(betas.shape[1]) if betas.ndim > 1 else int(betas.size)
+    if num_betas <= 0:
+        num_betas = 1
+
+    model = BodyModel(
+        model_path=assets,
+        gender=gender,
+        batch_size=1,
+        num_betas=num_betas,
+    )
+    model.set_shape(betas)
+
+    vertices_tensor = model.vertices()
+    vertices = vertices_tensor.detach().cpu().numpy()[0]
+    vertices = vertices * float(result.scale)
+    translation = np.asarray(result.translation, dtype=float).reshape(-1)
+    if translation.size != 3:
+        raise ValueError("FitResult.translation must contain three elements.")
+    vertices = vertices + translation.reshape(1, 3)
+
+    faces = np.asarray(getattr(model.model, "faces"), dtype=np.int32)
+    return vertices.astype(np.float32), faces.astype(np.int32, copy=False)
+
+
 def load_schema(path: Path | None = None) -> dict:
     if path is not None:
         with path.open("r", encoding="utf-8") as stream:

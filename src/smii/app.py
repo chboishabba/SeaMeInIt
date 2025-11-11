@@ -7,6 +7,8 @@ from importlib import util as importlib_util
 from pathlib import Path
 from typing import Iterable, Sequence
 
+import numpy as np
+
 __all__ = [
     "InteractiveSession",
     "launch_interactive_session",
@@ -118,7 +120,11 @@ def run_afflec_fixture_demo(
         )
 
     from smii.pipelines import extract_measurements_from_afflec_images, fit_smplx_from_measurements
-    from smii.pipelines.fit_from_measurements import plot_measurement_report, save_fit
+    from smii.pipelines.fit_from_measurements import (
+        create_body_mesh,
+        plot_measurement_report,
+        save_fit,
+    )
 
     image_paths = list(images or _default_afflec_images())
     if not image_paths:
@@ -133,9 +139,21 @@ def run_afflec_fixture_demo(
     result = fit_smplx_from_measurements(measurements)
     target_dir = output_dir or Path("outputs/afflec_demo")
     target_dir.mkdir(parents=True, exist_ok=True)
+
     output_path = target_dir / "afflec_measurement_fit.json"
     save_fit(result, output_path)
     print(f"Saved fitted parameters to {output_path}")
+
+    mesh_path = target_dir / "afflec_body.npz"
+    try:
+        vertices, faces = create_body_mesh(result)
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(
+            "SMPL-X assets are required to generate the fitted body mesh. "
+            "Download the SMPL-X model files into assets/smplx to continue."
+        ) from exc
+    np.savez(mesh_path, vertices=vertices, faces=faces)
+    print(f"Saved fitted body mesh to {mesh_path}")
     plot_path = plot_measurement_report(result, target_dir)
     if plot_path is not None:
         print(f"Generated measurement report plot at {plot_path}")
