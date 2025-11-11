@@ -52,6 +52,9 @@ class AfflecImageMeasurementExtractor:
         for line in lines:
             line = line.strip()
             if not line or not line.startswith(self.header_prefix):
+                if line.startswith("P"):
+                    # Magic numbers (e.g. P2) precede metadata and raster payloads.
+                    continue
                 # Comments appear before raster data. Stop parsing once headers end.
                 if line and not line.startswith("#"):
                     break
