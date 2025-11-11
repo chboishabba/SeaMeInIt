@@ -1,0 +1,124 @@
+{
+  "betas": [
+    0.07821236297407673,
+    0.5092695582614803,
+    -0.06920610586328729,
+    -0.09992608899896749,
+    0.3246280317572632,
+    0.6199572683219833,
+    -0.4001947192205033,
+    0.3925220100223143,
+    0.005584840337109792,
+    -3.4567259266115835
+  ],
+  "scale": 1.0,
+  "translation": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "residual": 0.025009260203296826,
+  "measurements_used": [
+    "arm_length",
+    "bicep_circumference",
+    "calf_circumference",
+    "chest_circumference",
+    "height",
+    "hip_circumference",
+    "inseam_length",
+    "neck_circumference",
+    "shoulder_width",
+    "thigh_circumference",
+    "waist_circumference",
+    "wrist_circumference"
+  ],
+  "measurement_report": {
+    "coverage": 0.4166666666666667,
+    "values": [
+      {
+        "name": "height",
+        "value": 170.0,
+        "source": "measured",
+        "confidence": 1.0,
+        "variance": 0.0
+      },
+      {
+        "name": "chest_circumference",
+        "value": 96.5,
+        "source": "measured",
+        "confidence": 1.0,
+        "variance": 0.0
+      },
+      {
+        "name": "waist_circumference",
+        "value": 82.3,
+        "source": "measured",
+        "confidence": 1.0,
+        "variance": 0.0
+      },
+      {
+        "name": "hip_circumference",
+        "value": 98.1,
+        "source": "measured",
+        "confidence": 1.0,
+        "variance": 0.0
+      },
+      {
+        "name": "shoulder_width",
+        "value": 42.2,
+        "source": "measured",
+        "confidence": 1.0,
+        "variance": 0.0
+      },
+      {
+        "name": "neck_circumference",
+        "value": 36.40932430548087,
+        "source": "inferred",
+        "confidence": 0.9258264395111664,
+        "variance": 0.005566171263050368
+      },
+      {
+        "name": "arm_length",
+        "value": 61.05394799330009,
+        "source": "inferred",
+        "confidence": 0.8816200351630483,
+        "variance": 0.04066410431542966
+      },
+      {
+        "name": "inseam_length",
+        "value": 76.92250232737632,
+        "source": "inferred",
+        "confidence": 0.9128413156884618,
+        "variance": 0.039898264675626294
+      },
+      {
+        "name": "thigh_circumference",
+        "value": 54.50908227404257,
+        "source": "inferred",
+        "confidence": 0.9255072609316376,
+        "variance": 0.031201128468323347
+      },
+      {
+        "name": "calf_circumference",
+        "value": 37.26712753107683,
+        "source": "inferred",
+        "confidence": 0.8787905048495631,
+        "variance": 0.028842002497793118
+      },
+      {
+        "name": "bicep_circumference",
+        "value": 30.378115105890846,
+        "source": "inferred",
+        "confidence": 0.883360075723054,
+        "variance": 0.03463153904178107
+      },
+      {
+        "name": "wrist_circumference",
+        "value": 15.82927001317907,
+        "source": "inferred",
+        "confidence": 0.8639873534037714,
+        "variance": 0.004214367124353607
+      }
+    ]
+  }
+}
