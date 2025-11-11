@@ -55,12 +55,20 @@ def _collect_interactive_inputs(
     print("=== Hard-shell clearance interactive run ===")
     shell = shell or _prompt_path("Path to shell mesh (JSON/NPZ): ")
     target = target or _prompt_path("Path to target mesh (JSON/NPZ): ")
-    poses = poses if poses is not None else _prompt_optional_path("Optional pose JSON (leave blank for identity): ")
-    output = output if output is not None else _prompt_optional_path(
-        "Output directory (leave blank for auto-generated): "
+    poses = (
+        poses
+        if poses is not None
+        else _prompt_optional_path("Optional pose JSON (leave blank for identity): ")
     )
-    samples = samples if samples is not None else _prompt_int(
-        "Interpolated samples per keyframe segment", 0
+    output = (
+        output
+        if output is not None
+        else _prompt_optional_path("Output directory (leave blank for auto-generated): ")
+    )
+    samples = (
+        samples
+        if samples is not None
+        else _prompt_int("Interpolated samples per keyframe segment", 0)
     )
     return InteractiveSession(
         shell=shell,
@@ -240,5 +248,3 @@ def build_cli(argv: Sequence[str] | None = None) -> int:
 
     parser.error(f"Unknown command: {args.command}")
     return 0
-
-

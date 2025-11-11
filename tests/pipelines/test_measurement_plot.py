@@ -20,9 +20,9 @@ jsonschema_module.ValidationError = _FakeValidationError  # type: ignore[assignm
 sys.modules.setdefault("jsonschema", jsonschema_module)
 
 from smii.pipelines.fit_from_measurements import (
+    DEFAULT_NUM_BETAS,
     FitResult,
     plot_measurement_report,
-    SMPLX_NUM_BETAS,
 )
 from pipelines.measurement_inference import MeasurementEstimate, MeasurementReport
 
@@ -135,7 +135,7 @@ def test_plot_measurement_report_includes_one_sigma_error(monkeypatch, tmp_path)
 
     report = MeasurementReport(estimates=estimates, coverage=0.5)
     result = FitResult(
-        betas=np.zeros(SMPLX_NUM_BETAS, dtype=float),
+        betas=np.zeros(DEFAULT_NUM_BETAS, dtype=float),
         scale=1.0,
         translation=np.zeros(3, dtype=float),
         residual=0.0,
@@ -149,4 +149,3 @@ def test_plot_measurement_report_includes_one_sigma_error(monkeypatch, tmp_path)
     assert axes.captured_capsize == 4
     np.testing.assert_allclose(axes.captured_yerr, np.array([2.0, 0.0, 3.0, 0.0]))
     assert axes.title == "Measurement report (bars show ±1σ)"
-
