@@ -109,6 +109,8 @@ class BodyModel:
             config = replace(config, model_path=Path(config.model_path))
 
         self.config = config
+        self._verify_assets()
+
         self.device = torch.device(config.device)
         self.dtype = config.dtype
         self.batch_size = config.batch_size
@@ -125,6 +127,30 @@ class BodyModel:
 
         self._parameters: Dict[str, Tensor] = {}
         self._initialise_parameters()
+
+    def _verify_assets(self) -> None:
+        """Ensure the configured SMPL-X assets are present before loading."""
+
+        assets_root = self.config.model_path
+        if not assets_root.exists():
+            msg = (
+                "SMPL-X assets are required but were not found at"
+                f" {assets_root!s}. Download the official archive and extract it"
+                " with `python tools/download_smplx.py --dest assets/smplx`."
+            )
+            raise FileNotFoundError(msg)
+
+        model_dir = assets_root / self.config.model_type
+        gender_suffix = self.config.gender.upper()
+        model_name = f"{self.config.model_type.upper()}_{gender_suffix}.npz"
+        model_file = model_dir / model_name
+        if not model_file.exists():
+            msg = (
+                f"Expected SMPL-X asset {model_name} in {model_dir!s}, but it was not"
+                " found. Ensure you have extracted the official SMPL-X release for"
+                f" the {self.config.gender} model variant."
+            )
+            raise FileNotFoundError(msg)
 
     @property
     def model(self) -> torch.nn.Module:
