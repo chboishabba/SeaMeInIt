@@ -202,13 +202,28 @@ def verify_checksum(path: Path, expected_sha256: str) -> None:
 
 
 def extract_archive(archive_path: Path, dest: Path) -> None:
-    suffixes = archive_path.suffixes
-    if suffixes[-1] == ".zip":
+    """Extract *archive_path* into *dest* regardless of misleading suffixes."""
+
+    # Some third-party mirrors publish zip archives with ``.tar`` or ``.pth.tar``
+    # suffixes. Prefer inspecting the payload over trusting the filename so that
+    # we can gracefully handle these mislabeled bundles.
+    if zipfile.is_zipfile(archive_path):
         extract_zip(archive_path, dest)
-    elif any(suffix in {".tar", ".tgz", ".gz", ".xz"} for suffix in suffixes):
+        return
+
+    if tarfile.is_tarfile(archive_path):
         extract_tar(archive_path, dest)
-    else:
-        raise ExtractionError(f"Unsupported archive format for {archive_path}")
+        return
+
+    suffixes = archive_path.suffixes
+    if suffixes and suffixes[-1] == ".zip":
+        extract_zip(archive_path, dest)
+        return
+    if any(suffix in {".tar", ".tgz", ".gz", ".xz"} for suffix in suffixes):
+        extract_tar(archive_path, dest)
+        return
+
+    raise ExtractionError(f"Unsupported archive format for {archive_path}")
 
 
 def extract_zip(archive_path: Path, dest: Path) -> None:
