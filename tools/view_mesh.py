@@ -5,10 +5,10 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Iterable
 
-import numpy as np
 import trimesh
+
+from smii.meshing import load_body_record
 
 
 def parse_args() -> argparse.Namespace:
@@ -22,8 +22,9 @@ def parse_args() -> argparse.Namespace:
         "mesh",
         type=Path,
         help=(
-            "Path to a NumPy .npz archive containing 'vertices' and 'faces' arrays. "
-            "The Afflec demo writes this to outputs/afflec_demo/afflec_body.npz."
+            "Path to a fitted body record (JSON or NumPy .npz) containing 'vertices' "
+            "and 'faces' arrays. The Afflec demo writes this to "
+            "outputs/afflec_demo/afflec_body.npz."
         ),
     )
     parser.add_argument(
@@ -44,29 +45,17 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_mesh(archive_path: Path, process: bool) -> trimesh.Trimesh:
-    if not archive_path.exists():
-        raise SystemExit(f"Mesh archive not found: {archive_path}")
+def load_mesh(path: Path, process: bool) -> trimesh.Trimesh:
+    if not path.exists():
+        raise SystemExit(f"Mesh archive not found: {path}")
 
-    data = np.load(archive_path)
-    missing = required_keys(data.files, {"vertices", "faces"})
-    if missing:
-        missing_list = ", ".join(sorted(missing))
-        raise SystemExit(
-            f"Mesh archive is missing required arrays: {missing_list}. "
-            "Expected 'vertices' and 'faces'."
-        )
-
+    record = load_body_record(path)
     mesh = trimesh.Trimesh(
-        vertices=data["vertices"],
-        faces=data["faces"],
+        vertices=record["vertices"],
+        faces=record["faces"],
         process=process,
     )
     return mesh
-
-
-def required_keys(existing: Iterable[str], expected: set[str]) -> set[str]:
-    return expected.difference(existing)
 
 
 def describe_mesh(mesh: trimesh.Trimesh) -> str:

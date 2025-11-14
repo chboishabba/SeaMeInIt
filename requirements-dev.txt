@@ -1,3 +1,4 @@
 -e .
 requests>=2.31.0
+trimesh>=4.9.0
 pytest>=7.4

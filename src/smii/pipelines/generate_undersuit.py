@@ -14,37 +14,12 @@ from exporters.patterns import PatternExporter
 from modules.cooling import plan_cooling_layout
 from suit import UnderSuitGenerator, UnderSuitOptions
 from suit.thermal_zones import DEFAULT_THERMAL_ZONE_SPEC
+from smii.meshing import load_body_record
 
 OUTPUT_ROOT = Path("outputs/suits")
 COOLING_OUTPUT_ROOT = Path("outputs/modules/cooling")
 
 __all__ = ["generate_undersuit", "load_body_record", "main"]
-
-
-def load_body_record(path: Path) -> dict[str, np.ndarray]:
-    """Load a fitted body mesh from JSON or NPZ disk representations."""
-
-    suffix = path.suffix.lower()
-    if suffix == ".json":
-        with path.open("r", encoding="utf-8") as stream:
-            payload = json.load(stream)
-        if not isinstance(payload, Mapping):
-            raise TypeError("Body record JSON must be an object with vertices/faces arrays.")
-        vertices = np.asarray(payload.get("vertices"), dtype=float)
-        faces = np.asarray(payload.get("faces"), dtype=int)
-    elif suffix == ".npz":
-        data = np.load(path)
-        vertices = np.asarray(data["vertices"], dtype=float)
-        faces = np.asarray(data["faces"], dtype=int)
-    else:
-        raise ValueError(f"Unsupported body record format: {path.suffix}")
-
-    if vertices.ndim == 3:
-        vertices = vertices[0]
-    if faces.ndim == 3:
-        faces = faces[0]
-
-    return {"vertices": vertices, "faces": faces}
 
 
 def _load_measurements(path: Path | None) -> Mapping[str, float] | None:
