@@ -6,6 +6,7 @@ from .hard_layer_export import (
     HardLayerExporter,
     ShellPanel,
 )
+from .lscm_backend import LSCMConformalBackend
 from .patterns import (
     CADBackend,
     Panel2D,
@@ -33,6 +34,7 @@ __all__ = [
     "Panel3D",
     "PatternExporter",
     "SimplePlaneProjectionBackend",
+    "LSCMConformalBackend",
     "HardLayerCADBackend",
     "HardLayerExportError",
     "HardLayerExporter",

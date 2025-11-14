@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -139,6 +140,13 @@ class PatternExporter:
             "seam_allowance": self.seam_allowance,
             "panel_count": len(flattened),
         }
+        panel_warnings: dict[str, list[str]] = {}
+        for panel in flattened:
+            warnings = panel.metadata.get("warnings")
+            if warnings:
+                panel_warnings[panel.name] = [str(message) for message in warnings]
+        if panel_warnings:
+            combined_metadata["panel_warnings"] = panel_warnings
         if metadata:
             combined_metadata.update(metadata)
 
@@ -181,6 +189,9 @@ def _write_svg(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any
         f"<!-- Seam allowance: {metadata['seam_allowance']} -->",
         f"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width:.2f}\" height=\"{height:.2f}\" viewBox=\"{min_x:.2f} {min_y:.2f} {width:.2f} {height:.2f}\">",
     ]
+    if metadata.get("panel_warnings"):
+        warnings_json = json.dumps(metadata["panel_warnings"], sort_keys=True)
+        lines.insert(3, f"<!-- panel_warnings: {warnings_json} -->")
     for panel in panels:
         if not panel.outline:
             continue

@@ -6,7 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from exporters.patterns import Panel2D, PatternExporter
+from exporters.lscm_backend import LSCMConformalBackend
+from exporters.patterns import Panel2D, Panel3D, PatternExporter
 
 
 class DummyBackend:
@@ -84,4 +85,98 @@ def test_export_writes_metadata(tmp_path: Path, mesh_payload: dict, seam_payload
     pdf_bytes = created["pdf"].read_bytes()
     assert b"Scale: 1.1" in pdf_bytes
     assert b"allowance=0.012" in pdf_bytes
+
+
+def _square_panel(name: str = "square") -> dict:
+    return {
+        "name": name,
+        "vertices": [
+            (0.0, 0.0, 0.0),
+            (1.0, 0.0, 0.0),
+            (1.0, 1.0, 0.0),
+            (0.0, 1.0, 0.0),
+        ],
+        "faces": [(0, 1, 2), (0, 2, 3)],
+    }
+
+
+def _square_loop_targets(perimeter: float = 4.0, length: float = 1.0) -> dict:
+    return {
+        "circumference": {
+            "indices": [0, 1, 2, 3],
+            "target": perimeter,
+            "tolerance": 0.02,
+            "closed": True,
+        },
+        "length": {
+            "indices": [0, 3],
+            "target": length,
+            "tolerance": 0.02,
+            "closed": False,
+        },
+    }
+
+
+def test_lscm_backend_matches_loop_targets() -> None:
+    backend = LSCMConformalBackend(max_iterations=5)
+    panel = Panel3D.from_mapping(_square_panel("panel_a"))
+    seams = {
+        "panel_a": {
+            "seam_allowance": 0.01,
+            "loop_targets": _square_loop_targets(),
+        }
+    }
+
+    flattened = backend.flatten_panels([panel], seams, scale=1.0, seam_allowance=0.0)
+    assert len(flattened) == 1
+    flattened_panel = flattened[0]
+
+    loop_metrics = flattened_panel.metadata["loop_metrics"]
+    circumference = loop_metrics["circumference"]
+    length = loop_metrics["length"]
+
+    assert circumference["within_tolerance"] is True
+    assert length["within_tolerance"] is True
+    assert circumference["uv_length"] == pytest.approx(4.0, rel=1e-3)
+    assert length["uv_length"] == pytest.approx(1.0, rel=1e-3)
+    assert flattened_panel.metadata["stretch_ratio"] == pytest.approx(1.0, rel=1e-3)
+    assert flattened_panel.metadata["flattening"]["loop_iterations"] <= 1
+
+
+def test_lscm_backend_flags_out_of_tolerance() -> None:
+    backend = LSCMConformalBackend(max_iterations=0)
+    panel = Panel3D.from_mapping(_square_panel("panel_warning"))
+    seams = {
+        "panel_warning": {
+            "seam_allowance": 0.01,
+            "loop_targets": _square_loop_targets(perimeter=2.0, length=0.5),
+        }
+    }
+
+    flattened = backend.flatten_panels([panel], seams, scale=1.0, seam_allowance=0.0)
+    flattened_panel = flattened[0]
+
+    assert flattened_panel.metadata["requires_subdivision"] is True
+    assert flattened_panel.metadata["warnings"], "Expected warnings when loop targets are missed"
+    circumference = flattened_panel.metadata["loop_metrics"]["circumference"]
+    assert circumference["within_tolerance"] is False
+
+
+def test_pattern_exporter_collects_panel_warnings(tmp_path: Path) -> None:
+    backend = LSCMConformalBackend(max_iterations=0)
+    exporter = PatternExporter(backend=backend)
+
+    mesh_payload = {"panels": [_square_panel("panel_warning")]}
+    seams = {
+        "panel_warning": {
+            "loop_targets": _square_loop_targets(perimeter=2.0, length=0.5),
+        }
+    }
+
+    created = exporter.export(mesh_payload, seams, output_dir=tmp_path, formats=["svg"])
+
+    svg_text = created["svg"].read_text(encoding="utf-8")
+    assert "panel_warning" in svg_text
+    # The exporter attaches warnings into the combined metadata comment header.
+    assert "panel_warnings" in svg_text
 
