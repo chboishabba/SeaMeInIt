@@ -13,8 +13,9 @@ Please see our docs:
 - [Undersuit Generation](docs/undersuit_generation.md) - Currently in progress.
 - [Cooling](docs/modules/cooling.md)
 - [Deployable Tent](docs/modules/tent.md)
-
-
+- [Agents](AGENTS.md)
+- [Contributing](CONTRIBUTING.md)
+- [Roadmap](ROADMAP.md)
 
 ## 🛡️ License Summary
 
