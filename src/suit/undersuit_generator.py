@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Mapping, MutableMapping
+from typing import Iterable, Mapping, MutableMapping, Sequence
 
 import numpy as np
 
+from .body_axes import fit_body_axes
 from .measurement_loops import solve_measurement_loops
 
 LayerArray = np.ndarray
@@ -90,24 +91,40 @@ class UnderSuitGenerator:
         body_output: Mapping[str, LayerArray] | object,
         *,
         options: UnderSuitOptions | None = None,
-        measurements: Mapping[str, float] | None = None,
+        measurements: Mapping[str, object] | Sequence[Mapping[str, object]] | None = None,
     ) -> UnderSuitResult:
         """Produce undersuit layers given a SMPL-X body model output."""
 
         options = options or UnderSuitOptions()
+        measurement_values, measurement_confidences = _parse_measurements(measurements)
         vertices, faces = _extract_vertices_and_faces(body_output)
         normals = _vertex_normals(vertices, faces)
-        measurement_scale = _measurement_scale(measurements, options.measurement_weights)
+        measurement_scale = _measurement_scale(measurement_values, options.measurement_weights)
         ease_scale = 1.0 + float(options.ease_percent)
         scale_factor = measurement_scale * ease_scale
 
-        scaled_vertices = _scale_about_centroid(vertices, scale_factor)
+        centroid = vertices.mean(axis=0, keepdims=True)
+        scaled_vertices = _scale_points(vertices, centroid, scale_factor)
+
+        raw_joints = None
+        if isinstance(body_output, Mapping):
+            raw_joints = body_output.get("joints")
+        else:
+            raw_joints = getattr(body_output, "joints", None)
+
+        body_axes = fit_body_axes(
+            scaled_vertices,
+            joints=_scale_joint_payload(raw_joints, centroid, scale_factor),
+            measurements=measurement_values,
+            measurement_confidences=measurement_confidences,
+        )
 
         layer_metadata: MutableMapping[str, object] = {
             "scale_factor": scale_factor,
             "measurement_scale": measurement_scale,
             "ease_percent": options.ease_percent,
             "watertight": _is_watertight(faces, tolerance=self.seam_tolerance),
+            "body_axes": body_axes.to_metadata(),
         }
 
         if not layer_metadata["watertight"]:
@@ -201,7 +218,11 @@ def _extract_vertices_and_faces(body_output: Mapping[str, LayerArray] | object) 
 
 def _scale_about_centroid(vertices: LayerArray, scale_factor: float) -> LayerArray:
     center = vertices.mean(axis=0, keepdims=True)
-    return (vertices - center) * scale_factor + center
+    return _scale_points(vertices, center, scale_factor)
+
+
+def _scale_points(points: LayerArray, center: np.ndarray, scale_factor: float) -> LayerArray:
+    return (points - center) * scale_factor + center
 
 
 def _measurement_scale(
@@ -221,6 +242,66 @@ def _measurement_scale(
     if not weighted:
         return 1.0
     return float(np.sum(weighted) / total_weight)
+
+
+def _parse_measurements(
+    measurements: Mapping[str, object] | Sequence[Mapping[str, object]] | None,
+) -> tuple[dict[str, float], dict[str, float]]:
+    if measurements is None:
+        return {}, {}
+
+    values: dict[str, float] = {}
+    confidences: dict[str, float] = {}
+
+    if isinstance(measurements, Mapping):
+        items = measurements.items()
+    else:
+        items = []
+        for entry in measurements:
+            if isinstance(entry, Mapping) and "name" in entry:
+                items.append((entry["name"], entry))
+
+    for name, raw_value in items:
+        if isinstance(raw_value, Mapping):
+            if "value" in raw_value:
+                values[name] = float(raw_value["value"])
+            if "confidence" in raw_value:
+                confidences[name] = float(raw_value["confidence"])
+        else:
+            values[name] = float(raw_value)
+
+    return values, confidences
+
+
+def _scale_joint_payload(
+    joints: Mapping[str, object] | Sequence[Mapping[str, object]] | None,
+    center: np.ndarray,
+    scale_factor: float,
+) -> Mapping[str, object] | Sequence[Mapping[str, object]] | None:
+    if joints is None:
+        return None
+
+    center_vec = np.asarray(center, dtype=float).reshape(1, 3)
+
+    if isinstance(joints, Mapping):
+        scaled: dict[str, np.ndarray] = {}
+        for name, value in joints.items():
+            arr = np.asarray(value, dtype=float)
+            if arr.shape == (3,):
+                scaled[name] = _scale_points(arr.reshape(1, 3), center_vec, scale_factor)[0]
+        return scaled
+
+    scaled_entries: list[Mapping[str, object]] = []
+    for entry in joints:
+        if isinstance(entry, Mapping) and "position" in entry:
+            arr = np.asarray(entry["position"], dtype=float)
+            if arr.shape == (3,):
+                scaled_entry = dict(entry)
+                scaled_entry["position"] = _scale_points(arr.reshape(1, 3), center_vec, scale_factor)[0]
+                scaled_entries.append(scaled_entry)
+                continue
+        scaled_entries.append(entry)
+    return scaled_entries
 
 
 def _vertex_normals(vertices: LayerArray, faces: LayerArray) -> LayerArray:

@@ -38,6 +38,37 @@ def representative_measurements() -> dict[str, float]:
     }
 
 
+@pytest.fixture()
+def tetra_body_with_joints(tetra_body: dict[str, np.ndarray]) -> dict[str, object]:
+    joints = {
+        "left_shoulder": np.array([0.3, 0.2, 0.3]),
+        "left_elbow": np.array([0.25, 0.2, 0.15]),
+        "left_wrist": np.array([0.2, 0.2, 0.05]),
+        "left_hand": np.array([0.15, 0.2, 0.05]),
+        "right_shoulder": np.array([0.7, 0.2, 0.3]),
+        "right_elbow": np.array([0.75, 0.2, 0.15]),
+        "right_wrist": np.array([0.8, 0.2, 0.05]),
+        "right_hand": np.array([0.85, 0.2, 0.05]),
+        "left_hip": np.array([0.45, 0.2, 0.05]),
+        "left_knee": np.array([0.45, 0.25, -0.15]),
+        "left_ankle": np.array([0.45, 0.25, -0.35]),
+        "left_foot": np.array([0.45, 0.3, -0.4]),
+        "right_hip": np.array([0.55, 0.2, 0.05]),
+        "right_knee": np.array([0.55, 0.25, -0.15]),
+        "right_ankle": np.array([0.55, 0.25, -0.35]),
+        "right_foot": np.array([0.55, 0.3, -0.4]),
+        "pelvis": np.array([0.5, 0.2, 0.1]),
+        "spine": np.array([0.5, 0.2, 0.25]),
+        "spine1": np.array([0.5, 0.2, 0.35]),
+        "spine2": np.array([0.5, 0.2, 0.45]),
+        "neck": np.array([0.5, 0.2, 0.55]),
+        "head": np.array([0.5, 0.2, 0.65]),
+    }
+    payload = dict(tetra_body)
+    payload["joints"] = joints
+    return payload
+
+
 def _vertex_normals(vertices: np.ndarray, faces: np.ndarray) -> np.ndarray:
     normals = np.zeros_like(vertices)
     tri_vertices = vertices[faces]
@@ -120,3 +151,40 @@ def test_layering_toggles_adjust_offsets(tetra_body: dict[str, np.ndarray], repr
     )
     assert disabled.insulation_layer is None
     assert disabled.comfort_layer is None
+
+
+def test_generator_emits_body_axes_metadata(tetra_body_with_joints: dict[str, object]) -> None:
+    generator = UnderSuitGenerator()
+    measurements = {
+        "arm_length": {"value": 0.8, "confidence": 0.3},
+        "inseam_length": {"value": 0.95, "confidence": 0.7},
+    }
+
+    result = generator.generate(tetra_body_with_joints, measurements=measurements)
+
+    metadata_axes = result.metadata["body_axes"]
+    assert set(metadata_axes) >= {"left_arm", "right_arm", "left_leg", "right_leg", "spine"}
+
+    centroid = tetra_body_with_joints["vertices"].mean(axis=0)
+    scale_factor = (1.0 + UnderSuitOptions().ease_percent)  # measurement_scale is 1.0 in this fixture
+
+    def _scale(point: np.ndarray) -> np.ndarray:
+        return (point - centroid) * scale_factor + centroid
+
+    left_shoulder = _scale(tetra_body_with_joints["joints"]["left_shoulder"])
+    left_elbow = _scale(tetra_body_with_joints["joints"]["left_elbow"])
+    left_wrist = _scale(tetra_body_with_joints["joints"]["left_wrist"])
+    left_hand = _scale(tetra_body_with_joints["joints"]["left_hand"])
+
+    geom_length = (
+        np.linalg.norm(left_elbow - left_shoulder)
+        + np.linalg.norm(left_wrist - left_elbow)
+        + np.linalg.norm(left_hand - left_wrist)
+    )
+    expected_length = geom_length + 0.3 * (measurements["arm_length"]["value"] - geom_length)
+
+    left_arm_meta = metadata_axes["left_arm"]
+    assert left_arm_meta["measurement"] == "arm_length"
+    assert left_arm_meta["parameters"][0] == pytest.approx(0.0)
+    assert left_arm_meta["parameters"][-1] == pytest.approx(1.0)
+    assert left_arm_meta["length"] == pytest.approx(expected_length)
