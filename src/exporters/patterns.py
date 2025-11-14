@@ -378,29 +378,74 @@ def _escape_pdf_text(value: str) -> str:
 
 def _write_pdf(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any]) -> None:
     min_x, min_y, max_x, max_y = _panel_bounds(panels)
-    margin = 20.0
-    width = max(100.0, (max_x - min_x) + margin * 2)
-    height = max(100.0, (max_y - min_y) + margin * 2)
+    points_per_meter = 72.0 / 0.0254
+    margin = 36.0
+    drawing_width = (max_x - min_x) * points_per_meter
+    drawing_height = (max_y - min_y) * points_per_meter
+    width = max(200.0, drawing_width + margin * 2)
+    height = max(200.0, drawing_height + margin * 2)
 
-    lines = [
+    info_lines = [
         "SMII Pattern Export",
         f"Scale: {metadata['scale']}",
         f"Seam allowance: {metadata['seam_allowance']}",
         f"Panels: {metadata['panel_count']}",
     ]
     for panel in panels:
-        coords = ", ".join(f"{x:.2f},{y:.2f}" for x, y in panel.outline)
-        lines.append(f"{panel.name}: {coords} (allowance={panel.seam_allowance})")
+        info_lines.append(f"{panel.name} (allowance={panel.seam_allowance})")
 
-    text_ops = ["BT", "/F1 12 Tf", f"20 {height - 40:.2f} Td"]
-    for index, line in enumerate(lines):
+    def transform(point: tuple[float, float]) -> tuple[float, float]:
+        px = (point[0] - min_x) * points_per_meter + margin
+        py = (point[1] - min_y) * points_per_meter + margin
+        return px, py
+
+    drawing_ops: list[str] = [
+        "q",
+        "0.75 w",
+        "0 0 0 RG",
+        "0 0 0 rg",
+    ]
+    label_ops: list[str] = []
+    for panel in panels:
+        if len(panel.outline) < 2:
+            continue
+        start_x, start_y = transform(panel.outline[0])
+        drawing_ops.append(f"{start_x:.2f} {start_y:.2f} m")
+        for x, y in panel.outline[1:]:
+            px, py = transform((x, y))
+            drawing_ops.append(f"{px:.2f} {py:.2f} l")
+        drawing_ops.append("h")
+        drawing_ops.append("S")
+
+        centroid_x, centroid_y = _polygon_centroid(panel.outline)
+        label_x, label_y = transform((centroid_x, centroid_y))
+        escaped_label = _escape_pdf_text(panel.name)
+        label_ops.extend(
+            [
+                "BT",
+                "/F1 10 Tf",
+                f"1 0 0 1 {label_x:.2f} {label_y:.2f} Tm",
+                f"({escaped_label}) Tj",
+                "ET",
+            ]
+        )
+    drawing_ops.append("Q")
+
+    header_ops = ["BT", "/F1 12 Tf"]
+    top_text_y = height - margin
+    for index, line in enumerate(info_lines):
         escaped = _escape_pdf_text(line)
         if index == 0:
-            text_ops.append(f"({escaped}) Tj")
+            header_ops.append(f"1 0 0 1 {margin:.2f} {top_text_y:.2f} Tm")
+            header_ops.append(f"({escaped}) Tj")
         else:
-            text_ops.append(f"0 -14 Td ({escaped}) Tj")
-    text_ops.append("ET")
-    content_stream = "\n".join(text_ops).encode("utf-8")
+            offset = 14.0 * index
+            header_ops.append(f"1 0 0 1 {margin:.2f} {top_text_y - offset:.2f} Tm")
+            header_ops.append(f"({escaped}) Tj")
+    header_ops.append("ET")
+
+    content_parts = drawing_ops + header_ops + label_ops
+    content_stream = "\n".join(content_parts).encode("utf-8")
 
     objects: list[bytes] = []
     catalog = b"<< /Type /Catalog /Pages 2 0 R >>"
@@ -437,6 +482,27 @@ def _write_pdf(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any
         f"trailer\n<< /Size {count} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF".encode("utf-8")
     )
     path.write_bytes(buffer)
+
+
+def _polygon_centroid(points: Sequence[tuple[float, float]]) -> tuple[float, float]:
+    if not points:
+        return 0.0, 0.0
+    area = 0.0
+    centroid_x = 0.0
+    centroid_y = 0.0
+    for index, (x0, y0) in enumerate(points):
+        x1, y1 = points[(index + 1) % len(points)]
+        cross = x0 * y1 - x1 * y0
+        area += cross
+        centroid_x += (x0 + x1) * cross
+        centroid_y += (y0 + y1) * cross
+    area *= 0.5
+    if math.isclose(area, 0.0):
+        avg_x = sum(point[0] for point in points) / len(points)
+        avg_y = sum(point[1] for point in points) / len(points)
+        return avg_x, avg_y
+    factor = 1.0 / (6.0 * area)
+    return centroid_x * factor, centroid_y * factor
 
 
 __all__ = [
