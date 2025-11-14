@@ -75,3 +75,45 @@ print(result.metadata["layers"])
 
 When integrating into broader pipelines ensure the source mesh is watertight;
 the generator validates this before producing layers.
+
+## Seam-Minimal Panel Extraction
+
+The undersuit pipeline now follows a **metric-guided minimal-seam** strategy to
+prevent starburst artefacts, reduce manual clean-up, and support non-human
+topologies such as dogs. The process enforces four rules that combine geometric
+developability with biomechanical constraints.
+
+### 1. Detect flattenable regions
+
+- Evaluate Gaussian and mean curvature per vertex (or use triangle angular
+  defect) to measure local developability.
+- Treat near-zero curvature zones as candidates for large, seam-free panels and
+  flag high-curvature ridges as mandatory seam locations.
+
+### 2. Optimise for the fewest seams
+
+- Thresholded curvature yields a graph where nodes are surface regions and edges
+  mark potential cuts.
+- Solve for the minimum contiguous cut set that converts the surface into
+  topological disks while avoiding over-segmentation.
+- Humans typically resolve to 3–4 panels (centre-back, inner-arm, inner-leg,
+  neck ring). Dogs generally require 2–4 panels (belly, optional dorsal, shoulder
+  loops).
+
+### 3. Align seams with tension maps
+
+- Use measurement inputs (circumferences, limb lengths) to estimate tension
+  direction and magnitude.
+- Prohibit seams across high-tension axes (e.g., human chest, canine shoulder
+  saddle) and prefer placements where loads are minimal or visibility is low.
+
+### 4. Supervise UV unwrapping
+
+- Cut the mesh along the approved seam graph and unwrap each panel with LSCM or
+  ABF.
+- Reject panels that exceed distortion thresholds and iteratively subdivide
+  until developability limits are satisfied.
+
+These steps keep seam counts low, eliminate radial distortion, and extend the
+pipeline to quadruped body plans without special cases—only the curvature field
+and measurement priors change between species.
