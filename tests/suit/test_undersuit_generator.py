@@ -1,5 +1,20 @@
 from __future__ import annotations
 
+import sys
+from types import ModuleType
+from typing import Mapping
+
+if "jsonschema" not in sys.modules:
+    jsonschema_stub = ModuleType("jsonschema")
+
+    class _ValidationError(Exception):
+        """Fallback validation error used when jsonschema is unavailable."""
+
+    jsonschema_stub.Draft202012Validator = object
+    jsonschema_stub.ValidationError = _ValidationError
+    sys.modules["jsonschema"] = jsonschema_stub
+
+
 import numpy as np
 import pytest
 
@@ -113,6 +128,37 @@ def test_base_layer_respects_measurement_scaling(tetra_body: dict[str, np.ndarra
     expected_vertices = scaled + normals * options.base_thickness
 
     np.testing.assert_allclose(base_vertices, expected_vertices, rtol=1e-6, atol=1e-6)
+
+
+def test_measurement_scale_weights_confidences(tetra_body: dict[str, np.ndarray]) -> None:
+    generator = UnderSuitGenerator()
+    options = UnderSuitOptions(
+        include_insulation=False,
+        include_comfort_liner=False,
+        ease_percent=0.0,
+    )
+    measurement_inputs: Mapping[str, object] = {
+        "chest_circumference": {"value": 110.0, "confidence": 0.2, "source": "measured"},
+        "waist_circumference": (85.0, 0.4),
+        "hip_circumference": {"value": 105.0, "confidence": 0.6, "source": "inferred"},
+    }
+
+    result = generator.generate(tetra_body, options=options, measurements=measurement_inputs)
+
+    expected_pairs = {
+        "chest_circumference": (110.0, 1.0),
+        "waist_circumference": (85.0, 0.4),
+        "hip_circumference": (105.0, 0.6),
+    }
+    weighted_sum = 0.0
+    weight_total = 0.0
+    for name, (value, weight) in expected_pairs.items():
+        weighted_sum += (value / LAYER_REFERENCE_MEASUREMENTS[name]) * weight
+        weight_total += weight
+    expected_scale = weighted_sum / weight_total
+
+    assert result.metadata["measurement_scale"] == pytest.approx(expected_scale)
+    assert result.metadata["scale_factor"] == pytest.approx(expected_scale)
 
 
 def test_watertight_mesh_preserves_seams(tetra_body: dict[str, np.ndarray], representative_measurements: dict[str, float]) -> None:
