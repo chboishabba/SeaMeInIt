@@ -129,7 +129,7 @@ def run_afflec_fixture_demo(
             "jsonschema is required for Afflec measurement fitting. Install the 'jsonschema' dependency."
         )
 
-    from smii.pipelines import extract_measurements_from_afflec_images, fit_smplx_from_measurements
+    from smii.pipelines import fit_smplx_from_images
     from smii.pipelines.fit_from_measurements import (
         create_body_mesh,
         plot_measurement_report,
@@ -142,11 +142,8 @@ def run_afflec_fixture_demo(
             "No Afflec fixture images were found. Provide --images to supply custom data."
         )
 
-    print("Extracting measurements from Afflec imagery...")
-    measurements = extract_measurements_from_afflec_images(image_paths)
-    print(f"Recovered {len(measurements)} measurements.")
-
-    result = fit_smplx_from_measurements(measurements)
+    print("Regressing SMPL-X parameters from Afflec imagery...")
+    result = fit_smplx_from_images(image_paths)
     target_dir = output_dir or Path("outputs/afflec_demo")
     target_dir.mkdir(parents=True, exist_ok=True)
 

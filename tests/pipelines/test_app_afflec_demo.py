@@ -46,18 +46,16 @@ def _fake_result(measurements: dict[str, float]) -> FitResult:
 def test_afflec_demo_announces_plot(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
     from smii import app
 
-    measurements = {"height": 170.0, "chest_circumference": 95.5}
     called: dict[str, object] = {}
 
     monkeypatch.setattr(app.importlib_util, "find_spec", lambda name: object())
 
-    def fake_extract(images):
-        called["images"] = tuple(images)
-        return measurements
+    measurements = {"height": 170.0, "chest_circumference": 95.5}
 
-    def fake_fit(provided):
-        called["measurements"] = provided
-        return _fake_result(provided)
+    def fake_fit(images, **kwargs):
+        called["images"] = tuple(images)
+        called["fit_kwargs"] = kwargs
+        return _fake_result(measurements)
 
     def fake_save(result: FitResult, output_path: Path) -> None:
         called["save_path"] = output_path
@@ -99,8 +97,7 @@ def test_afflec_demo_announces_plot(monkeypatch: pytest.MonkeyPatch, tmp_path: P
             called["vertices_called"] = True
             return self._vertices
 
-    monkeypatch.setattr("smii.pipelines.extract_measurements_from_afflec_images", fake_extract)
-    monkeypatch.setattr("smii.pipelines.fit_smplx_from_measurements", fake_fit)
+    monkeypatch.setattr("smii.pipelines.fit_smplx_from_images", fake_fit)
     monkeypatch.setattr("smii.pipelines.fit_from_measurements.save_fit", fake_save)
     monkeypatch.setattr("smii.pipelines.fit_from_measurements.plot_measurement_report", fake_plot)
 
@@ -115,7 +112,7 @@ def test_afflec_demo_announces_plot(monkeypatch: pytest.MonkeyPatch, tmp_path: P
 
     assert result_path == output_dir / "afflec_measurement_fit.json"
     assert called["images"] == tuple(images)
-    assert called["measurements"] == measurements
+    assert called["fit_kwargs"] == {}
     assert called["save_path"] == result_path
     assert called["plot_dir"] == output_dir
     assert (output_dir / "measurement_report.png").exists()
