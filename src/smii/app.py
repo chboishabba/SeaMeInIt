@@ -13,7 +13,20 @@ __all__ = [
     "InteractiveSession",
     "launch_interactive_session",
     "run_afflec_fixture_demo",
+    "run_image_fitting_pipeline",
 ]
+
+
+_SUPPORTED_IMAGE_SUFFIXES = {
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".bmp",
+    ".tif",
+    ".tiff",
+    ".webp",
+    ".avif",
+}
 
 
 @dataclass(frozen=True)
@@ -115,6 +128,41 @@ def _default_afflec_images() -> list[Path]:
     return sorted(fixture_dir.glob("*.pgm"))
 
 
+def _expand_image_inputs(paths: Iterable[Path]) -> list[Path]:
+    expanded: list[Path] = []
+    for candidate in paths:
+        path = Path(candidate)
+        if not path.exists():
+            raise FileNotFoundError(f"Image input {path} does not exist.")
+        if path.is_dir():
+            files = [
+                item
+                for item in sorted(path.rglob("*"))
+                if item.is_file() and item.suffix.lower() in _SUPPORTED_IMAGE_SUFFIXES
+            ]
+            expanded.extend(files)
+        else:
+            expanded.append(path)
+    seen: set[Path] = set()
+    unique: list[Path] = []
+    for path in expanded:
+        resolved = path.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        unique.append(path)
+    return unique
+
+
+def _infer_subject_id(images: Sequence[Path]) -> str:
+    for path in images:
+        if path.is_file() and path.stem:
+            return path.stem
+        if path.parent.stem:
+            return path.parent.stem
+    return "image_fit"
+
+
 def run_afflec_fixture_demo(
     *,
     images: Iterable[Path] | None = None,
@@ -167,6 +215,76 @@ def run_afflec_fixture_demo(
     if plot_path is not None:
         print(f"Generated measurement report plot at {plot_path}")
     return output_path
+
+
+def run_image_fitting_pipeline(
+    *,
+    images: Iterable[Path],
+    output_dir: Path | None = None,
+    subject_id: str | None = None,
+    model_assets: Path | None = None,
+    model_backend: str = "smplx",
+    gender: str = "neutral",
+    detector: str = "mediapipe",
+    refine_with_measurements: bool = True,
+) -> Path:
+    """Run the image-based SMPL-X regression pipeline."""
+
+    image_list = _expand_image_inputs(images)
+    if not image_list:
+        raise FileNotFoundError(
+            "No RGB images were found. Provide at least one JPEG/PNG/AVIF path or directory."
+        )
+
+    subject = subject_id or _infer_subject_id(image_list)
+    target_dir = output_dir or Path("outputs") / subject
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    from smii.pipelines import (
+        fit_smplx_from_images,
+        save_regression_json,
+        save_regression_mesh,
+    )
+
+    print(f"Fitting SMPL-X parameters from {len(image_list)} image(s) using {detector}...")
+    result = fit_smplx_from_images(
+        image_list,
+        detector=detector,
+        refine_with_measurements=refine_with_measurements,
+    )
+
+    json_path = target_dir / f"{subject}_smplx_params.json"
+    save_regression_json(result, json_path)
+    print(f"Saved regression parameters to {json_path}")
+
+    assets_root = Path(model_assets) if model_assets is not None else Path("assets") / model_backend
+
+    mesh_path = target_dir / f"{subject}_smplx_body.npz"
+    try:
+        save_regression_mesh(
+            result,
+            mesh_path,
+            model_path=assets_root,
+            model_type=model_backend,
+            gender=gender,
+            use_measurement_refinement=refine_with_measurements,
+        )
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(
+            "SMPL-compatible assets are required to generate the fitted body mesh. "
+            f"Provision the '{model_backend}' bundle with `python tools/download_smplx.py --model {model_backend}` "
+            "and re-run the command (use --assets-root to supply a custom path)."
+        ) from exc
+
+    print(f"Saved watertight mesh to {mesh_path}")
+    if result.measurement_fit is not None:
+        coverage = result.measurement_fit.measurement_report.coverage
+        print(
+            "Measurement refinement coverage: "
+            f"{coverage:.0%} of manual metrics constrained"
+        )
+
+    return json_path
 
 
 def build_cli(argv: Sequence[str] | None = None) -> int:
@@ -222,6 +340,56 @@ def build_cli(argv: Sequence[str] | None = None) -> int:
         ),
     )
 
+    fit_from_images = subparsers.add_parser(
+        "fit-from-images",
+        help="Regress SMPL-X parameters directly from RGB images",
+    )
+    fit_from_images.add_argument(
+        "--images",
+        type=Path,
+        nargs="+",
+        required=True,
+        help="One or more image files or directories containing images",
+    )
+    fit_from_images.add_argument(
+        "--output",
+        type=Path,
+        help="Directory for generated parameter files",
+    )
+    fit_from_images.add_argument(
+        "--subject-id",
+        type=str,
+        help="Identifier used when naming generated artifacts",
+    )
+    fit_from_images.add_argument(
+        "--model-backend",
+        choices=("smplx", "smplerx"),
+        default="smplx",
+        help="Which asset bundle to use when generating meshes.",
+    )
+    fit_from_images.add_argument(
+        "--assets-root",
+        type=Path,
+        help="Override the asset directory. Defaults to assets/<model-backend>.",
+    )
+    fit_from_images.add_argument(
+        "--gender",
+        choices=("neutral", "male", "female"),
+        default="neutral",
+        help="Gendered SMPL-X model variant to load.",
+    )
+    fit_from_images.add_argument(
+        "--detector",
+        choices=("mediapipe",),
+        default="mediapipe",
+        help="Keypoint detector used for landmark extraction.",
+    )
+    fit_from_images.add_argument(
+        "--skip-measurement-refinement",
+        action="store_true",
+        help="Disable measurement-model refinement of the regressed betas.",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "interactive":
@@ -240,6 +408,19 @@ def build_cli(argv: Sequence[str] | None = None) -> int:
             output_dir=args.output,
             model_backend=args.model_backend,
             model_assets=args.assets_root,
+        )
+        return 0
+
+    if args.command == "fit-from-images":
+        run_image_fitting_pipeline(
+            images=args.images,
+            output_dir=args.output,
+            subject_id=args.subject_id,
+            model_backend=args.model_backend,
+            model_assets=args.assets_root,
+            gender=args.gender,
+            detector=args.detector,
+            refine_with_measurements=not args.skip_measurement_refinement,
         )
         return 0
 
