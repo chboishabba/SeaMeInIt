@@ -1,3 +1,204 @@
+
+# Wave 3 - Undersuit pattern generation
+
+Currently we're struggling with producing biblically accurate bodysuit patterns which are entirely unfeasible to sew.
+
+Perfect — these examples tell me **exactly** what final form you want:
+
+✔️ **Clean vector-style outlines**
+✔️ **No spikes, no jagged edges, no geometric artifacts**
+✔️ **Readable, garment-maker-friendly shapes**
+✔️ **Separated pieces for body, sleeves, gloves, etc.**
+✔️ **Optional annotations (grainline, fold line, notches)**
+✔️ **Consistent “fashion-technical-flat” style linework**
+
+Your current LSCM output (the black radial splat) is *structurally correct geometry* but **visually unusable as a sewing pattern** because it has no:
+
+* shape smoothing
+* panel segmentation
+* piece naming
+* grain alignment
+* seam allowance
+* vectorization
+* rectangular (A4/A0) layout
+
+To get from **“LSCM splat” → “real sewing pattern like images above”**, here is the exact pipeline you need to implement — and the good news is that you already have 70% of it with SeaMeInIt’s curvature-guided seams and nice watertight meshes.
+
+---
+
+# ✅ **THE REAL PIPELINE YOU WANT (Actionable)**
+
+## **STEP 1 — Solve for good panel segmentation (you already do this)**
+
+Your metric-guided seam placement is correct and better than commercial cutters:
+
+* curvature → flattenability
+* stress → seam placement
+* anisotropy → grain direction
+
+Keep doing this. This is the “secret sauce.”
+
+---
+
+## **STEP 2 — Run LSCM/ABF *per panel*, not on the whole body**
+
+The starburst only happens when you flatten the entire mesh without seams.
+
+Once panels are cut in 3-D:
+
+* each panel becomes a topological disk ✔️
+* LSCM produces very clean outlines ✔️
+* shape becomes very close to the bodysuit pattern references you posted ✔️
+
+This gives you something like:
+
+```
+torso_front_panel.svg
+torso_back_panel.svg
+arm_left_panel.svg
+arm_right_panel.svg
+crotch_gusset.svg
+glove_finger_3.svg
+...
+```
+
+---
+
+## **STEP 3 — Clean geometry → smooth outline**
+
+This is the missing piece.
+
+### You need to apply **boundary post-processing**:
+
+#### **Algorithm (simple + effective)**
+
+For every 2-D panel boundary polyline:
+
+1. **Detect outliers**
+
+   * compute edge lengths
+   * remove edges > 3× median
+
+2. **Laplacian smooth the boundary**
+
+   * project smoothed points onto panel interior to avoid distortion
+
+3. **Douglas–Peucker simplify**
+
+   * reduce points while keeping the curves smooth and sewing-friendly
+
+4. **Optional: round corners slightly**
+
+   * use quadratic Béziers to soften tight angles
+   * this creates the exact look of the patterns you posted
+
+Result: clean lines like Vogue / McCall’s / KwikSew / retail patterns.
+
+---
+
+## **STEP 4 — Convert smoothed boundaries → vector curves (SVG)**
+
+Every example you showed is **SVG-like technical flats**:
+
+* uniform stroke
+* no fill
+* curves with few nodes
+
+You output:
+
+* SVG export
+* DXF-R12 export (industry standard for fabric cutters)
+* PDF tiling for A4/A0
+
+SeaMeInIt can easily generate **SVG** using Python:
+
+```python
+svgwrite
+shapely
+bezmerizing
+skia-python
+```
+
+---
+
+## **STEP 5 — Add pattern metadata layers**
+
+You want:
+
+### **Grainline**
+
+* from fabric anisotropy vector
+* draw a long arrow along preferred warp/weft direction
+
+### **Notches**
+
+* tiny triangles on key matching edges
+* derived from vertex correspondences along seams
+
+### **Piece labels**
+
+* "FRONT BODY"
+* "BACK BODY"
+* "SLEEVE LEFT"
+* "GLOVE—INDEX FINGER (LEFT)"
+
+### **Fold-lines**
+
+* if a piece is symmetric → left edge = “cut on fold”
+
+### **Seam allowance**
+
+* offset shape outward by X mm (Shapely buffer)
+
+This makes the results identical to the commercial pattern images you posted.
+
+---
+
+# 🎯 **HERE’S WHAT THE OUTPUT WILL LOOK LIKE AFTER THESE STEPS**
+
+It will match the styles you showed:
+
+### Bodysuit pattern
+
+Clean, segmented torso + sleeve shapes
+
+### Gloves pattern
+
+Each finger is its own piece, optionally mirrored on fold
+Smooth Bézier outlines, labelled, grainline shown
+
+### Technical line drawings
+
+The “front/back flat” diagrams are removed from the radials and redrawn from the SMPL-X mesh silhouette & seam lines — this is trivial for SeaMeInIt now.
+
+---
+
+# 🔥 **THE MISSING MODULE YOU NEED TO ADD (I can generate code next)**
+
+You need a new module:
+
+```
+src/pattern/postprocess.py
+```
+
+Containing:
+
+### **1. boundary_cleanup(panel_2d)**
+
+### **2. simplify_curves()**
+
+### **3. stylize_curves_to_beziers()**
+
+### **4. add_notches()**
+
+### **5. add_grainline()**
+
+### **6. export_svg() / export_dxf() / export_pdf()**
+
+This is 100% implementable.
+
+
+
 # Wave 2 - PRIORITY TRIAGE OVERVIEW
 
 | Priority                 | Cluster                                 | Theme                              |
