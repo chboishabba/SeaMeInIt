@@ -9,9 +9,15 @@ from .hard_layer_export import (
 from .lscm_backend import LSCMConformalBackend
 from .patterns import (
     CADBackend,
+    FoldAnnotation,
+    GrainlineAnnotation,
+    LabelAnnotation,
+    NotchAnnotation,
+    PanelAnnotations,
     Panel2D,
     Panel3D,
     PatternExporter,
+    build_panel_annotations,
     SimplePlaneProjectionBackend,
 )
 from .tent_bundle import export_suit_tent_bundle
@@ -30,6 +36,12 @@ __all__ = [
     "build_neutral_pose",
     "load_smplx_template",
     "CADBackend",
+    "GrainlineAnnotation",
+    "NotchAnnotation",
+    "FoldAnnotation",
+    "LabelAnnotation",
+    "PanelAnnotations",
+    "build_panel_annotations",
     "Panel2D",
     "Panel3D",
     "PatternExporter",

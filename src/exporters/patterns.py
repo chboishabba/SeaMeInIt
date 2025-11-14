@@ -22,13 +22,139 @@ class Panel3D:
     name: str
     vertices: list[tuple[float, float, float]]
     faces: list[tuple[int, int, int]]
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_mapping(cls, payload: Mapping[str, Any]) -> "Panel3D":
         vertices = [tuple(map(float, vertex)) for vertex in payload.get("vertices", [])]
         faces = [tuple(int(idx) for idx in face) for face in payload.get("faces", [])]
         name = str(payload.get("name", "panel"))
-        return cls(name=name, vertices=vertices, faces=faces)
+        metadata = dict(payload.get("metadata", {}) or {})
+        return cls(name=name, vertices=vertices, faces=faces, metadata=metadata)
+
+
+@dataclass(slots=True)
+class GrainlineAnnotation:
+    """Directional grainline arrow rendered on a flattened panel."""
+
+    origin: tuple[float, float]
+    direction: tuple[float, float]
+    length: float | None = None
+
+    def endpoints(self) -> tuple[tuple[float, float], tuple[float, float]]:
+        dx, dy = self.direction
+        magnitude = math.hypot(dx, dy)
+        if magnitude <= 1e-9:
+            return self.origin, self.origin
+        length = float(self.length or magnitude)
+        ux = dx / magnitude
+        uy = dy / magnitude
+        half = length * 0.5
+        start = (self.origin[0] - ux * half, self.origin[1] - uy * half)
+        end = (self.origin[0] + ux * half, self.origin[1] + uy * half)
+        return start, end
+
+    def arrowheads(self) -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
+        start, end = self.endpoints()
+        dx = end[0] - start[0]
+        dy = end[1] - start[1]
+        length = math.hypot(dx, dy)
+        if length <= 1e-9:
+            return [], []
+        ux = dx / length
+        uy = dy / length
+        size = max(length * 0.12, 1e-3)
+        normal = (-uy, ux)
+        def _arrow(point: tuple[float, float], sign: float) -> list[tuple[float, float]]:
+            base = (point[0] - ux * size * sign, point[1] - uy * size * sign)
+            width = size * 0.45
+            return [
+                point,
+                (base[0] + normal[0] * width, base[1] + normal[1] * width),
+                (base[0] - normal[0] * width, base[1] - normal[1] * width),
+            ]
+
+        return _arrow(start, -1.0), _arrow(end, 1.0)
+
+
+@dataclass(slots=True)
+class NotchAnnotation:
+    """Marker rendered perpendicular to the panel outline."""
+
+    position: tuple[float, float]
+    tangent: tuple[float, float]
+    normal: tuple[float, float]
+    depth: float = 0.01
+    width: float = 0.01
+    label: str | None = None
+
+    def triangle(self) -> list[tuple[float, float]]:
+        tx, ty = self.tangent
+        nx, ny = self.normal
+        tangent_len = math.hypot(tx, ty) or 1.0
+        normal_len = math.hypot(nx, ny) or 1.0
+        ux = tx / tangent_len
+        uy = ty / tangent_len
+        vx = nx / normal_len
+        vy = ny / normal_len
+        half_width = self.width * 0.5
+        tip = (self.position[0] + vx * self.depth, self.position[1] + vy * self.depth)
+        base_left = (
+            self.position[0] - vx * self.depth * 0.2 + ux * half_width,
+            self.position[1] - vy * self.depth * 0.2 + uy * half_width,
+        )
+        base_right = (
+            self.position[0] - vx * self.depth * 0.2 - ux * half_width,
+            self.position[1] - vy * self.depth * 0.2 - uy * half_width,
+        )
+        return [tip, base_left, base_right]
+
+
+@dataclass(slots=True)
+class FoldAnnotation:
+    """Representation of a fold line indicator."""
+
+    start: tuple[float, float]
+    end: tuple[float, float]
+    kind: str = "valley"
+
+    def chevrons(self) -> list[tuple[tuple[float, float], tuple[float, float]]]:
+        dx = self.end[0] - self.start[0]
+        dy = self.end[1] - self.start[1]
+        length = math.hypot(dx, dy)
+        if length <= 1e-9:
+            return []
+        ux = dx / length
+        uy = dy / length
+        nx = -uy
+        ny = ux
+        spacing = max(length / 6.0, 1e-3)
+        size = spacing * 0.6
+        chevrons: list[tuple[tuple[float, float], tuple[float, float]]] = []
+        for offset in (-spacing, 0.0, spacing):
+            mx = (self.start[0] + self.end[0]) * 0.5 + ux * offset
+            my = (self.start[1] + self.end[1]) * 0.5 + uy * offset
+            chevrons.append(((mx - nx * size, my - ny * size), (mx + nx * size, my + ny * size)))
+        return chevrons
+
+
+@dataclass(slots=True)
+class LabelAnnotation:
+    """Label text placed on the flattened panel."""
+
+    text: str
+    position: tuple[float, float]
+    rotation: float = 0.0
+
+
+@dataclass(slots=True)
+class PanelAnnotations:
+    """Aggregate annotation payload for a panel."""
+
+    grainlines: list[GrainlineAnnotation] = field(default_factory=list)
+    notches: list[NotchAnnotation] = field(default_factory=list)
+    folds: list[FoldAnnotation] = field(default_factory=list)
+    label: LabelAnnotation | None = None
 
 
 @dataclass(slots=True)
@@ -40,6 +166,349 @@ class Panel2D:
     seam_allowance: float
     cut_outline: list[tuple[float, float]] | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    grainlines: list[GrainlineAnnotation] = field(default_factory=list)
+    notches: list[NotchAnnotation] = field(default_factory=list)
+    folds: list[FoldAnnotation] = field(default_factory=list)
+    label: LabelAnnotation | None = None
+
+
+def build_panel_annotations(
+    outline: Sequence[tuple[float, float]],
+    *,
+    seam_metadata: Mapping[str, Any] | None = None,
+    panel_metadata: Mapping[str, Any] | None = None,
+    panel_name: str | None = None,
+) -> PanelAnnotations:
+    """Create annotation primitives for a flattened panel."""
+
+    seam_metadata = seam_metadata or {}
+    panel_metadata = panel_metadata or {}
+
+    grainlines = _grainlines_from_metadata(outline, panel_metadata)
+    notches = _notches_from_metadata(outline, seam_metadata)
+    folds = _folds_from_metadata(outline, seam_metadata)
+    label = _label_from_metadata(outline, panel_metadata, seam_metadata, panel_name)
+
+    return PanelAnnotations(
+        grainlines=grainlines,
+        notches=notches,
+        folds=folds,
+        label=label,
+    )
+
+
+def _polygon_area(points: Sequence[tuple[float, float]]) -> float:
+    if len(points) < 3:
+        return 0.0
+    area = 0.0
+    for (x0, y0), (x1, y1) in zip(points, points[1:] + points[:1]):
+        area += x0 * y1 - x1 * y0
+    return area * 0.5
+
+
+def _outline_length(points: Sequence[tuple[float, float]]) -> float:
+    if len(points) < 2:
+        return 0.0
+    total = 0.0
+    closed = list(points)
+    if closed[0] != closed[-1]:
+        closed.append(closed[0])
+    for start, end in zip(closed, closed[1:]):
+        total += math.dist(start, end)
+    return total
+
+
+def _outline_centroid(points: Sequence[tuple[float, float]]) -> tuple[float, float]:
+    if not points:
+        return 0.0, 0.0
+    area = _polygon_area(points)
+    if abs(area) <= 1e-9:
+        xs = [p[0] for p in points]
+        ys = [p[1] for p in points]
+        return sum(xs) / len(xs), sum(ys) / len(ys)
+    factor = 1.0 / (6.0 * area)
+    cx = 0.0
+    cy = 0.0
+    for (x0, y0), (x1, y1) in zip(points, points[1:] + points[:1]):
+        cross = x0 * y1 - x1 * y0
+        cx += (x0 + x1) * cross
+        cy += (y0 + y1) * cross
+    return cx * factor, cy * factor
+
+
+def _outline_point_frame(
+    points: Sequence[tuple[float, float]],
+    fraction: float,
+) -> tuple[tuple[float, float], tuple[float, float], tuple[float, float]]:
+    if not points:
+        return (0.0, 0.0), (1.0, 0.0), (0.0, 1.0)
+    closed = list(points)
+    if closed[0] != closed[-1]:
+        closed.append(closed[0])
+    total = 0.0
+    segments: list[tuple[tuple[float, float], tuple[float, float], float]] = []
+    for start, end in zip(closed, closed[1:]):
+        length = math.dist(start, end)
+        if length <= 1e-9:
+            continue
+        segments.append((start, end, length))
+        total += length
+    if total <= 1e-9:
+        start, end = closed[0], closed[1]
+        tangent = (end[0] - start[0], end[1] - start[1])
+        normal = (-tangent[1], tangent[0])
+        return start, tangent, normal
+    orientation = 1.0 if _polygon_area(points) >= 0 else -1.0
+    target = (fraction % 1.0) * total
+    travelled = 0.0
+    for start, end, length in segments:
+        if travelled + length >= target - 1e-9:
+            ratio = (target - travelled) / length if length > 1e-9 else 0.0
+            x = start[0] + (end[0] - start[0]) * ratio
+            y = start[1] + (end[1] - start[1]) * ratio
+            tangent = (end[0] - start[0], end[1] - start[1])
+            normal = (-tangent[1] * orientation, tangent[0] * orientation)
+            return (x, y), tangent, normal
+        travelled += length
+    start, end, _ = segments[-1]
+    tangent = (end[0] - start[0], end[1] - start[1])
+    normal = (-tangent[1] * orientation, tangent[0] * orientation)
+    return end, tangent, normal
+
+
+def _outline_frame_from_point(
+    points: Sequence[tuple[float, float]],
+    point: tuple[float, float],
+) -> tuple[tuple[float, float], tuple[float, float], tuple[float, float]]:
+    if not points:
+        return point, (1.0, 0.0), (0.0, 1.0)
+    closed = list(points)
+    if closed[0] != closed[-1]:
+        closed.append(closed[0])
+    best: tuple[float, tuple[float, float], tuple[float, float], tuple[float, float]] | None = None
+    orientation = 1.0 if _polygon_area(points) >= 0 else -1.0
+    for start, end in zip(closed, closed[1:]):
+        sx, sy = start
+        ex, ey = end
+        vx = ex - sx
+        vy = ey - sy
+        seg_len_sq = vx * vx + vy * vy
+        if seg_len_sq <= 1e-12:
+            continue
+        px, py = point
+        t = ((px - sx) * vx + (py - sy) * vy) / seg_len_sq
+        t = max(0.0, min(1.0, t))
+        proj = (sx + vx * t, sy + vy * t)
+        dist_sq = (proj[0] - px) ** 2 + (proj[1] - py) ** 2
+        if best is None or dist_sq < best[0]:
+            tangent = (vx, vy)
+            normal = (-vy * orientation, vx * orientation)
+            best = (dist_sq, proj, tangent, normal)
+    if best is None:
+        return point, (1.0, 0.0), (0.0, 1.0)
+    _, proj, tangent, normal = best
+    return proj, tangent, normal
+
+
+def _coerce_direction(values: Sequence[Any]) -> tuple[float, float]:
+    coords = [float(v) for v in values[:2]]
+    if not coords:
+        return 0.0, 1.0
+    if len(coords) == 1:
+        return coords[0], 0.0
+    return coords[0], coords[1]
+
+
+def _grainlines_from_metadata(
+    outline: Sequence[tuple[float, float]],
+    panel_metadata: Mapping[str, Any],
+) -> list[GrainlineAnnotation]:
+    payload = panel_metadata.get("grainline") or panel_metadata.get("grainlines")
+    entries: Sequence[Any]
+    if isinstance(payload, Mapping):
+        entries = [payload]
+    elif isinstance(payload, Sequence):
+        entries = list(payload)
+    else:
+        entries = []
+
+    if not entries:
+        return [_default_grainline(outline)]
+
+    annotations: list[GrainlineAnnotation] = []
+    for entry in entries:
+        if not isinstance(entry, Mapping):
+            continue
+        direction_raw = entry.get("direction", entry.get("vector"))
+        if isinstance(direction_raw, Sequence):
+            direction = _coerce_direction(direction_raw)
+        else:
+            direction = (0.0, 1.0)
+        origin_raw = entry.get("origin")
+        if isinstance(origin_raw, Sequence) and len(origin_raw) >= 2:
+            origin = (float(origin_raw[0]), float(origin_raw[1]))
+        else:
+            origin = _outline_centroid(outline)
+        length = entry.get("length")
+        annotations.append(
+            GrainlineAnnotation(
+                origin=origin,
+                direction=direction,
+                length=float(length) if length is not None else None,
+            )
+        )
+    return annotations or [_default_grainline(outline)]
+
+
+def _default_grainline(outline: Sequence[tuple[float, float]]) -> GrainlineAnnotation:
+    cx, cy = _outline_centroid(outline)
+    xs = [point[0] for point in outline] or [0.0]
+    ys = [point[1] for point in outline] or [0.0]
+    width = max(xs) - min(xs)
+    height = max(ys) - min(ys)
+    length = max(height, width, 1e-2)
+    return GrainlineAnnotation(origin=(cx, cy), direction=(0.0, 1.0), length=length)
+
+
+def _notches_from_metadata(
+    outline: Sequence[tuple[float, float]],
+    seam_metadata: Mapping[str, Any],
+) -> list[NotchAnnotation]:
+    entries: list[Any] = []
+    raw_notches = seam_metadata.get("notches")
+    if isinstance(raw_notches, Mapping):
+        raw_notches = raw_notches.get("entries", [])
+    if isinstance(raw_notches, Sequence):
+        entries.extend(raw_notches)
+
+    correspondences = seam_metadata.get("correspondences", [])
+    if isinstance(correspondences, Sequence):
+        for item in correspondences:
+            if isinstance(item, Mapping) and (
+                item.get("kind") == "notch" or item.get("notch") is True
+            ):
+                entries.append(item)
+
+    if not entries:
+        return []
+
+    notches: list[NotchAnnotation] = []
+    total_length = _outline_length(outline)
+    for entry in entries:
+        if not isinstance(entry, Mapping):
+            continue
+        depth = float(entry.get("depth", 0.008))
+        width = float(entry.get("width", depth * 1.5))
+        label = entry.get("label")
+        fraction: float | None
+        if "fraction" in entry:
+            fraction = float(entry.get("fraction", 0.0))
+        elif "distance" in entry and total_length > 1e-9:
+            fraction = float(entry["distance"]) / total_length
+        else:
+            fraction = None
+        if fraction is not None:
+            position, tangent, normal = _outline_point_frame(outline, fraction)
+        else:
+            raw_position = entry.get("position") or entry.get("point")
+            if isinstance(raw_position, Sequence) and len(raw_position) >= 2:
+                candidate = (float(raw_position[0]), float(raw_position[1]))
+                position, tangent, normal = _outline_frame_from_point(outline, candidate)
+            else:
+                continue
+        notches.append(
+            NotchAnnotation(
+                position=position,
+                tangent=tangent,
+                normal=normal,
+                depth=depth,
+                width=width,
+                label=str(label) if label is not None else None,
+            )
+        )
+    return notches
+
+
+def _folds_from_metadata(
+    outline: Sequence[tuple[float, float]],
+    seam_metadata: Mapping[str, Any],
+) -> list[FoldAnnotation]:
+    raw_folds = seam_metadata.get("folds") or seam_metadata.get("fold_lines")
+    if isinstance(raw_folds, Mapping):
+        entries = raw_folds.get("entries", [])
+    elif isinstance(raw_folds, Sequence):
+        entries = list(raw_folds)
+    else:
+        entries = []
+
+    folds: list[FoldAnnotation] = []
+    for entry in entries:
+        if not isinstance(entry, Mapping):
+            continue
+        start_point: tuple[float, float] | None = None
+        end_point: tuple[float, float] | None = None
+        if "start_fraction" in entry and "end_fraction" in entry:
+            start_point, _, _ = _outline_point_frame(outline, float(entry["start_fraction"]))
+            end_point, _, _ = _outline_point_frame(outline, float(entry["end_fraction"]))
+        elif "positions" in entry:
+            positions = entry.get("positions")
+            if isinstance(positions, Sequence) and len(positions) >= 2:
+                start_raw = positions[0]
+                end_raw = positions[1]
+                if isinstance(start_raw, Sequence) and len(start_raw) >= 2:
+                    start_point = (float(start_raw[0]), float(start_raw[1]))
+                if isinstance(end_raw, Sequence) and len(end_raw) >= 2:
+                    end_point = (float(end_raw[0]), float(end_raw[1]))
+        if start_point is None or end_point is None:
+            continue
+        folds.append(
+            FoldAnnotation(
+                start=start_point,
+                end=end_point,
+                kind=str(entry.get("kind", "valley")),
+            )
+        )
+    return folds
+
+
+def _label_from_metadata(
+    outline: Sequence[tuple[float, float]],
+    panel_metadata: Mapping[str, Any],
+    seam_metadata: Mapping[str, Any],
+    panel_name: str | None,
+) -> LabelAnnotation | None:
+    label_payload = (
+        panel_metadata.get("label")
+        or panel_metadata.get("panel_label")
+        or seam_metadata.get("label")
+    )
+    centroid = _outline_centroid(outline)
+    if isinstance(label_payload, str):
+        text = label_payload.strip()
+        if not text:
+            return None
+        return LabelAnnotation(text=text, position=centroid)
+    if isinstance(label_payload, Mapping):
+        text = str(label_payload.get("text") or label_payload.get("value") or "").strip()
+        if not text and panel_name:
+            text = panel_name
+        position_raw = label_payload.get("position")
+        if isinstance(position_raw, Sequence) and len(position_raw) >= 2:
+            position = (float(position_raw[0]), float(position_raw[1]))
+        else:
+            position = centroid
+        rotation = float(label_payload.get("rotation", 0.0) or 0.0)
+        return LabelAnnotation(text=text, position=position, rotation=rotation)
+
+    fallback = panel_metadata.get("label_text") or seam_metadata.get("label_text")
+    if fallback is None and panel_name:
+        fallback = panel_name
+    if fallback is None:
+        return None
+    text = str(fallback).strip()
+    if not text:
+        return None
+    return LabelAnnotation(text=text, position=centroid)
 
     def __post_init__(self) -> None:
         self.seam_allowance = float(self.seam_allowance)
@@ -201,12 +670,22 @@ class SimplePlaneProjectionBackend(CADBackend):
                 "original_vertex_count": len(panel.vertices),
                 "seam_allowance": allowance,
             }
+            annotations = build_panel_annotations(
+                outline,
+                seam_metadata=seam_lookup.get(panel.name, {}),
+                panel_metadata=panel.metadata,
+                panel_name=panel.name,
+            )
             flattened.append(
                 Panel2D(
                     name=panel.name,
                     seam_outline=seam_outline,
                     seam_allowance=allowance,
                     metadata=metadata,
+                    grainlines=annotations.grainlines,
+                    notches=annotations.notches,
+                    folds=annotations.folds,
+                    label=annotations.label,
                 )
             )
         return flattened
@@ -263,12 +742,22 @@ class LSCMUnwrapBackend(CADBackend):
                 )
                 flattened.extend(fallback)
                 continue
+            annotations = build_panel_annotations(
+                outline,
+                seam_metadata=seam_lookup.get(panel.name, {}),
+                panel_metadata=panel.metadata,
+                panel_name=panel.name,
+            )
             flattened.append(
                 Panel2D(
                     name=panel.name,
                     seam_outline=seam_outline,
                     seam_allowance=allowance,
                     metadata=metadata,
+                    grainlines=annotations.grainlines,
+                    notches=annotations.notches,
+                    folds=annotations.folds,
+                    label=annotations.label,
                 )
             )
         return flattened
@@ -607,6 +1096,15 @@ def _panel_bounds(panels: Sequence[Panel2D]) -> tuple[float, float, float, float
     return min_x, min_y, max_x, max_y
 
 
+def _escape_svg_text(value: str) -> str:
+    return (
+        value.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
 def _write_svg(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any]) -> None:
     min_x, min_y, max_x, max_y = _panel_bounds(panels)
     width = max_x - min_x
@@ -616,11 +1114,68 @@ def _write_svg(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any
         f"<!-- Scale: {metadata['scale']} -->",
         f"<!-- Seam allowance: {metadata['seam_allowance']} -->",
         f"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width:.2f}\" height=\"{height:.2f}\" viewBox=\"{min_x:.2f} {min_y:.2f} {width:.2f} {height:.2f}\">",
+        "  <style>",
+        "    .panel-outline { fill: none; stroke: #111; stroke-width: 0.6; }",
+        "    .panel-grain { stroke: #1a73e8; stroke-width: 0.4; fill: none; }",
+        "    .panel-grain-arrow { fill: #1a73e8; stroke: none; }",
+        "    .panel-notch { fill: #111; stroke: none; }",
+        "    .panel-notch-label { font: 3px sans-serif; fill: #111; }",
+        "    .panel-fold { stroke: #555; stroke-width: 0.4; fill: none; stroke-dasharray: 2 2; }",
+        "    .panel-fold-mountain { stroke-dasharray: 1 1; }",
+        "    .panel-fold-chevron { stroke: #555; stroke-width: 0.3; }",
+        "    .panel-label { font: 4px sans-serif; fill: #000; text-anchor: middle; }",
+        "  </style>",
     ]
     if metadata.get("panel_warnings"):
         warnings_json = json.dumps(metadata["panel_warnings"], sort_keys=True)
         lines.insert(3, f"<!-- panel_warnings: {warnings_json} -->")
     for panel in panels:
+        if panel.outline:
+            points = " ".join(f"{x:.2f},{y:.2f}" for x, y in panel.outline)
+            lines.append(
+                f"  <polygon id=\"{panel.name}\" class=\"panel-outline\" points=\"{points}\" data-seam-allowance=\"{panel.seam_allowance}\" />"
+            )
+            for grain in panel.grainlines:
+                start, end = grain.endpoints()
+                lines.append(
+                    f"  <line class=\"panel-grain\" x1=\"{start[0]:.2f}\" y1=\"{start[1]:.2f}\" x2=\"{end[0]:.2f}\" y2=\"{end[1]:.2f}\" />"
+                )
+                for arrow in grain.arrowheads():
+                    if not arrow:
+                        continue
+                    arrow_points = " ".join(f"{x:.2f},{y:.2f}" for x, y in arrow)
+                    lines.append(
+                        f"  <polygon class=\"panel-grain-arrow\" points=\"{arrow_points}\" />"
+                    )
+            for notch in panel.notches:
+                triangle = notch.triangle()
+                tri_points = " ".join(f"{x:.2f},{y:.2f}" for x, y in triangle)
+                lines.append(f"  <polygon class=\"panel-notch\" points=\"{tri_points}\" />")
+                if notch.label:
+                    lines.append(
+                        f"  <text class=\"panel-notch-label\" x=\"{notch.position[0]:.2f}\" y=\"{notch.position[1]:.2f}\">{_escape_svg_text(str(notch.label))}</text>"
+                    )
+            for fold in panel.folds:
+                kind = fold.kind.lower().replace(" ", "-")
+                lines.append(
+                    f"  <line class=\"panel-fold panel-fold-{kind}\" x1=\"{fold.start[0]:.2f}\" y1=\"{fold.start[1]:.2f}\" x2=\"{fold.end[0]:.2f}\" y2=\"{fold.end[1]:.2f}\" />"
+                )
+                for chevron in fold.chevrons():
+                    (cx0, cy0), (cx1, cy1) = chevron
+                    lines.append(
+                        f"  <line class=\"panel-fold-chevron\" x1=\"{cx0:.2f}\" y1=\"{cy0:.2f}\" x2=\"{cx1:.2f}\" y2=\"{cy1:.2f}\" />"
+                    )
+        if panel.label:
+            text = _escape_svg_text(panel.label.text)
+            x, y = panel.label.position
+            rotate_attr = (
+                f" transform=\"rotate({panel.label.rotation:.2f} {x:.2f} {y:.2f})\""
+                if abs(panel.label.rotation) > 1e-3
+                else ""
+            )
+            lines.append(
+                f"  <text class=\"panel-label\" x=\"{x:.2f}\" y=\"{y:.2f}\"{rotate_attr}>{text}</text>"
+            )
         if not panel.seam_outline and not panel.cut_outline:
             continue
         lines.append(
@@ -667,11 +1222,132 @@ def _write_dxf(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any
         "ENTITIES",
     ]
     for panel in panels:
+        if not panel.outline:
+            continue
+        lines.extend([
+            "0",
+            "LWPOLYLINE",
+            "8",
+            panel.name,
+            "90",
+            str(len(panel.outline)),
+        ])
+        for x, y in panel.outline:
+            lines.extend(["10", f"{x:.4f}", "20", f"{y:.4f}"])
+        lines.extend(["43", f"{panel.seam_allowance:.4f}"])
+        for grain in panel.grainlines:
+            start, end = grain.endpoints()
+            lines.extend([
+                "0",
+                "LINE",
+                "8",
+                f"{panel.name}_GRAIN",
+                "10",
+                f"{start[0]:.4f}",
+                "20",
+                f"{start[1]:.4f}",
+                "11",
+                f"{end[0]:.4f}",
+                "21",
+                f"{end[1]:.4f}",
+            ])
+            for arrow in grain.arrowheads():
+                if not arrow:
+                    continue
+                lines.extend([
+                    "0",
+                    "LWPOLYLINE",
+                    "8",
+                    f"{panel.name}_GRAIN",
+                    "90",
+                    "3",
+                    "70",
+                    "1",
+                ])
+                for x, y in arrow:
+                    lines.extend(["10", f"{x:.4f}", "20", f"{y:.4f}"])
+        for notch in panel.notches:
+            triangle = notch.triangle()
         if panel.seam_outline:
             lines.extend([
                 "0",
                 "LWPOLYLINE",
                 "8",
+                f"{panel.name}_NOTCH",
+                "90",
+                "3",
+                "70",
+                "1",
+            ])
+            for x, y in triangle:
+                lines.extend(["10", f"{x:.4f}", "20", f"{y:.4f}"])
+            if notch.label:
+                lines.extend([
+                    "0",
+                    "TEXT",
+                    "8",
+                    f"{panel.name}_NOTCH",
+                    "10",
+                    f"{notch.position[0]:.4f}",
+                    "20",
+                    f"{notch.position[1]:.4f}",
+                    "40",
+                    "2.0",
+                    "1",
+                    str(notch.label),
+                ])
+        for fold in panel.folds:
+            kind_layer = f"{panel.name}_FOLD_{fold.kind.upper()}"
+            lines.extend([
+                "0",
+                "LINE",
+                "8",
+                kind_layer,
+                "10",
+                f"{fold.start[0]:.4f}",
+                "20",
+                f"{fold.start[1]:.4f}",
+                "11",
+                f"{fold.end[0]:.4f}",
+                "21",
+                f"{fold.end[1]:.4f}",
+            ])
+            for chevron in fold.chevrons():
+                (cx0, cy0), (cx1, cy1) = chevron
+                lines.extend([
+                    "0",
+                    "LINE",
+                    "8",
+                    kind_layer,
+                    "10",
+                    f"{cx0:.4f}",
+                    "20",
+                    f"{cy0:.4f}",
+                    "11",
+                    f"{cx1:.4f}",
+                    "21",
+                    f"{cy1:.4f}",
+                ])
+        if panel.label:
+            xs = [point[0] for point in panel.outline] or [panel.label.position[0]]
+            ys = [point[1] for point in panel.outline] or [panel.label.position[1]]
+            extent = max(max(xs) - min(xs), max(ys) - min(ys), 1.0)
+            lines.extend([
+                "0",
+                "TEXT",
+                "8",
+                f"{panel.name}_LABEL",
+                "10",
+                f"{panel.label.position[0]:.4f}",
+                "20",
+                f"{panel.label.position[1]:.4f}",
+                "40",
+                f"{extent * 0.06:.4f}",
+                "1",
+                panel.label.text,
+                "50",
+                f"{panel.label.rotation:.2f}",
+            ])
                 panel.name,
                 "90",
                 str(len(panel.seam_outline)),
@@ -701,6 +1377,14 @@ def _escape_pdf_text(value: str) -> str:
 
 def _write_pdf(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any]) -> None:
     min_x, min_y, max_x, max_y = _panel_bounds(panels)
+    margin = 20.0
+    width = max(100.0, (max_x - min_x) + margin * 2)
+    height = max(100.0, (max_y - min_y) + margin * 2)
+
+    def to_pdf(point: tuple[float, float]) -> tuple[float, float]:
+        return point[0] - min_x + margin, point[1] - min_y + margin
+
+    lines = [
     points_per_meter = 72.0 / 0.0254
     margin = 36.0
     drawing_width = (max_x - min_x) * points_per_meter
@@ -730,6 +1414,136 @@ def _write_pdf(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any
         else:
             lines.append(f"{panel.name} cut: unavailable")
 
+    drawing_ops: list[str] = []
+    drawing_ops.extend(["0.6 w", "0 0 0 RG", "0 0 0 rg", "[] 0 d"])
+    grain_color = (0.102, 0.451, 0.909)
+    fold_color = (0.333, 0.333, 0.333)
+
+    label_blocks: list[list[str]] = []
+
+    for panel in panels:
+        if panel.outline:
+            transformed = [to_pdf(point) for point in panel.outline]
+            x0, y0 = transformed[0]
+            drawing_ops.append(f"{x0:.2f} {y0:.2f} m")
+            for x, y in transformed[1:]:
+                drawing_ops.append(f"{x:.2f} {y:.2f} l")
+            drawing_ops.append("h")
+            drawing_ops.append("S")
+
+            for grain in panel.grainlines:
+                start_pt, end_pt = grain.endpoints()
+                start = to_pdf(start_pt)
+                end = to_pdf(end_pt)
+                drawing_ops.extend(
+                    [
+                        f"{grain_color[0]:.3f} {grain_color[1]:.3f} {grain_color[2]:.3f} RG",
+                        "0.4 w",
+                        "[] 0 d",
+                        f"{start[0]:.2f} {start[1]:.2f} m",
+                        f"{end[0]:.2f} {end[1]:.2f} l",
+                        "S",
+                    ]
+                )
+                drawing_ops.append(
+                    f"{grain_color[0]:.3f} {grain_color[1]:.3f} {grain_color[2]:.3f} rg"
+                )
+                for arrow in grain.arrowheads():
+                    if not arrow:
+                        continue
+                    a0 = to_pdf(arrow[0])
+                    a1 = to_pdf(arrow[1])
+                    a2 = to_pdf(arrow[2])
+                    drawing_ops.extend(
+                        [
+                            f"{a0[0]:.2f} {a0[1]:.2f} m",
+                            f"{a1[0]:.2f} {a1[1]:.2f} l",
+                            f"{a2[0]:.2f} {a2[1]:.2f} l",
+                            "h",
+                            "f",
+                        ]
+                    )
+                drawing_ops.extend(["0 0 0 rg", "0 0 0 RG", "0.6 w"])
+
+            for notch in panel.notches:
+                triangle = [to_pdf(point) for point in notch.triangle()]
+                drawing_ops.extend(
+                    [
+                        "0 0 0 rg",
+                        f"{triangle[0][0]:.2f} {triangle[0][1]:.2f} m",
+                        f"{triangle[1][0]:.2f} {triangle[1][1]:.2f} l",
+                        f"{triangle[2][0]:.2f} {triangle[2][1]:.2f} l",
+                        "h",
+                        "f",
+                    ]
+                )
+                if notch.label:
+                    label_x, label_y = to_pdf(
+                        (
+                            notch.position[0] + notch.normal[0] * 1.5,
+                            notch.position[1] + notch.normal[1] * 1.5,
+                        )
+                    )
+                    block = [
+                        "0 0 0 rg",
+                        "BT",
+                        "/F1 6 Tf",
+                        f"{label_x:.2f} {label_y:.2f} Td",
+                        f"({_escape_pdf_text(str(notch.label))}) Tj",
+                        "ET",
+                    ]
+                    label_blocks.append(block)
+
+            for fold in panel.folds:
+                start = to_pdf(fold.start)
+                end = to_pdf(fold.end)
+                drawing_ops.extend(
+                    [
+                        f"{fold_color[0]:.3f} {fold_color[1]:.3f} {fold_color[2]:.3f} RG",
+                        "0.4 w",
+                        "[2 2] 0 d",
+                        f"{start[0]:.2f} {start[1]:.2f} m",
+                        f"{end[0]:.2f} {end[1]:.2f} l",
+                        "S",
+                    ]
+                )
+                drawing_ops.append("[] 0 d")
+                for chevron in fold.chevrons():
+                    c0 = to_pdf(chevron[0])
+                    c1 = to_pdf(chevron[1])
+                    drawing_ops.extend(
+                        [
+                            f"{fold_color[0]:.3f} {fold_color[1]:.3f} {fold_color[2]:.3f} RG",
+                            "0.3 w",
+                            f"{c0[0]:.2f} {c0[1]:.2f} m",
+                            f"{c1[0]:.2f} {c1[1]:.2f} l",
+                            "S",
+                        ]
+                    )
+                drawing_ops.extend(["0 0 0 RG", "0.6 w"])
+
+        if panel.label:
+            xs = [point[0] for point in panel.outline] or [panel.label.position[0]]
+            ys = [point[1] for point in panel.outline] or [panel.label.position[1]]
+            extent = max(max(xs) - min(xs), max(ys) - min(ys), 1.0)
+            px, py = to_pdf(panel.label.position)
+            size = min(18.0, max(8.0, extent * 0.12))
+            block: list[str] = ["0 0 0 rg", "BT", f"/F1 {size:.1f} Tf"]
+            if abs(panel.label.rotation) > 1e-3:
+                angle = math.radians(panel.label.rotation)
+                cos_a = math.cos(angle)
+                sin_a = math.sin(angle)
+                block.append(
+                    f"{cos_a:.4f} {sin_a:.4f} {-sin_a:.4f} {cos_a:.4f} {px:.2f} {py:.2f} Tm"
+                )
+            else:
+                block.append(f"{px:.2f} {py:.2f} Td")
+            block.append(f"({_escape_pdf_text(panel.label.text)}) Tj")
+            block.append("ET")
+            label_blocks.append(block)
+
+    text_ops = ["0 0 0 rg", "BT", "/F1 12 Tf", f"20 {height - 40:.2f} Td"]
+    for index, line in enumerate(lines):
     header_ops = ["BT", "/F1 12 Tf"]
     top_text_y = height - margin
     for index, line in enumerate(info_lines):
@@ -738,6 +1552,11 @@ def _write_pdf(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any
             header_ops.append(f"1 0 0 1 {margin:.2f} {top_text_y:.2f} Tm")
             header_ops.append(f"({escaped}) Tj")
         else:
+            text_ops.append(f"0 -14 Td ({escaped}) Tj")
+    text_ops.append("ET")
+    content_parts = drawing_ops + text_ops
+    for block in label_blocks:
+        content_parts.extend(block)
             offset = 14.0 * index
             header_ops.append(f"1 0 0 1 {margin:.2f} {top_text_y - offset:.2f} Tm")
             header_ops.append(f"({escaped}) Tj")
@@ -807,6 +1626,12 @@ def _polygon_centroid(points: Sequence[tuple[float, float]]) -> tuple[float, flo
 __all__ = [
     "Panel3D",
     "Panel2D",
+    "PanelAnnotations",
+    "GrainlineAnnotation",
+    "NotchAnnotation",
+    "FoldAnnotation",
+    "LabelAnnotation",
+    "build_panel_annotations",
     "CADBackend",
     "SimplePlaneProjectionBackend",
     "LSCMUnwrapBackend",

@@ -11,6 +11,17 @@ import numpy as np
 import pytest
 
 from exporters.lscm_backend import LSCMConformalBackend
+from exporters.patterns import (
+    FoldAnnotation,
+    GrainlineAnnotation,
+    LabelAnnotation,
+    NotchAnnotation,
+    Panel2D,
+    Panel3D,
+    PatternExporter,
+    build_panel_annotations,
+)
+from exporters.patterns import LSCMUnwrapBackend
 from exporters.patterns import LSCMUnwrapBackend, Panel2D, Panel3D, PatternExporter
 
 
@@ -20,10 +31,41 @@ class DummyBackend:
 
     def flatten_panels(self, panels, seams, *, scale, seam_allowance):  # noqa: D401 - simple stub
         self.calls.append((scale, seam_allowance))
-        outline = [(0.0, 0.0), (0.5 * scale, 0.0), (0.5 * scale, 1.0 * scale)]
+        outline = [
+            (0.0, 0.0),
+            (0.5 * scale, 0.0),
+            (0.5 * scale, 1.0 * scale),
+            (0.0, 1.0 * scale),
+        ]
+        grain = GrainlineAnnotation(
+            origin=(0.25 * scale, 0.5 * scale),
+            direction=(0.0, 1.0),
+            length=1.0 * scale,
+        )
+        notch = NotchAnnotation(
+            position=(0.5 * scale, 0.0),
+            tangent=(1.0, 0.0),
+            normal=(0.0, -1.0),
+            depth=0.03 * scale,
+            width=0.05 * scale,
+            label="CF",
+        )
+        fold = FoldAnnotation(
+            start=(0.0, 0.5 * scale),
+            end=(0.5 * scale, 0.5 * scale),
+            kind="valley",
+        )
+        label = LabelAnnotation(text="Test Panel", position=(0.25 * scale, 0.75 * scale))
         return [
             Panel2D(
                 name="test_panel",
+                outline=outline,
+                seam_allowance=0.012,
+                metadata={"source": "dummy"},
+                grainlines=[grain],
+                notches=[notch],
+                folds=[fold],
+                label=label,
                 seam_outline=outline,
                 seam_allowance=0.012,
                 metadata={"source": "dummy"},
@@ -94,7 +136,9 @@ def test_export_creates_requested_formats(tmp_path: Path, mesh_payload: dict, se
         assert path.exists(), f"Expected {fmt} output to exist"
 
 
-def test_export_writes_metadata(tmp_path: Path, mesh_payload: dict, seam_payload: dict) -> None:
+def test_export_writes_metadata_and_annotations(
+    tmp_path: Path, mesh_payload: dict, seam_payload: dict
+) -> None:
     backend = DummyBackend()
     exporter = PatternExporter(backend=backend, scale=1.1, seam_allowance=0.02)
 
@@ -107,6 +151,21 @@ def test_export_writes_metadata(tmp_path: Path, mesh_payload: dict, seam_payload
 
     svg_text = created["svg"].read_text(encoding="utf-8")
     assert "Scale: 1.1" in svg_text
+    assert "class=\"panel-outline\"" in svg_text
+    assert "panel-grain" in svg_text
+    assert "panel-notch" in svg_text
+    assert ">Test Panel<" in svg_text
+
+    dxf_text = created["dxf"].read_text(encoding="utf-8")
+    assert "$SMII_SCALE" in dxf_text
+    assert "_GRAIN" in dxf_text
+    assert "_NOTCH" in dxf_text
+    assert "Test Panel" in dxf_text
+
+    pdf_bytes = created["pdf"].read_bytes()
+    assert b"Scale: 1.1" in pdf_bytes
+    assert b"Test Panel" in pdf_bytes
+    assert b"CF" in pdf_bytes
     assert "data-seam-allowance=\"0.012\"" in svg_text
     assert "class=\"seam-outline\"" in svg_text
     assert "class=\"cut-outline\"" in svg_text
@@ -216,6 +275,7 @@ def test_pattern_exporter_collects_panel_warnings(tmp_path: Path) -> None:
     # The exporter attaches warnings into the combined metadata comment header.
     assert "panel_warnings" in svg_text
 
+
 def test_simple_backend_orders_outline() -> None:
     exporter = PatternExporter()
     mesh_payload = {
@@ -301,3 +361,31 @@ def test_pattern_exporter_supports_lscm_backend(
     )
 
     assert "svg" in created and created["svg"].exists()
+
+
+def test_build_panel_annotations_from_metadata() -> None:
+    outline = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
+    seam_metadata = {
+        "notches": [
+            {"fraction": 0.25, "label": "A"},
+        ],
+        "folds": [
+            {"start_fraction": 0.0, "end_fraction": 0.5, "kind": "mountain"},
+        ],
+    }
+    panel_metadata = {
+        "grainline": {"direction": [0.0, 1.0], "origin": [0.5, 0.5], "length": 1.0},
+        "label": {"text": "Front", "position": [0.5, 0.75]},
+    }
+
+    annotations = build_panel_annotations(
+        outline,
+        seam_metadata=seam_metadata,
+        panel_metadata=panel_metadata,
+        panel_name="front",
+    )
+
+    assert annotations.grainlines and annotations.grainlines[0].origin == (0.5, 0.5)
+    assert annotations.notches and annotations.notches[0].label == "A"
+    assert annotations.folds and annotations.folds[0].kind == "mountain"
+    assert annotations.label and annotations.label.text == "Front"
