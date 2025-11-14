@@ -7,6 +7,8 @@ from typing import Iterable, Mapping, MutableMapping
 
 import numpy as np
 
+from .measurement_loops import solve_measurement_loops
+
 LayerArray = np.ndarray
 
 __all__ = [
@@ -144,6 +146,23 @@ class UnderSuitGenerator:
             for layer in (layer for layer in (base_layer, insulation_layer, comfort_layer) if layer is not None)
         }
         layer_metadata["seam_max_deviation"] = _seam_deviation(base_layer.vertices, faces)
+
+        if measurements:
+            measurement_loops = solve_measurement_loops(
+                base_layer.vertices,
+                base_layer.faces,
+                measurements,
+            )
+            if measurement_loops:
+                layer_metadata["measurement_loops"] = {
+                    name: {
+                        "target": loop.target,
+                        "perimeter": loop.perimeter,
+                        "relative_error": loop.relative_error,
+                        "vertices": list(loop.vertices),
+                    }
+                    for name, loop in measurement_loops.items()
+                }
 
         return UnderSuitResult(
             base_layer=base_layer,
