@@ -11,6 +11,8 @@ from pathlib import Path
 
 import numpy as np
 
+from typing import Any
+
 from schemas.validators import load_measurement_catalog
 
 from pipelines.measurement_inference import (
@@ -240,13 +242,153 @@ class FitResult:
         }
 
 
+@dataclass(frozen=True)
+class BodyMeshOutput:
+    """Container bundling a generated mesh with the originating parameters."""
+
+    vertices: np.ndarray
+    faces: np.ndarray
+    parameters: dict[str, np.ndarray]
+    scale: float
+    model_type: str
+    gender: str
+
+    def parameter_payload(self) -> dict[str, Any]:
+        """Serialise SMPL-X parameters for persistence."""
+
+        return serialise_smplx_parameters(
+            self.parameters,
+            model_type=self.model_type,
+            gender=self.gender,
+            scale=self.scale,
+        )
+
+    def regenerate_mesh(self, *, model_path: Path | None = None) -> tuple[np.ndarray, np.ndarray]:
+        """Reconstruct the mesh from the stored SMPL-X parameters."""
+
+        return generate_vertices_from_smplx_parameters(
+            self.parameters,
+            scale=self.scale,
+            model_path=model_path,
+            model_type=self.model_type,
+            gender=self.gender,
+        )
+
+
+def _ensure_batch_parameter(array: np.ndarray) -> np.ndarray:
+    array = np.asarray(array, dtype=np.float32)
+    if array.ndim == 0:
+        return array.reshape(1, 1)
+    if array.ndim == 1:
+        return array.reshape(1, -1)
+    if array.ndim > 2:
+        first_dim = array.shape[0]
+        return array.reshape(first_dim, -1)
+    return array
+
+
+def serialise_smplx_parameters(
+    parameters: Mapping[str, np.ndarray],
+    *,
+    model_type: str,
+    gender: str,
+    scale: float,
+) -> dict[str, Any]:
+    """Convert SMPL-X parameters to a JSON-serialisable payload."""
+
+    payload: dict[str, Any] = {
+        "model_type": model_type,
+        "gender": gender,
+        "scale": float(scale),
+        "parameters": sorted(parameters),
+    }
+    for name, values in parameters.items():
+        array = np.asarray(values, dtype=np.float32)
+        if array.ndim == 2 and array.shape[0] == 1:
+            payload[name] = array[0].tolist()
+        else:
+            payload[name] = array.reshape(-1).tolist()
+    return payload
+
+
+def load_smplx_parameter_payload(payload: Mapping[str, Any]) -> tuple[dict[str, np.ndarray], float, str, str]:
+    """Decode a serialized SMPL-X parameter payload."""
+
+    scale = float(payload.get("scale", 1.0))
+    model_type = str(payload.get("model_type", "smplx"))
+    gender = str(payload.get("gender", "neutral"))
+
+    param_keys_raw = payload.get("parameters")
+    if param_keys_raw is None:
+        param_keys = [
+            key
+            for key in payload.keys()
+            if key not in {"model_type", "gender", "scale", "parameters"}
+        ]
+    elif isinstance(param_keys_raw, Sequence) and not isinstance(param_keys_raw, (str, bytes)):
+        param_keys = [str(name) for name in param_keys_raw]
+    else:
+        raise TypeError("'parameters' field must be a sequence of parameter names if provided.")
+
+    decoded: dict[str, np.ndarray] = {}
+    for name in param_keys:
+        if name not in payload:
+            raise KeyError(f"Parameter '{name}' is listed but missing from the payload.")
+        array = np.asarray(payload[name], dtype=np.float32)
+        if array.ndim == 1:
+            array = array.reshape(1, -1)
+        elif array.ndim == 0:
+            array = array.reshape(1, 1)
+        elif array.ndim > 2:
+            array = array.reshape(array.shape[0], -1)
+        decoded[name] = array
+    return decoded, scale, model_type, gender
+
+
+def generate_vertices_from_smplx_parameters(
+    parameters: Mapping[str, np.ndarray],
+    *,
+    scale: float,
+    model_path: Path | None = None,
+    model_type: str = "smplx",
+    gender: str = "neutral",
+) -> tuple[np.ndarray, np.ndarray]:
+    """Instantiate a SMPL-X body using the provided parameters and return its mesh."""
+
+    assets = Path(model_path) if model_path is not None else Path("assets") / model_type
+
+    from avatar_model import BodyModel
+
+    betas = parameters.get("betas")
+    num_betas = int(betas.shape[-1]) if isinstance(betas, np.ndarray) else 10
+    expression = parameters.get("expression")
+    num_expression = int(expression.shape[-1]) if isinstance(expression, np.ndarray) else 10
+
+    model = BodyModel(
+        model_path=assets,
+        model_type=model_type,
+        gender=gender,
+        batch_size=1,
+        num_betas=num_betas,
+        num_expression_coeffs=num_expression,
+    )
+    model.set_parameters({name: _ensure_batch_parameter(values) for name, values in parameters.items()})
+
+    vertices_tensor = model.vertices()
+    vertices = vertices_tensor.detach().cpu().numpy()[0]
+    vertices = vertices * float(scale)
+    faces = np.asarray(getattr(model.model, "faces"), dtype=np.int32)
+    return vertices.astype(np.float32), faces.astype(np.int32, copy=False)
+
+
 def create_body_mesh(
     result: FitResult,
     *,
     model_path: Path | None = None,
     model_type: str = "smplx",
     gender: str = "neutral",
-) -> tuple[np.ndarray, np.ndarray]:
+    return_parameters: bool = False,
+) -> tuple[np.ndarray, np.ndarray] | BodyMeshOutput:
     """Generate a body mesh from fitted parameters.
 
     Parameters
@@ -284,18 +426,41 @@ def create_body_mesh(
         batch_size=1,
         num_betas=num_betas,
     )
+    translation = np.asarray(result.translation, dtype=float).reshape(-1)
+    if translation.size != 3:
+        raise ValueError("FitResult.translation must contain three elements.")
     model.set_shape(betas)
+    model.set_body_pose(transl=translation.reshape(1, 3))
 
     vertices_tensor = model.vertices()
     vertices = vertices_tensor.detach().cpu().numpy()[0]
     vertices = vertices * float(result.scale)
-    translation = np.asarray(result.translation, dtype=float).reshape(-1)
-    if translation.size != 3:
-        raise ValueError("FitResult.translation must contain three elements.")
-    vertices = vertices + translation.reshape(1, 3)
 
     faces = np.asarray(getattr(model.model, "faces"), dtype=np.int32)
-    return vertices.astype(np.float32), faces.astype(np.int32, copy=False)
+    vertices = vertices.astype(np.float32)
+    faces = faces.astype(np.int32, copy=False)
+
+    if not return_parameters:
+        return vertices, faces
+
+    parameters = {
+        name: _ensure_batch_parameter(values)
+        for name, values in model.parameters(as_numpy=True).items()
+    }
+
+    if isinstance(result, FitResult):
+        scale = float(result.scale)
+    else:  # pragma: no cover - defensive fallback
+        scale = float(getattr(result, "scale", 1.0))
+
+    return BodyMeshOutput(
+        vertices=vertices,
+        faces=faces,
+        parameters=parameters,
+        scale=scale,
+        model_type=model_type,
+        gender=gender,
+    )
 
 
 def load_schema(path: Path | None = None) -> dict:
