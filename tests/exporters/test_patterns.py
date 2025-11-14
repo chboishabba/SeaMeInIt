@@ -22,6 +22,7 @@ from exporters.patterns import (
     build_panel_annotations,
 )
 from exporters.patterns import LSCMUnwrapBackend
+from exporters.patterns import LSCMUnwrapBackend, Panel2D, Panel3D, PatternExporter
 
 
 class DummyBackend:
@@ -65,8 +66,34 @@ class DummyBackend:
                 notches=[notch],
                 folds=[fold],
                 label=label,
+                seam_outline=outline,
+                seam_allowance=0.012,
+                metadata={"source": "dummy"},
             )
         ]
+
+
+def test_panel2d_generates_cut_outline() -> None:
+    seam_outline = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
+    panel = Panel2D(name="square", seam_outline=seam_outline, seam_allowance=0.1)
+
+    assert panel.cut_outline
+    assert len(panel.cut_outline) == len(seam_outline)
+    expected = [(-0.1, -0.1), (1.1, -0.1), (1.1, 1.1), (-0.1, 1.1)]
+    for actual, target in zip(panel.cut_outline, expected):
+        assert actual == pytest.approx(target, rel=1e-6)
+
+
+def test_panel2d_offsets_guard_for_degenerate_geometry() -> None:
+    panel = Panel2D(
+        name="line",
+        seam_outline=[(0.0, 0.0), (1.0, 0.0)],
+        seam_allowance=0.2,
+    )
+
+    assert panel.cut_outline == []
+    warnings = panel.metadata.get("warnings", [])
+    assert any("sufficient geometry" in warning for warning in warnings)
 
 
 @pytest.fixture()
@@ -139,6 +166,20 @@ def test_export_writes_metadata_and_annotations(
     assert b"Scale: 1.1" in pdf_bytes
     assert b"Test Panel" in pdf_bytes
     assert b"CF" in pdf_bytes
+    assert "data-seam-allowance=\"0.012\"" in svg_text
+    assert "class=\"seam-outline\"" in svg_text
+    assert "class=\"cut-outline\"" in svg_text
+
+    dxf_text = created["dxf"].read_text(encoding="utf-8")
+    assert "$SMII_SCALE" in dxf_text
+    assert "1.1" in dxf_text
+    assert "0.0120" in dxf_text
+    assert "test_panel_CUT" in dxf_text
+
+    pdf_bytes = created["pdf"].read_bytes()
+    assert b"Scale: 1.1" in pdf_bytes
+    assert b"test_panel seam:" in pdf_bytes
+    assert b"test_panel cut:" in pdf_bytes
 
 
 def _square_panel(name: str = "square") -> dict:
@@ -256,7 +297,7 @@ def test_simple_backend_orders_outline() -> None:
     panel = Panel3D.from_mapping(mesh_payload["panels"][0])
     flattened = exporter.backend.flatten_panels([panel], None, scale=1.0, seam_allowance=0.01)
 
-    outline = flattened[0].outline
+    outline = flattened[0].seam_outline
     angles = [math.atan2(y, x) for x, y in outline]
     assert angles == sorted(angles)
 
@@ -300,7 +341,7 @@ def test_lscm_backend_flattens_panel(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert flattened[0].name == "tri"
     assert flattened[0].metadata.get("backend") == "lscm"
-    assert len(flattened[0].outline) >= 3
+    assert len(flattened[0].seam_outline) >= 3
 
 
 def test_pattern_exporter_supports_lscm_backend(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import statistics
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
@@ -158,11 +159,12 @@ class PanelAnnotations:
 
 @dataclass(slots=True)
 class Panel2D:
-    """Flattened 2D panel representation."""
+    """Flattened 2D panel representation including seam and cut outlines."""
 
     name: str
-    outline: list[tuple[float, float]]
+    seam_outline: list[tuple[float, float]]
     seam_allowance: float
+    cut_outline: list[tuple[float, float]] | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
     grainlines: list[GrainlineAnnotation] = field(default_factory=list)
     notches: list[NotchAnnotation] = field(default_factory=list)
@@ -508,6 +510,115 @@ def _label_from_metadata(
         return None
     return LabelAnnotation(text=text, position=centroid)
 
+    def __post_init__(self) -> None:
+        self.seam_allowance = float(self.seam_allowance)
+        if not isinstance(self.metadata, dict):
+            self.metadata = dict(self.metadata)
+        self.seam_outline = [(float(x), float(y)) for x, y in self.seam_outline]
+        if self.cut_outline is None:
+            if not self.seam_outline:
+                self.cut_outline = []
+            elif self.seam_allowance <= 1e-9:
+                self.cut_outline = list(self.seam_outline)
+            else:
+                offset = _offset_outline(self.seam_outline, float(self.seam_allowance))
+                if offset:
+                    self.cut_outline = offset
+                else:
+                    self.cut_outline = []
+                    warnings = self.metadata.setdefault("warnings", [])
+                    message = "Panel lacks sufficient geometry for seam allowance offset."
+                    if message not in warnings:
+                        warnings.append(message)
+        else:
+            self.cut_outline = [(float(x), float(y)) for x, y in self.cut_outline]
+
+
+def _polygon_area(points: Sequence[tuple[float, float]]) -> float:
+    area = 0.0
+    if not points:
+        return area
+    for (x1, y1), (x2, y2) in zip(points, points[1:] + points[:1]):
+        area += x1 * y2 - x2 * y1
+    return area / 2.0
+
+
+def _line_intersection(
+    point_a: tuple[float, float],
+    direction_a: tuple[float, float],
+    point_b: tuple[float, float],
+    direction_b: tuple[float, float],
+) -> tuple[float, float] | None:
+    det = direction_a[0] * direction_b[1] - direction_a[1] * direction_b[0]
+    if math.isclose(det, 0.0, abs_tol=1e-12):
+        return None
+    diff_x = point_b[0] - point_a[0]
+    diff_y = point_b[1] - point_a[1]
+    t = (diff_x * direction_b[1] - diff_y * direction_b[0]) / det
+    return (point_a[0] + direction_a[0] * t, point_a[1] + direction_a[1] * t)
+
+
+def _offset_outline(
+    points: Sequence[tuple[float, float]],
+    distance: float,
+) -> list[tuple[float, float]]:
+    if distance <= 0.0:
+        return [(float(x), float(y)) for x, y in points]
+    if len(points) < 3:
+        return []
+
+    area = _polygon_area(points)
+    if math.isclose(area, 0.0, abs_tol=1e-9):
+        return []
+    orientation = 1.0 if area > 0.0 else -1.0
+
+    offset_points: list[tuple[float, float]] = []
+    count = len(points)
+    for idx in range(count):
+        prev_point = points[(idx - 1) % count]
+        current_point = points[idx]
+        next_point = points[(idx + 1) % count]
+
+        edge_prev = (current_point[0] - prev_point[0], current_point[1] - prev_point[1])
+        edge_next = (next_point[0] - current_point[0], next_point[1] - current_point[1])
+
+        length_prev = math.hypot(*edge_prev)
+        length_next = math.hypot(*edge_next)
+        if length_prev <= 1e-9 or length_next <= 1e-9:
+            return []
+
+        normal_prev = (
+            orientation * edge_prev[1] / length_prev,
+            -orientation * edge_prev[0] / length_prev,
+        )
+        normal_next = (
+            orientation * edge_next[1] / length_next,
+            -orientation * edge_next[0] / length_next,
+        )
+
+        point_prev = (
+            current_point[0] + normal_prev[0] * distance,
+            current_point[1] + normal_prev[1] * distance,
+        )
+        point_next = (
+            current_point[0] + normal_next[0] * distance,
+            current_point[1] + normal_next[1] * distance,
+        )
+
+        intersection = _line_intersection(point_prev, edge_prev, point_next, edge_next)
+        if intersection is None:
+            avg_normal = (normal_prev[0] + normal_next[0], normal_prev[1] + normal_next[1])
+            length_avg = math.hypot(*avg_normal)
+            if length_avg <= 1e-9:
+                return []
+            intersection = (
+                current_point[0] + distance * avg_normal[0] / length_avg,
+                current_point[1] + distance * avg_normal[1] / length_avg,
+            )
+        offset_points.append((float(intersection[0]), float(intersection[1])))
+
+    return offset_points
+
 
 class CADBackend:
     """Protocol for CAD flattening backends."""
@@ -537,9 +648,9 @@ class SimplePlaneProjectionBackend(CADBackend):
         flattened: list[Panel2D] = []
         seam_lookup = seams or {}
         for panel in panels:
-            outline: list[tuple[float, float]]
+            seam_outline: list[tuple[float, float]]
             if not panel.vertices:
-                outline = []
+                seam_outline = []
             elif np is not None:
                 points = np.asarray(panel.vertices, dtype=float)
                 centroid = points.mean(axis=0)
@@ -547,12 +658,12 @@ class SimplePlaneProjectionBackend(CADBackend):
                 _, _, vh = np.linalg.svd(shifted, full_matrices=False)
                 basis = vh[:2, :]
                 projected = shifted @ basis.T
-                outline = _ordered_outline(projected * scale)
+                seam_outline = _ordered_outline(projected * scale)
             else:
-                outline = [
+                seam_outline = [
                     (float(vertex[0]) * scale, float(vertex[1]) * scale)
                     for vertex in panel.vertices
-                ]
+                )
 
             allowance = float(seam_lookup.get(panel.name, {}).get("seam_allowance", seam_allowance))
             metadata = {
@@ -568,7 +679,7 @@ class SimplePlaneProjectionBackend(CADBackend):
             flattened.append(
                 Panel2D(
                     name=panel.name,
-                    outline=outline,
+                    seam_outline=seam_outline,
                     seam_allowance=allowance,
                     metadata=metadata,
                     grainlines=annotations.grainlines,
@@ -621,7 +732,7 @@ class LSCMUnwrapBackend(CADBackend):
                 "backend": "lscm",
             }
             try:
-                outline = self._unwrap_panel(panel, scale=scale)
+                seam_outline = self._unwrap_panel(panel, scale=scale)
             except Exception:
                 fallback = self._fallback.flatten_panels(
                     [panel],
@@ -640,7 +751,7 @@ class LSCMUnwrapBackend(CADBackend):
             flattened.append(
                 Panel2D(
                     name=panel.name,
-                    outline=outline,
+                    seam_outline=seam_outline,
                     seam_allowance=allowance,
                     metadata=metadata,
                     grainlines=annotations.grainlines,
@@ -678,7 +789,8 @@ class LSCMUnwrapBackend(CADBackend):
             outline_points = parameterisation[boundary]
         else:
             outline_points = parameterisation
-        return _ordered_outline(outline_points * float(scale))
+        ordered = _ordered_outline(outline_points * float(scale))
+        return _cleanup_panel_outline(ordered)
 
 
 class PatternExporter:
@@ -786,11 +898,197 @@ def _ordered_outline(points: "np.ndarray") -> list[tuple[float, float]]:
     return deduped
 
 
+def _cleanup_panel_outline(points: Iterable[tuple[float, float]]) -> list[tuple[float, float]]:
+    """Normalize, smooth, and simplify an outline polyline."""
+
+    normalized = _dedupe_consecutive([(float(x), float(y)) for x, y in points])
+    if len(normalized) < 3:
+        return normalized
+
+    without_outliers = _remove_outlier_edges(normalized)
+    if len(without_outliers) < 3:
+        return without_outliers
+
+    smoothed = _laplacian_smooth(without_outliers, iterations=2, weight=0.5)
+    simplified = _simplify_polyline(smoothed)
+    return simplified
+
+
+def _dedupe_consecutive(points: Sequence[tuple[float, float]]) -> list[tuple[float, float]]:
+    deduped: list[tuple[float, float]] = []
+    last: tuple[float, float] | None = None
+    for point in points:
+        if last is not None and math.isclose(point[0], last[0], rel_tol=1e-9, abs_tol=1e-9) and math.isclose(
+            point[1], last[1], rel_tol=1e-9, abs_tol=1e-9
+        ):
+            continue
+        deduped.append(point)
+        last = point
+    if len(deduped) >= 2 and math.isclose(deduped[0][0], deduped[-1][0], rel_tol=1e-9, abs_tol=1e-9) and math.isclose(
+        deduped[0][1], deduped[-1][1], rel_tol=1e-9, abs_tol=1e-9
+    ):
+        deduped.pop()
+    return deduped
+
+
+def _remove_outlier_edges(points: Sequence[tuple[float, float]]) -> list[tuple[float, float]]:
+    cleaned = list(points)
+    if len(cleaned) < 4:
+        return cleaned
+
+    for _ in range(len(points)):
+        count = len(cleaned)
+        if count < 4:
+            break
+        lengths = [
+            _euclidean_distance(cleaned[i], cleaned[(i + 1) % count])
+            for i in range(count)
+        ]
+        positive = [length for length in lengths if length > 0]
+        if not positive:
+            break
+        median_length = statistics.median(positive)
+        max_length = max(lengths)
+        if median_length <= 0:
+            threshold = max_length
+        else:
+            threshold = median_length * 3.0
+        if max_length <= threshold:
+            break
+        idx = lengths.index(max_length)
+        remove_idx = (idx + 1) % count
+        cleaned.pop(remove_idx)
+    return cleaned
+
+
+def _laplacian_smooth(
+    points: Sequence[tuple[float, float]], *, iterations: int = 1, weight: float = 0.5
+) -> list[tuple[float, float]]:
+    if len(points) < 3:
+        return list(points)
+    smoothed = list(points)
+    centroid = _polygon_centroid(smoothed)
+    for _ in range(max(1, int(iterations))):
+        next_points: list[tuple[float, float]] = []
+        count = len(smoothed)
+        for idx, current in enumerate(smoothed):
+            prev_point = smoothed[(idx - 1) % count]
+            next_point = smoothed[(idx + 1) % count]
+            avg = ((prev_point[0] + next_point[0]) / 2.0, (prev_point[1] + next_point[1]) / 2.0)
+            candidate = (
+                current[0] * (1.0 - weight) + avg[0] * weight,
+                current[1] * (1.0 - weight) + avg[1] * weight,
+            )
+            constrained = _constrain_to_interior(candidate, current, centroid)
+            next_points.append(constrained)
+        smoothed = next_points
+        centroid = _polygon_centroid(smoothed)
+    return smoothed
+
+
+def _constrain_to_interior(
+    candidate: tuple[float, float],
+    original: tuple[float, float],
+    centroid: tuple[float, float],
+) -> tuple[float, float]:
+    vec_candidate = (candidate[0] - centroid[0], candidate[1] - centroid[1])
+    vec_original = (original[0] - centroid[0], original[1] - centroid[1])
+    candidate_length = math.hypot(*vec_candidate)
+    original_length = math.hypot(*vec_original)
+    if original_length == 0:
+        return candidate
+    if candidate_length <= original_length or candidate_length == 0:
+        return candidate
+    scale = original_length / candidate_length
+    return (centroid[0] + vec_candidate[0] * scale, centroid[1] + vec_candidate[1] * scale)
+
+
+def _simplify_polyline(points: Sequence[tuple[float, float]]) -> list[tuple[float, float]]:
+    if len(points) < 3:
+        return list(points)
+    min_x = min(point[0] for point in points)
+    max_x = max(point[0] for point in points)
+    min_y = min(point[1] for point in points)
+    max_y = max(point[1] for point in points)
+    scale = max(max_x - min_x, max_y - min_y)
+    tolerance = 1e-3 if scale == 0 else scale * 0.005
+    simplified = _douglas_peucker(points + points[:1], tolerance)
+    if simplified and simplified[-1] == simplified[0]:
+        simplified.pop()
+    return simplified
+
+
+def _douglas_peucker(points: Sequence[tuple[float, float]], tolerance: float) -> list[tuple[float, float]]:
+    if len(points) <= 2:
+        return list(points)
+    first = points[0]
+    last = points[-1]
+    max_distance = -1.0
+    index = -1
+    for idx in range(1, len(points) - 1):
+        distance = _point_to_segment_distance(points[idx], first, last)
+        if distance > max_distance:
+            max_distance = distance
+            index = idx
+    if max_distance > tolerance:
+        left = _douglas_peucker(points[: index + 1], tolerance)
+        right = _douglas_peucker(points[index:], tolerance)
+        return left[:-1] + right
+    return [first, last]
+
+
+def _point_to_segment_distance(
+    point: tuple[float, float],
+    start: tuple[float, float],
+    end: tuple[float, float],
+) -> float:
+    if start == end:
+        return _euclidean_distance(point, start)
+    seg_vec = (end[0] - start[0], end[1] - start[1])
+    point_vec = (point[0] - start[0], point[1] - start[1])
+    seg_len_sq = seg_vec[0] ** 2 + seg_vec[1] ** 2
+    proj = max(0.0, min(1.0, (point_vec[0] * seg_vec[0] + point_vec[1] * seg_vec[1]) / seg_len_sq))
+    closest = (start[0] + seg_vec[0] * proj, start[1] + seg_vec[1] * proj)
+    return _euclidean_distance(point, closest)
+
+
+def _euclidean_distance(a: tuple[float, float], b: tuple[float, float]) -> float:
+    return math.hypot(a[0] - b[0], a[1] - b[1])
+
+
+def _polygon_centroid(points: Sequence[tuple[float, float]]) -> tuple[float, float]:
+    if len(points) == 0:
+        return (0.0, 0.0)
+    twice_area = 0.0
+    c_x = 0.0
+    c_y = 0.0
+    count = len(points)
+    for idx in range(count):
+        x0, y0 = points[idx]
+        x1, y1 = points[(idx + 1) % count]
+        cross = x0 * y1 - x1 * y0
+        twice_area += cross
+        c_x += (x0 + x1) * cross
+        c_y += (y0 + y1) * cross
+    if abs(twice_area) < 1e-9:
+        avg_x = sum(point[0] for point in points) / count
+        avg_y = sum(point[1] for point in points) / count
+        return (avg_x, avg_y)
+    factor = 1.0 / (3.0 * twice_area)
+    return (c_x * factor, c_y * factor)
+
+
 def _panel_bounds(panels: Sequence[Panel2D]) -> tuple[float, float, float, float]:
-    min_x = min((point[0] for panel in panels for point in panel.outline), default=0.0)
-    max_x = max((point[0] for panel in panels for point in panel.outline), default=1.0)
-    min_y = min((point[1] for panel in panels for point in panel.outline), default=0.0)
-    max_y = max((point[1] for panel in panels for point in panel.outline), default=1.0)
+    all_points: list[tuple[float, float]] = []
+    for panel in panels:
+        if panel.cut_outline:
+            all_points.extend(panel.cut_outline)
+        if panel.seam_outline:
+            all_points.extend(panel.seam_outline)
+    min_x = min((point[0] for point in all_points), default=0.0)
+    max_x = max((point[0] for point in all_points), default=1.0)
+    min_y = min((point[1] for point in all_points), default=0.0)
+    max_y = max((point[1] for point in all_points), default=1.0)
     if math.isclose(min_x, max_x):
         max_x = min_x + 1.0
     if math.isclose(min_y, max_y):
@@ -878,6 +1176,26 @@ def _write_svg(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any
             lines.append(
                 f"  <text class=\"panel-label\" x=\"{x:.2f}\" y=\"{y:.2f}\"{rotate_attr}>{text}</text>"
             )
+        if not panel.seam_outline and not panel.cut_outline:
+            continue
+        lines.append(
+            f"  <g id=\"{panel.name}\" data-seam-allowance=\"{panel.seam_allowance}\">"
+        )
+        if panel.cut_outline:
+            cut_points = " ".join(f"{x:.2f},{y:.2f}" for x, y in panel.cut_outline)
+            lines.append(
+                "    "
+                f"<polygon class=\"cut-outline\" points=\"{cut_points}\" fill=\"none\" "
+                "stroke=\"#d94f4f\" stroke-width=\"0.20\" stroke-linejoin=\"round\" />"
+            )
+        if panel.seam_outline:
+            seam_points = " ".join(f"{x:.2f},{y:.2f}" for x, y in panel.seam_outline)
+            lines.append(
+                "    "
+                f"<polygon class=\"seam-outline\" points=\"{seam_points}\" fill=\"none\" "
+                "stroke=\"#1a1a1a\" stroke-width=\"0.10\" stroke-dasharray=\"4 2\" stroke-linejoin=\"round\" />"
+            )
+        lines.append("  </g>")
     lines.append("</svg>")
     path.write_text("\n".join(lines), encoding="utf-8")
 
@@ -950,6 +1268,7 @@ def _write_dxf(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any
                     lines.extend(["10", f"{x:.4f}", "20", f"{y:.4f}"])
         for notch in panel.notches:
             triangle = notch.triangle()
+        if panel.seam_outline:
             lines.extend([
                 "0",
                 "LWPOLYLINE",
@@ -1029,6 +1348,25 @@ def _write_dxf(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any
                 "50",
                 f"{panel.label.rotation:.2f}",
             ])
+                panel.name,
+                "90",
+                str(len(panel.seam_outline)),
+            ])
+            for x, y in panel.seam_outline:
+                lines.extend(["10", f"{x:.4f}", "20", f"{y:.4f}"])
+            lines.extend(["43", f"{panel.seam_allowance:.4f}"])
+        if panel.cut_outline:
+            lines.extend([
+                "0",
+                "LWPOLYLINE",
+                "8",
+                f"{panel.name}_CUT",
+                "90",
+                str(len(panel.cut_outline)),
+            ])
+            for x, y in panel.cut_outline:
+                lines.extend(["10", f"{x:.4f}", "20", f"{y:.4f}"])
+            lines.extend(["43", f"{panel.seam_allowance:.4f}"])
     lines.extend(["0", "ENDSEC", "0", "EOF"])
     path.write_text("\n".join(lines), encoding="utf-8")
 
@@ -1047,14 +1385,34 @@ def _write_pdf(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any
         return point[0] - min_x + margin, point[1] - min_y + margin
 
     lines = [
+    points_per_meter = 72.0 / 0.0254
+    margin = 36.0
+    drawing_width = (max_x - min_x) * points_per_meter
+    drawing_height = (max_y - min_y) * points_per_meter
+    width = max(200.0, drawing_width + margin * 2)
+    height = max(200.0, drawing_height + margin * 2)
+
+    info_lines = [
         "SMII Pattern Export",
         f"Scale: {metadata['scale']}",
         f"Seam allowance: {metadata['seam_allowance']}",
         f"Panels: {metadata['panel_count']}",
     ]
     for panel in panels:
-        coords = ", ".join(f"{x:.2f},{y:.2f}" for x, y in panel.outline)
-        lines.append(f"{panel.name}: {coords} (allowance={panel.seam_allowance})")
+        seam_coords = ", ".join(f"{x:.2f},{y:.2f}" for x, y in panel.seam_outline)
+        cut_coords = ", ".join(f"{x:.2f},{y:.2f}" for x, y in (panel.cut_outline or []))
+        if seam_coords:
+            lines.append(
+                f"{panel.name} seam: {seam_coords} (allowance={panel.seam_allowance})"
+            )
+        else:
+            lines.append(
+                f"{panel.name} seam: unavailable (allowance={panel.seam_allowance})"
+            )
+        if cut_coords:
+            lines.append(f"{panel.name} cut: {cut_coords}")
+        else:
+            lines.append(f"{panel.name} cut: unavailable")
 
     drawing_ops: list[str] = []
     drawing_ops.extend(["0.6 w", "0 0 0 RG", "0 0 0 rg", "[] 0 d"])
@@ -1186,15 +1544,25 @@ def _write_pdf(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any
 
     text_ops = ["0 0 0 rg", "BT", "/F1 12 Tf", f"20 {height - 40:.2f} Td"]
     for index, line in enumerate(lines):
+    header_ops = ["BT", "/F1 12 Tf"]
+    top_text_y = height - margin
+    for index, line in enumerate(info_lines):
         escaped = _escape_pdf_text(line)
         if index == 0:
-            text_ops.append(f"({escaped}) Tj")
+            header_ops.append(f"1 0 0 1 {margin:.2f} {top_text_y:.2f} Tm")
+            header_ops.append(f"({escaped}) Tj")
         else:
             text_ops.append(f"0 -14 Td ({escaped}) Tj")
     text_ops.append("ET")
     content_parts = drawing_ops + text_ops
     for block in label_blocks:
         content_parts.extend(block)
+            offset = 14.0 * index
+            header_ops.append(f"1 0 0 1 {margin:.2f} {top_text_y - offset:.2f} Tm")
+            header_ops.append(f"({escaped}) Tj")
+    header_ops.append("ET")
+
+    content_parts = drawing_ops + header_ops + label_ops
     content_stream = "\n".join(content_parts).encode("utf-8")
 
     objects: list[bytes] = []
@@ -1232,6 +1600,27 @@ def _write_pdf(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any
         f"trailer\n<< /Size {count} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF".encode("utf-8")
     )
     path.write_bytes(buffer)
+
+
+def _polygon_centroid(points: Sequence[tuple[float, float]]) -> tuple[float, float]:
+    if not points:
+        return 0.0, 0.0
+    area = 0.0
+    centroid_x = 0.0
+    centroid_y = 0.0
+    for index, (x0, y0) in enumerate(points):
+        x1, y1 = points[(index + 1) % len(points)]
+        cross = x0 * y1 - x1 * y0
+        area += cross
+        centroid_x += (x0 + x1) * cross
+        centroid_y += (y0 + y1) * cross
+    area *= 0.5
+    if math.isclose(area, 0.0):
+        avg_x = sum(point[0] for point in points) / len(points)
+        avg_y = sum(point[1] for point in points) / len(points)
+        return avg_x, avg_y
+    factor = 1.0 / (6.0 * area)
+    return centroid_x * factor, centroid_y * factor
 
 
 __all__ = [
