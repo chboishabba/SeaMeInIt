@@ -39,6 +39,16 @@ Provisioning flow:
 
 Inspect the manifest at any time to confirm the bundle metadata, for example: `jq '.license, .sha256' assets/smplerx/manifest.json`.
 
+### Visualising fitted meshes
+
+The Afflec demo writes a NumPy archive containing the fitted SMPL-X body mesh to `outputs/afflec_demo/afflec_body.npz`. Install the viewer dependencies with `pip install trimesh "pyglet<2" scipy`, then launch an interactive preview:
+
+```bash
+python tools/view_mesh.py outputs/afflec_demo/afflec_body.npz
+```
+
+Pass `--info-only` to print mesh statistics without opening the window, or `--process` to let Trimesh repair normals and merge duplicate vertices before viewing.
+
 
 # **Next-Generation Adaptive Suit Platform** - Vision and Roadmap
 
