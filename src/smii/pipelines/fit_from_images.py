@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Sequence, TYPE_CHECKING
 
+import warnings
+
 if TYPE_CHECKING:  # pragma: no cover - import cycle guard for typing only
     from pipelines.measurement_inference import GaussianMeasurementModel
     from .fit_from_measurements import FitResult, MeasurementModel
@@ -117,15 +119,19 @@ def fit_smplx_from_images(
 ) -> "FitResult":
     """Fit SMPL-X parameters directly from Afflec imagery."""
 
+    paths = tuple(Path(path) for path in image_paths)
+
     try:
         from pipelines.afflec_regression import regress_measurements_from_images
-    except ModuleNotFoundError as exc:  # pragma: no cover - exercised in integration usage
-        raise ModuleNotFoundError(
-            "The Afflec regression model is required to infer measurements from imagery. "
-            "Install the regression extras or provide the model weights as described in the documentation."
-        ) from exc
-
-    measurements = regress_measurements_from_images(image_paths)
+    except ModuleNotFoundError:  # pragma: no cover - exercised in integration usage
+        warnings.warn(
+            "pipelines.afflec_regression is not available; falling back to Afflec metadata embedded in the images.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        measurements = extract_measurements_from_afflec_images(paths)
+    else:
+        measurements = regress_measurements_from_images(paths)
 
     from .fit_from_measurements import fit_smplx_from_measurements
 
