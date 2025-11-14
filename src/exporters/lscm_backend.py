@@ -138,7 +138,7 @@ class LSCMConformalBackend(CADBackend):
             faces = np.asarray(panel.faces, dtype=int)
 
             if len(vertices) < 3 or len(faces) == 0:
-                outline = [(0.0, 0.0) for _ in panel.vertices]
+                seam_outline = [(0.0, 0.0) for _ in panel.vertices]
                 metadata: dict[str, Any] = {
                     "flattening": {"method": "lscm", "iterations": 0},
                     "warnings": ["Panel does not contain enough geometry for flattening."],
@@ -147,7 +147,7 @@ class LSCMConformalBackend(CADBackend):
                 flattened.append(
                     Panel2D(
                         name=panel.name,
-                        outline=outline,
+                        seam_outline=seam_outline,
                         seam_allowance=allowance,
                         metadata=metadata,
                     )
@@ -190,7 +190,7 @@ class LSCMConformalBackend(CADBackend):
             flattened.append(
                 Panel2D(
                     name=panel.name,
-                    outline=[(float(x), float(y)) for x, y in adjusted_uv],
+                    seam_outline=[(float(x), float(y)) for x, y in adjusted_uv],
                     seam_allowance=allowance,
                     metadata=metadata,
                 )

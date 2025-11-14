@@ -33,12 +33,122 @@ class Panel3D:
 
 @dataclass(slots=True)
 class Panel2D:
-    """Flattened 2D panel representation."""
+    """Flattened 2D panel representation including seam and cut outlines."""
 
     name: str
-    outline: list[tuple[float, float]]
+    seam_outline: list[tuple[float, float]]
     seam_allowance: float
+    cut_outline: list[tuple[float, float]] | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.seam_allowance = float(self.seam_allowance)
+        if not isinstance(self.metadata, dict):
+            self.metadata = dict(self.metadata)
+        self.seam_outline = [(float(x), float(y)) for x, y in self.seam_outline]
+        if self.cut_outline is None:
+            if not self.seam_outline:
+                self.cut_outline = []
+            elif self.seam_allowance <= 1e-9:
+                self.cut_outline = list(self.seam_outline)
+            else:
+                offset = _offset_outline(self.seam_outline, float(self.seam_allowance))
+                if offset:
+                    self.cut_outline = offset
+                else:
+                    self.cut_outline = []
+                    warnings = self.metadata.setdefault("warnings", [])
+                    message = "Panel lacks sufficient geometry for seam allowance offset."
+                    if message not in warnings:
+                        warnings.append(message)
+        else:
+            self.cut_outline = [(float(x), float(y)) for x, y in self.cut_outline]
+
+
+def _polygon_area(points: Sequence[tuple[float, float]]) -> float:
+    area = 0.0
+    if not points:
+        return area
+    for (x1, y1), (x2, y2) in zip(points, points[1:] + points[:1]):
+        area += x1 * y2 - x2 * y1
+    return area / 2.0
+
+
+def _line_intersection(
+    point_a: tuple[float, float],
+    direction_a: tuple[float, float],
+    point_b: tuple[float, float],
+    direction_b: tuple[float, float],
+) -> tuple[float, float] | None:
+    det = direction_a[0] * direction_b[1] - direction_a[1] * direction_b[0]
+    if math.isclose(det, 0.0, abs_tol=1e-12):
+        return None
+    diff_x = point_b[0] - point_a[0]
+    diff_y = point_b[1] - point_a[1]
+    t = (diff_x * direction_b[1] - diff_y * direction_b[0]) / det
+    return (point_a[0] + direction_a[0] * t, point_a[1] + direction_a[1] * t)
+
+
+def _offset_outline(
+    points: Sequence[tuple[float, float]],
+    distance: float,
+) -> list[tuple[float, float]]:
+    if distance <= 0.0:
+        return [(float(x), float(y)) for x, y in points]
+    if len(points) < 3:
+        return []
+
+    area = _polygon_area(points)
+    if math.isclose(area, 0.0, abs_tol=1e-9):
+        return []
+    orientation = 1.0 if area > 0.0 else -1.0
+
+    offset_points: list[tuple[float, float]] = []
+    count = len(points)
+    for idx in range(count):
+        prev_point = points[(idx - 1) % count]
+        current_point = points[idx]
+        next_point = points[(idx + 1) % count]
+
+        edge_prev = (current_point[0] - prev_point[0], current_point[1] - prev_point[1])
+        edge_next = (next_point[0] - current_point[0], next_point[1] - current_point[1])
+
+        length_prev = math.hypot(*edge_prev)
+        length_next = math.hypot(*edge_next)
+        if length_prev <= 1e-9 or length_next <= 1e-9:
+            return []
+
+        normal_prev = (
+            orientation * edge_prev[1] / length_prev,
+            -orientation * edge_prev[0] / length_prev,
+        )
+        normal_next = (
+            orientation * edge_next[1] / length_next,
+            -orientation * edge_next[0] / length_next,
+        )
+
+        point_prev = (
+            current_point[0] + normal_prev[0] * distance,
+            current_point[1] + normal_prev[1] * distance,
+        )
+        point_next = (
+            current_point[0] + normal_next[0] * distance,
+            current_point[1] + normal_next[1] * distance,
+        )
+
+        intersection = _line_intersection(point_prev, edge_prev, point_next, edge_next)
+        if intersection is None:
+            avg_normal = (normal_prev[0] + normal_next[0], normal_prev[1] + normal_next[1])
+            length_avg = math.hypot(*avg_normal)
+            if length_avg <= 1e-9:
+                return []
+            intersection = (
+                current_point[0] + distance * avg_normal[0] / length_avg,
+                current_point[1] + distance * avg_normal[1] / length_avg,
+            )
+        offset_points.append((float(intersection[0]), float(intersection[1])))
+
+    return offset_points
 
 
 class CADBackend:
@@ -69,9 +179,9 @@ class SimplePlaneProjectionBackend(CADBackend):
         flattened: list[Panel2D] = []
         seam_lookup = seams or {}
         for panel in panels:
-            outline: list[tuple[float, float]]
+            seam_outline: list[tuple[float, float]]
             if not panel.vertices:
-                outline = []
+                seam_outline = []
             elif np is not None:
                 points = np.asarray(panel.vertices, dtype=float)
                 centroid = points.mean(axis=0)
@@ -79,9 +189,9 @@ class SimplePlaneProjectionBackend(CADBackend):
                 _, _, vh = np.linalg.svd(shifted, full_matrices=False)
                 basis = vh[:2, :]
                 projected = shifted @ basis.T
-                outline = _cleanup_panel_outline(_ordered_outline(projected * scale))
+                seam_outline = _ordered_outline(projected * scale)
             else:
-                outline = _cleanup_panel_outline(
+                seam_outline = [
                     (float(vertex[0]) * scale, float(vertex[1]) * scale)
                     for vertex in panel.vertices
                 )
@@ -94,7 +204,7 @@ class SimplePlaneProjectionBackend(CADBackend):
             flattened.append(
                 Panel2D(
                     name=panel.name,
-                    outline=outline,
+                    seam_outline=seam_outline,
                     seam_allowance=allowance,
                     metadata=metadata,
                 )
@@ -143,7 +253,7 @@ class LSCMUnwrapBackend(CADBackend):
                 "backend": "lscm",
             }
             try:
-                outline = self._unwrap_panel(panel, scale=scale)
+                seam_outline = self._unwrap_panel(panel, scale=scale)
             except Exception:
                 fallback = self._fallback.flatten_panels(
                     [panel],
@@ -156,7 +266,7 @@ class LSCMUnwrapBackend(CADBackend):
             flattened.append(
                 Panel2D(
                     name=panel.name,
-                    outline=outline,
+                    seam_outline=seam_outline,
                     seam_allowance=allowance,
                     metadata=metadata,
                 )
@@ -480,10 +590,16 @@ def _polygon_centroid(points: Sequence[tuple[float, float]]) -> tuple[float, flo
 
 
 def _panel_bounds(panels: Sequence[Panel2D]) -> tuple[float, float, float, float]:
-    min_x = min((point[0] for panel in panels for point in panel.outline), default=0.0)
-    max_x = max((point[0] for panel in panels for point in panel.outline), default=1.0)
-    min_y = min((point[1] for panel in panels for point in panel.outline), default=0.0)
-    max_y = max((point[1] for panel in panels for point in panel.outline), default=1.0)
+    all_points: list[tuple[float, float]] = []
+    for panel in panels:
+        if panel.cut_outline:
+            all_points.extend(panel.cut_outline)
+        if panel.seam_outline:
+            all_points.extend(panel.seam_outline)
+    min_x = min((point[0] for point in all_points), default=0.0)
+    max_x = max((point[0] for point in all_points), default=1.0)
+    min_y = min((point[1] for point in all_points), default=0.0)
+    max_y = max((point[1] for point in all_points), default=1.0)
     if math.isclose(min_x, max_x):
         max_x = min_x + 1.0
     if math.isclose(min_y, max_y):
@@ -505,12 +621,26 @@ def _write_svg(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any
         warnings_json = json.dumps(metadata["panel_warnings"], sort_keys=True)
         lines.insert(3, f"<!-- panel_warnings: {warnings_json} -->")
     for panel in panels:
-        if not panel.outline:
+        if not panel.seam_outline and not panel.cut_outline:
             continue
-        points = " ".join(f"{x:.2f},{y:.2f}" for x, y in panel.outline)
         lines.append(
-            f"  <polygon id=\"{panel.name}\" points=\"{points}\" data-seam-allowance=\"{panel.seam_allowance}\" />"
+            f"  <g id=\"{panel.name}\" data-seam-allowance=\"{panel.seam_allowance}\">"
         )
+        if panel.cut_outline:
+            cut_points = " ".join(f"{x:.2f},{y:.2f}" for x, y in panel.cut_outline)
+            lines.append(
+                "    "
+                f"<polygon class=\"cut-outline\" points=\"{cut_points}\" fill=\"none\" "
+                "stroke=\"#d94f4f\" stroke-width=\"0.20\" stroke-linejoin=\"round\" />"
+            )
+        if panel.seam_outline:
+            seam_points = " ".join(f"{x:.2f},{y:.2f}" for x, y in panel.seam_outline)
+            lines.append(
+                "    "
+                f"<polygon class=\"seam-outline\" points=\"{seam_points}\" fill=\"none\" "
+                "stroke=\"#1a1a1a\" stroke-width=\"0.10\" stroke-dasharray=\"4 2\" stroke-linejoin=\"round\" />"
+            )
+        lines.append("  </g>")
     lines.append("</svg>")
     path.write_text("\n".join(lines), encoding="utf-8")
 
@@ -537,19 +667,30 @@ def _write_dxf(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any
         "ENTITIES",
     ]
     for panel in panels:
-        if not panel.outline:
-            continue
-        lines.extend([
-            "0",
-            "LWPOLYLINE",
-            "8",
-            panel.name,
-            "90",
-            str(len(panel.outline)),
-        ])
-        for x, y in panel.outline:
-            lines.extend(["10", f"{x:.4f}", "20", f"{y:.4f}"])
-        lines.extend(["43", f"{panel.seam_allowance:.4f}"])
+        if panel.seam_outline:
+            lines.extend([
+                "0",
+                "LWPOLYLINE",
+                "8",
+                panel.name,
+                "90",
+                str(len(panel.seam_outline)),
+            ])
+            for x, y in panel.seam_outline:
+                lines.extend(["10", f"{x:.4f}", "20", f"{y:.4f}"])
+            lines.extend(["43", f"{panel.seam_allowance:.4f}"])
+        if panel.cut_outline:
+            lines.extend([
+                "0",
+                "LWPOLYLINE",
+                "8",
+                f"{panel.name}_CUT",
+                "90",
+                str(len(panel.cut_outline)),
+            ])
+            for x, y in panel.cut_outline:
+                lines.extend(["10", f"{x:.4f}", "20", f"{y:.4f}"])
+            lines.extend(["43", f"{panel.seam_allowance:.4f}"])
     lines.extend(["0", "ENDSEC", "0", "EOF"])
     path.write_text("\n".join(lines), encoding="utf-8")
 
@@ -574,44 +715,20 @@ def _write_pdf(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any
         f"Panels: {metadata['panel_count']}",
     ]
     for panel in panels:
-        info_lines.append(f"{panel.name} (allowance={panel.seam_allowance})")
-
-    def transform(point: tuple[float, float]) -> tuple[float, float]:
-        px = (point[0] - min_x) * points_per_meter + margin
-        py = (point[1] - min_y) * points_per_meter + margin
-        return px, py
-
-    drawing_ops: list[str] = [
-        "q",
-        "0.75 w",
-        "0 0 0 RG",
-        "0 0 0 rg",
-    ]
-    label_ops: list[str] = []
-    for panel in panels:
-        if len(panel.outline) < 2:
-            continue
-        start_x, start_y = transform(panel.outline[0])
-        drawing_ops.append(f"{start_x:.2f} {start_y:.2f} m")
-        for x, y in panel.outline[1:]:
-            px, py = transform((x, y))
-            drawing_ops.append(f"{px:.2f} {py:.2f} l")
-        drawing_ops.append("h")
-        drawing_ops.append("S")
-
-        centroid_x, centroid_y = _polygon_centroid(panel.outline)
-        label_x, label_y = transform((centroid_x, centroid_y))
-        escaped_label = _escape_pdf_text(panel.name)
-        label_ops.extend(
-            [
-                "BT",
-                "/F1 10 Tf",
-                f"1 0 0 1 {label_x:.2f} {label_y:.2f} Tm",
-                f"({escaped_label}) Tj",
-                "ET",
-            ]
-        )
-    drawing_ops.append("Q")
+        seam_coords = ", ".join(f"{x:.2f},{y:.2f}" for x, y in panel.seam_outline)
+        cut_coords = ", ".join(f"{x:.2f},{y:.2f}" for x, y in (panel.cut_outline or []))
+        if seam_coords:
+            lines.append(
+                f"{panel.name} seam: {seam_coords} (allowance={panel.seam_allowance})"
+            )
+        else:
+            lines.append(
+                f"{panel.name} seam: unavailable (allowance={panel.seam_allowance})"
+            )
+        if cut_coords:
+            lines.append(f"{panel.name} cut: {cut_coords}")
+        else:
+            lines.append(f"{panel.name} cut: unavailable")
 
     header_ops = ["BT", "/F1 12 Tf"]
     top_text_y = height - margin
