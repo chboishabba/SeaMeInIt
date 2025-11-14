@@ -7,6 +7,7 @@ from importlib import util as importlib_util
 from pathlib import Path
 from typing import Iterable, Sequence
 
+import json
 import numpy as np
 
 __all__ = [
@@ -131,10 +132,14 @@ def run_afflec_fixture_demo(
 
     from smii.pipelines import extract_measurements_from_afflec_images, fit_smplx_from_measurements
     from smii.pipelines.fit_from_measurements import (
+        BodyMeshOutput,
         create_body_mesh,
+        generate_vertices_from_smplx_parameters,
+        load_smplx_parameter_payload,
         plot_measurement_report,
         save_fit,
     )
+    import trimesh
 
     image_paths = list(images or _default_afflec_images())
     if not image_paths:
@@ -155,16 +160,48 @@ def run_afflec_fixture_demo(
     print(f"Saved fitted parameters to {output_path}")
 
     mesh_path = target_dir / "afflec_body.npz"
+    params_path = target_dir / "afflec_smplx_params.json"
     asset_root = Path(model_assets) if model_assets is not None else Path("assets") / model_backend
     try:
-        vertices, faces = create_body_mesh(result, model_path=asset_root)
+        mesh_output = create_body_mesh(
+            result,
+            model_path=asset_root,
+            model_type=model_backend,
+            return_parameters=True,
+        )
+        if not isinstance(mesh_output, BodyMeshOutput):  # pragma: no cover - defensive
+            vertices, faces = mesh_output  # type: ignore[misc]
+            parameters_payload = None
+        else:
+            parameters_payload = mesh_output.parameter_payload()
     except FileNotFoundError as exc:
         raise FileNotFoundError(
             "SMPL-compatible assets are required to generate the fitted body mesh. "
             f"Provision the '{model_backend}' bundle with `python tools/download_smplx.py --model {model_backend}` "
             "and re-run the command (use --assets-root to supply a custom path)."
         ) from exc
-    np.savez(mesh_path, vertices=vertices, faces=faces)
+    if isinstance(mesh_output, BodyMeshOutput):
+        assert parameters_payload is not None  # for type-checkers
+        with params_path.open("w", encoding="utf-8") as stream:
+            json.dump(parameters_payload, stream, indent=2)
+        print(f"Saved SMPL-X parameter payload to {params_path}")
+
+        parameters, scale, payload_model_type, gender = load_smplx_parameter_payload(parameters_payload)
+        vertices, faces = generate_vertices_from_smplx_parameters(
+            parameters,
+            scale=scale,
+            model_path=asset_root,
+            model_type=payload_model_type,
+            gender=gender,
+        )
+
+        mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
+        if not mesh.is_watertight:
+            raise ValueError("Fitted SMPL-X body is not watertight")
+    else:  # pragma: no cover - fallback path without parameter record
+        vertices, faces = mesh_output
+
+    np.savez(mesh_path, vertices=vertices.astype(np.float32), faces=faces.astype(np.int32))
     print(f"Saved fitted body mesh to {mesh_path}")
     plot_path = plot_measurement_report(result, target_dir)
     if plot_path is not None:
