@@ -11,7 +11,7 @@ try:  # pragma: no cover - optional dependency shim
 except ImportError:  # pragma: no cover - numpy optional
     np = None  # type: ignore[assignment]
 
-from .patterns import CADBackend, Panel2D, Panel3D
+from .patterns import CADBackend, Panel2D, Panel3D, build_panel_annotations
 
 FloatArray = "np.ndarray"
 
@@ -144,12 +144,22 @@ class LSCMConformalBackend(CADBackend):
                     "warnings": ["Panel does not contain enough geometry for flattening."],
                     "requires_subdivision": True,
                 }
+                annotations = build_panel_annotations(
+                    outline,
+                    seam_metadata=seam_lookup.get(panel.name, {}),
+                    panel_metadata=panel.metadata,
+                    panel_name=panel.name,
+                )
                 flattened.append(
                     Panel2D(
                         name=panel.name,
                         outline=outline,
                         seam_allowance=allowance,
                         metadata=metadata,
+                        grainlines=annotations.grainlines,
+                        notches=annotations.notches,
+                        folds=annotations.folds,
+                        label=annotations.label,
                     )
                 )
                 continue
@@ -187,12 +197,24 @@ class LSCMConformalBackend(CADBackend):
                 "perimeter_uv": perimeter_uv,
             }
 
+            outline_2d = [(float(x), float(y)) for x, y in adjusted_uv]
+            annotations = build_panel_annotations(
+                outline_2d,
+                seam_metadata=seam_lookup.get(panel.name, {}),
+                panel_metadata=panel.metadata,
+                panel_name=panel.name,
+            )
+
             flattened.append(
                 Panel2D(
                     name=panel.name,
-                    outline=[(float(x), float(y)) for x, y in adjusted_uv],
+                    outline=outline_2d,
                     seam_allowance=allowance,
                     metadata=metadata,
+                    grainlines=annotations.grainlines,
+                    notches=annotations.notches,
+                    folds=annotations.folds,
+                    label=annotations.label,
                 )
             )
 

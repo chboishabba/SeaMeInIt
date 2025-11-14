@@ -265,3 +265,21 @@ measurements, the system can generate an optimal undersuit pattern that upholds 
 
 
 
+
+### Pattern annotation metadata
+
+The 2D export pipeline now carries grainline arrows, notches, fold indicators, and panel labels so downstream users receive a complete technical flat. Populate the following metadata when invoking :class:`exporters.PatternExporter`:
+
+* **Per-panel payloads** (each entry in ``undersuit_mesh["panels"]``) may include a ``metadata`` mapping with:
+
+  * ``grainline`` or ``grainlines`` – either a single mapping or a list with keys ``direction`` (2D vector in panel space), ``origin`` (``[x, y]`` in metres), and optional ``length``.
+  * ``label`` – mapping containing ``text`` and optional ``position``/``rotation`` or a simple string. ``label_text`` remains supported as a shorthand.
+
+* **Seam metadata** (``seams[panel_name]``) may describe annotation geometry with:
+
+  * ``notches`` – iterable of mappings supporting ``fraction`` (0–1 along the outline), ``distance`` (metres along the outline), or an explicit ``position``. Optional ``depth``, ``width``, and ``label`` refine the notch triangle and text call-out.
+  * ``correspondences`` – any entry tagged with ``{"kind": "notch"}`` or ``{"notch": true}`` is treated as a notch and converted to geometry using the same fields as above.
+  * ``folds`` or ``fold_lines`` – mappings with ``start_fraction``/``end_fraction`` or explicit ``positions`` and an optional ``kind`` string (``"valley"``/``"mountain"``) to select the dash pattern.
+  * ``label``/``label_text`` – overrides for the on-panel label generated from the panel metadata.
+
+Call :func:`exporters.build_panel_annotations` to transform these payloads into explicit geometry when constructing custom back-ends. The helper returns ``PanelAnnotations`` which the :class:`Panel2D` dataclass now stores alongside the outline, ensuring SVG, DXF, and PDF writers draw consistent styling across toolchains.
