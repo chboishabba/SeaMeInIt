@@ -1,5 +1,20 @@
 """Soft suit modelling package."""
 
+from .material_model import (
+    DirectionalElasticModulus,
+    MaterialBlend,
+    MaterialCatalog,
+    MaterialLayer,
+    MaterialStack,
+    PressureComfortRatings,
+    ThermalResistance,
+)
+from .thermal_zones import (
+    DEFAULT_THERMAL_ZONE_SPEC,
+    ThermalZone,
+    ThermalZoneAssignment,
+    ThermalZoneSpec,
+)
 from .undersuit_generator import (
     LAYER_REFERENCE_MEASUREMENTS,
     MeshLayer,
@@ -9,6 +24,17 @@ from .undersuit_generator import (
 )
 
 __all__ = [
+    "DirectionalElasticModulus",
+    "MaterialBlend",
+    "MaterialCatalog",
+    "MaterialLayer",
+    "MaterialStack",
+    "PressureComfortRatings",
+    "ThermalResistance",
+    "ThermalZone",
+    "ThermalZoneAssignment",
+    "ThermalZoneSpec",
+    "DEFAULT_THERMAL_ZONE_SPEC",
     "LAYER_REFERENCE_MEASUREMENTS",
     "MeshLayer",
     "UnderSuitGenerator",
