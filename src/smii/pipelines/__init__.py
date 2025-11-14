@@ -7,6 +7,8 @@ from typing import Any, Dict, Tuple
 
 __all__ = [
     "AfflecImageMeasurementExtractor",
+    "SMPLXRegressionFrame",
+    "SMPLXRegressionResult",
     "FitResult",
     "ICPSettings",
     "MeasurementExtractionError",
@@ -15,8 +17,10 @@ __all__ = [
     "UndersuitMesh",
     "UndersuitPipeline",
     "create_body_mesh",
+    "create_body_mesh_from_regression",
     "create_parametric_mesh",
     "extract_measurements_from_afflec_images",
+    "fit_smplx_from_images",
     "fit_scan_to_smplx",
     "fit_smplx_from_measurements",
     "export_hard_layer_main",
@@ -25,6 +29,8 @@ __all__ = [
     "generate_undersuit",
     "load_body_record",
     "run_clearance",
+    "save_regression_json",
+    "save_regression_mesh",
     "load_mesh",
     "load_transforms",
 ]
@@ -39,6 +45,15 @@ _LAZY_IMPORTS: Dict[str, Tuple[str, str]] = {
         "smii.pipelines.fit_from_images",
         "extract_measurements_from_afflec_images",
     ),
+    "SMPLXRegressionFrame": ("smii.pipelines.fit_from_images", "SMPLXRegressionFrame"),
+    "SMPLXRegressionResult": ("smii.pipelines.fit_from_images", "SMPLXRegressionResult"),
+    "fit_smplx_from_images": ("smii.pipelines.fit_from_images", "fit_smplx_from_images"),
+    "create_body_mesh_from_regression": (
+        "smii.pipelines.fit_from_images",
+        "create_body_mesh_from_regression",
+    ),
+    "save_regression_json": ("smii.pipelines.fit_from_images", "save_regression_json"),
+    "save_regression_mesh": ("smii.pipelines.fit_from_images", "save_regression_mesh"),
     "create_body_mesh": ("smii.pipelines.fit_from_measurements", "create_body_mesh"),
     "FitResult": ("smii.pipelines.fit_from_measurements", "FitResult"),
     "fit_smplx_from_measurements": (
