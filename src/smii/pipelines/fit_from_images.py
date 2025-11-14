@@ -7,6 +7,11 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
 
+import warnings
+
+if TYPE_CHECKING:  # pragma: no cover - import cycle guard for typing only
+    from pipelines.measurement_inference import GaussianMeasurementModel
+    from .fit_from_measurements import FitResult, MeasurementModel
 import json
 import math
 
@@ -280,6 +285,19 @@ class SMPLXRegressionResult:
     right_hand_pose: np.ndarray | None = None
     measurement_fit: "FitResult | None" = None
 
+    paths = tuple(Path(path) for path in image_paths)
+
+    try:
+        from pipelines.afflec_regression import regress_measurements_from_images
+    except ModuleNotFoundError:  # pragma: no cover - exercised in integration usage
+        warnings.warn(
+            "pipelines.afflec_regression is not available; falling back to Afflec metadata embedded in the images.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        measurements = extract_measurements_from_afflec_images(paths)
+    else:
+        measurements = regress_measurements_from_images(paths)
     def to_dict(self) -> dict[str, object]:
         payload: dict[str, object] = {
             "betas": self.betas.tolist(),
