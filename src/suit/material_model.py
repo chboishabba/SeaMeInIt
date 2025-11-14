@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
-from ..schemas.validators import (
+from schemas.validators import (
     SUIT_MATERIAL_SCHEMA_NAME,
     load_material_catalog as _load_material_catalog_payload,
     validate_material_catalog,
