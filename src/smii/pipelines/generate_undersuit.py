@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -64,6 +65,124 @@ def _compose_measurement_map(
             measurement_map[str(name)] = (float(value), 1.0)
 
     return measurement_map
+
+
+def _resolve_body_path(path: Path) -> Path:
+    """Return a concrete body record path, inferring file extensions when omitted."""
+
+    path = Path(os.path.expandvars(str(path))).expanduser()
+    if path.exists():
+        return path
+    if path.suffix:
+        raise FileNotFoundError(f"Body record '{path}' does not exist.")
+
+    parent = path.parent if path.parent != Path("") else Path(".")
+    stem = path.name
+    candidates = [parent / f"{stem}{ext}" for ext in (".npz", ".json")]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    missing = ", ".join(str(candidate) for candidate in candidates)
+    raise FileNotFoundError(
+        f"Body record '{path}' not found. Provide a JSON or NPZ file "
+        f"(checked: {missing})."
+    )
+
+
+def _load_panel_definitions(path: Path | None) -> list[Mapping[str, Any]] | None:
+    """Load optional panel definition overrides from JSON."""
+
+    if path is None:
+        return None
+    with path.open("r", encoding="utf-8") as stream:
+        payload = json.load(stream)
+    if isinstance(payload, Mapping):
+        panels = payload.get("panels")
+        if panels is None:
+            raise TypeError("Panel definition payload must include a 'panels' array.")
+    else:
+        panels = payload
+    if not isinstance(panels, Sequence):
+        raise TypeError("Panel definitions must be provided as a list.")
+
+    result: list[Mapping[str, Any]] = []
+    for entry in panels:
+        if not isinstance(entry, Mapping):
+            raise TypeError("Each panel definition must be a JSON object.")
+        if "name" not in entry:
+            raise KeyError("Panel definitions must include a 'name' field.")
+        result.append(entry)
+    return result or None
+
+
+def _load_seam_overrides(path: Path | None) -> Mapping[str, Mapping[str, Any]] | None:
+    """Load optional seam metadata overrides from JSON."""
+
+    if path is None:
+        return None
+    with path.open("r", encoding="utf-8") as stream:
+        payload = json.load(stream)
+    if not isinstance(payload, Mapping):
+        raise TypeError("Seam override payload must be a JSON object.")
+
+    overrides: dict[str, Mapping[str, Any]] = {}
+    for name, value in payload.items():
+        if not isinstance(value, Mapping):
+            raise TypeError(f"Seam override for '{name}' must be a JSON object.")
+        overrides[str(name)] = dict(value)
+    return overrides
+
+
+def _build_panel_payload(
+    base_vertices: np.ndarray,
+    definitions: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Construct a panel payload JSON structure from vertex indices or overrides."""
+
+    if not definitions:
+        return {"panels": []}
+
+    vertices_arr = np.asarray(base_vertices, dtype=float)
+    if vertices_arr.ndim != 2 or vertices_arr.shape[1] != 3:
+        raise ValueError("Base layer vertices must be shaped (N, 3).")
+
+    panels: list[dict[str, Any]] = []
+    for definition in definitions:
+        name = str(definition["name"])
+        explicit_vertices = definition.get("vertices")
+        if explicit_vertices is not None:
+            panel_vertices = np.asarray(explicit_vertices, dtype=float)
+        else:
+            indices = definition.get("vertex_indices")
+            if indices is None:
+                raise KeyError(f"Panel '{name}' missing 'vertex_indices' or 'vertices'.")
+            index_array = np.asarray(indices, dtype=int)
+            if index_array.ndim != 1:
+                raise ValueError(f"Panel '{name}' vertex_indices must be 1D.")
+            if np.any(index_array < 0) or np.any(index_array >= vertices_arr.shape[0]):
+                raise IndexError(f"Panel '{name}' vertex_indices reference out-of-range vertices.")
+            panel_vertices = vertices_arr[index_array]
+
+        faces = definition.get("faces")
+        if faces is not None:
+            panel_faces = [
+                (int(face[0]), int(face[1]), int(face[2])) for face in faces  # type: ignore[index]
+            ]
+        else:
+            count = panel_vertices.shape[0]
+            if count < 3:
+                raise ValueError(f"Panel '{name}' must include at least three vertices.")
+            panel_faces = [(0, i, i + 1) for i in range(1, count - 1)]
+
+        panels.append(
+            {
+                "name": name,
+                "vertices": panel_vertices.tolist(),
+                "faces": [list(face) for face in panel_faces],
+            }
+        )
+    return {"panels": panels}
 
 
 def _ensure_output_dir(base_dir: Path | None, body_path: Path) -> Path:
@@ -207,6 +326,7 @@ def generate_undersuit(
 ) -> None:
     """Run the undersuit generation pipeline and persist all artefacts."""
 
+    body_path = _resolve_body_path(body_path)
     record = load_body_record(body_path)
     measurement_pairs = _compose_measurement_map(record, measurements)
     measurement_values = {name: pair[0] for name, pair in measurement_pairs.items()}
@@ -455,6 +575,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--joint-map",
         type=Path,
         help="Optional JSON file describing joint coordinates used to orient seams.",
+    )
+    parser.add_argument(
+        "--panels-json",
+        type=Path,
+        help="Optional panel payload JSON used to override automatically generated panels.",
+    )
+    parser.add_argument(
+        "--seams-json",
+        type=Path,
+        help="Optional seam metadata JSON paired with --panels-json overrides.",
     )
     parser.add_argument(
         "--pattern-backend",

@@ -1,0 +1,242 @@
+{
+  "scale_factor": 1.03,
+  "measurement_scale": 1.0,
+  "ease_percent": 0.03,
+  "watertight": true,
+  "body_axes": {
+    "left_arm": {
+      "name": "left_arm",
+      "length": 0.8545986134762479,
+      "measurement": "arm_length",
+      "confidence": 1.0,
+      "points": [
+        [
+          3.9525147171401575e-06,
+          -0.0372906967898175,
+          -0.0064706635409979025
+        ],
+        [
+          -0.8512353819230672,
+          -0.014551698990464306,
+          -0.0786740127744246
+        ]
+      ],
+      "parameters": [
+        0.0,
+        1.0
+      ]
+    },
+    "right_arm": {
+      "name": "right_arm",
+      "length": 0.8546144400183808,
+      "measurement": "arm_length",
+      "confidence": 1.0,
+      "points": [
+        [
+          3.9525147171401575e-06,
+          -0.0372906967898175,
+          -0.0064706635409979025
+        ],
+        [
+          0.851257798709524,
+          -0.014500199077949024,
+          -0.0786740127744246
+        ]
+      ],
+      "parameters": [
+        0.0,
+        1.0
+      ]
+    },
+    "left_leg": {
+      "name": "left_leg",
+      "length": 0.17248743042971895,
+      "measurement": "inseam_length",
+      "confidence": 1.0,
+      "points": [
+        [
+          3.9525147171401575e-06,
+          -0.0372906967898175,
+          -0.0064706635409979025
+        ],
+        [
+          -0.07994254056309427,
+          0.005616730860136351,
+          -0.1531656687500048
+        ]
+      ],
+      "parameters": [
+        0.0,
+        1.0
+      ]
+    },
+    "right_leg": {
+      "name": "right_leg",
+      "length": 0.27198990305400916,
+      "measurement": "inseam_length",
+      "confidence": 1.0,
+      "points": [
+        [
+          3.9525147171401575e-06,
+          -0.0372906967898175,
+          -0.0064706635409979025
+        ],
+        [
+          -2.178575436295989e-06,
+          -0.2511282822641731,
+          0.16161263236979959
+        ]
+      ],
+      "parameters": [
+        0.0,
+        1.0
+      ]
+    },
+    "spine": {
+      "name": "spine",
+      "length": 0.27198990305400916,
+      "measurement": "height",
+      "confidence": 1.0,
+      "points": [
+        [
+          3.9525147171401575e-06,
+          -0.0372906967898175,
+          -0.0064706635409979025
+        ],
+        [
+          -2.178575436295989e-06,
+          -0.2511282822641731,
+          0.16161263236979959
+        ]
+      ],
+      "parameters": [
+        0.0,
+        1.0
+      ]
+    }
+  },
+  "layers": {
+    "base": {
+      "thickness": 0.0015,
+      "surface_area": 2.026302896568776
+    },
+    "insulation": {
+      "thickness": 0.003,
+      "surface_area": 2.1305125397939046
+    },
+    "comfort": {
+      "thickness": 0.001,
+      "surface_area": 2.166726935375982
+    }
+  },
+  "seam_max_deviation": 0.0,
+  "output_directory": "outputs/suits/afflec_body",
+  "body_record": "outputs/afflec_demo/afflec_body.npz",
+  "patterns": {
+    "panels": [
+      "chest_circumference_to_neck_circumference_left",
+      "chest_circumference_to_neck_circumference_right",
+      "hip_circumference_to_waist_circumference_left",
+      "hip_circumference_to_waist_circumference_right",
+      "thigh_circumference_to_hip_circumference_left",
+      "thigh_circumference_to_hip_circumference_right",
+      "waist_circumference_to_chest_circumference_left",
+      "waist_circumference_to_chest_circumference_right"
+    ],
+    "files": {
+      "pdf": "outputs/suits/afflec_body/patterns/undersuit_pattern.pdf",
+      "svg": "outputs/suits/afflec_body/patterns/undersuit_pattern.svg",
+      "dxf": "outputs/suits/afflec_body/patterns/undersuit_pattern.dxf"
+    },
+    "panel_count": 8,
+    "measurement_loops": {
+      "thigh_circumference": {
+        "axis_coordinate": 0.13691936693291173,
+        "vertex_count": 105
+      },
+      "hip_circumference": {
+        "axis_coordinate": 0.3490403653304678,
+        "vertex_count": 89
+      },
+      "waist_circumference": {
+        "axis_coordinate": 0.5965148634609498,
+        "vertex_count": 58
+      },
+      "chest_circumference": {
+        "axis_coordinate": 0.8793428613243579,
+        "vertex_count": 70
+      },
+      "neck_circumference": {
+        "axis_coordinate": 1.1091406095883771,
+        "vertex_count": 30
+      }
+    },
+    "seams": {
+      "thigh_circumference_to_hip_circumference_right": {
+        "seam_allowance": 0.016646913855746515,
+        "mean_curvature": 0.34107976285134345,
+        "panel_curvature": 0.1535157176795741,
+        "tension_ratio": 2.221776025483153
+      },
+      "thigh_circumference_to_hip_circumference_left": {
+        "seam_allowance": 0.016646984490982696,
+        "mean_curvature": 0.34107976285134345,
+        "panel_curvature": 0.1535114185799551,
+        "tension_ratio": 2.2218382460940522
+      },
+      "hip_circumference_to_waist_circumference_right": {
+        "seam_allowance": 0.014114931837809853,
+        "mean_curvature": 0.3336451539611451,
+        "panel_curvature": 0.27459618330141633,
+        "tension_ratio": 1.2150348738097352
+      },
+      "hip_circumference_to_waist_circumference_left": {
+        "seam_allowance": 0.014114922533195183,
+        "mean_curvature": 0.3336451539611451,
+        "panel_curvature": 0.27459675461440985,
+        "tension_ratio": 1.2150323458749677
+      },
+      "waist_circumference_to_chest_circumference_right": {
+        "seam_allowance": 0.011650076009266108,
+        "mean_curvature": 0.1746148684518335,
+        "panel_curvature": 0.24362281826854829,
+        "tension_ratio": 0.7167397247643261
+      },
+      "waist_circumference_to_chest_circumference_left": {
+        "seam_allowance": 0.011650019072813766,
+        "mean_curvature": 0.1746148684518335,
+        "panel_curvature": 0.24362911232537557,
+        "tension_ratio": 0.716721208167527
+      },
+      "chest_circumference_to_neck_circumference_right": {
+        "seam_allowance": 0.013385327377102404,
+        "mean_curvature": 0.3463353091158974,
+        "panel_curvature": 0.3463353091158974,
+        "tension_ratio": 0.9999971126330862
+      },
+      "chest_circumference_to_neck_circumference_left": {
+        "seam_allowance": 0.013385317772997084,
+        "mean_curvature": 0.3463329081135878,
+        "panel_curvature": 0.3463329081135878,
+        "tension_ratio": 0.9999971126130692
+      }
+    },
+    "axis_map": {
+      "longitudinal": [
+        -3.175977831479043e-05,
+        -0.9998288467248616,
+        -0.018500709395854045
+      ],
+      "lateral": [
+        0.9999999994882012,
+        -3.182579035233911e-05,
+        3.2736563909381073e-06
+      ],
+      "anterior": [
+        -3.8618957925271215e-06,
+        -0.0185007092824148,
+        0.9998288472239304
+      ]
+    }
+  }
+}

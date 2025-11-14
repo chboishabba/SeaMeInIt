@@ -53,6 +53,10 @@ Layer toggles and thicknesses are configured via CLI switches or the
 - `--pattern-backend lscm`: unwrap panels with libigl’s Least Squares Conformal
   Maps solver (defaults to a simple projection fallback).
 
+👉 Refer to [Flattened Panel Export](./pattern_flattening.md) for a detailed walk
+through of the new seam-driven panel generation, the `PatternExporter` CLI, and
+tips on re-flattening saved payloads.
+
 By default all layers are generated using the fitted mesh normals to maintain
 seam continuity. Metadata includes a `seam_max_deviation` metric that should
 remain near zero for watertight inputs.
@@ -265,7 +269,6 @@ measurements, the system can generate an optimal undersuit pattern that upholds 
 
 
 
-
 ### Pattern annotation metadata
 
 The 2D export pipeline now carries grainline arrows, notches, fold indicators, and panel labels so downstream users receive a complete technical flat. Populate the following metadata when invoking :class:`exporters.PatternExporter`:
@@ -283,3 +286,4 @@ The 2D export pipeline now carries grainline arrows, notches, fold indicators, a
   * ``label``/``label_text`` – overrides for the on-panel label generated from the panel metadata.
 
 Call :func:`exporters.build_panel_annotations` to transform these payloads into explicit geometry when constructing custom back-ends. The helper returns ``PanelAnnotations`` which the :class:`Panel2D` dataclass now stores alongside the outline, ensuring SVG, DXF, and PDF writers draw consistent styling across toolchains.
+
