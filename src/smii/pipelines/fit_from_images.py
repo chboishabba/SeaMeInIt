@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Sequence, TYPE_CHECKING
+
+if TYPE_CHECKING:  # pragma: no cover - import cycle guard for typing only
+    from pipelines.measurement_inference import GaussianMeasurementModel
+    from .fit_from_measurements import FitResult, MeasurementModel
 
 HEADER_PREFIX = "# measurement:"
 
@@ -102,8 +106,42 @@ def extract_measurements_from_afflec_images(image_paths: Iterable[Path]) -> dict
     return extractor.batch_extract(image_paths)
 
 
+def fit_smplx_from_images(
+    image_paths: Iterable[Path],
+    *,
+    backend: str = "smplx",
+    schema_path: Path | None = None,
+    models: Sequence["MeasurementModel"] | None = None,
+    num_shape_coeffs: int | None = None,
+    inference_model: "GaussianMeasurementModel" | None = None,
+) -> "FitResult":
+    """Fit SMPL-X parameters directly from Afflec imagery."""
+
+    try:
+        from pipelines.afflec_regression import regress_measurements_from_images
+    except ModuleNotFoundError as exc:  # pragma: no cover - exercised in integration usage
+        raise ModuleNotFoundError(
+            "The Afflec regression model is required to infer measurements from imagery. "
+            "Install the regression extras or provide the model weights as described in the documentation."
+        ) from exc
+
+    measurements = regress_measurements_from_images(image_paths)
+
+    from .fit_from_measurements import fit_smplx_from_measurements
+
+    return fit_smplx_from_measurements(
+        measurements,
+        backend=backend,
+        schema_path=schema_path,
+        models=models,
+        num_shape_coeffs=num_shape_coeffs,
+        inference_model=inference_model,
+    )
+
+
 __all__ = [
     "AfflecImageMeasurementExtractor",
     "MeasurementExtractionError",
     "extract_measurements_from_afflec_images",
+    "fit_smplx_from_images",
 ]

@@ -17,6 +17,7 @@ __all__ = [
     "create_body_mesh",
     "create_parametric_mesh",
     "extract_measurements_from_afflec_images",
+    "fit_smplx_from_images",
     "fit_scan_to_smplx",
     "fit_smplx_from_measurements",
     "export_hard_layer_main",
@@ -38,6 +39,10 @@ _LAZY_IMPORTS: Dict[str, Tuple[str, str]] = {
     "extract_measurements_from_afflec_images": (
         "smii.pipelines.fit_from_images",
         "extract_measurements_from_afflec_images",
+    ),
+    "fit_smplx_from_images": (
+        "smii.pipelines.fit_from_images",
+        "fit_smplx_from_images",
     ),
     "create_body_mesh": ("smii.pipelines.fit_from_measurements", "create_body_mesh"),
     "FitResult": ("smii.pipelines.fit_from_measurements", "FitResult"),
