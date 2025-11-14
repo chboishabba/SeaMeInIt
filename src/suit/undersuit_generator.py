@@ -99,7 +99,9 @@ class UnderSuitGenerator:
         measurement_values, measurement_confidences = _parse_measurements(measurements)
         vertices, faces = _extract_vertices_and_faces(body_output)
         normals = _vertex_normals(vertices, faces)
-        measurement_scale = _measurement_scale(measurement_values, options.measurement_weights)
+        measurement_scale = _measurement_scale(
+            measurement_values, measurement_confidences, options.measurement_weights
+        )
         ease_scale = 1.0 + float(options.ease_percent)
         scale_factor = measurement_scale * ease_scale
 
@@ -164,11 +166,11 @@ class UnderSuitGenerator:
         }
         layer_metadata["seam_max_deviation"] = _seam_deviation(base_layer.vertices, faces)
 
-        if measurements:
+        if measurement_values:
             measurement_loops = solve_measurement_loops(
                 base_layer.vertices,
                 base_layer.faces,
-                measurements,
+                measurement_values,
             )
             if measurement_loops:
                 layer_metadata["measurement_loops"] = {
@@ -227,16 +229,18 @@ def _scale_points(points: LayerArray, center: np.ndarray, scale_factor: float) -
 
 def _measurement_scale(
     measurements: Mapping[str, float] | None,
+    confidences: Mapping[str, float] | None,
     weights: Mapping[str, float] | None,
 ) -> float:
     if not measurements:
         return 1.0
     weighted: list[float] = []
     total_weight = 0.0
+    confidence_map = confidences or {}
     weighting = weights or {}
     for name, reference in LAYER_REFERENCE_MEASUREMENTS.items():
         if name in measurements:
-            weight = weighting.get(name, 1.0)
+            weight = confidence_map.get(name, 1.0) * weighting.get(name, 1.0)
             weighted.append((float(measurements[name]) / reference) * weight)
             total_weight += weight
     if not weighted:
@@ -265,8 +269,19 @@ def _parse_measurements(
         if isinstance(raw_value, Mapping):
             if "value" in raw_value:
                 values[name] = float(raw_value["value"])
+            confidence_value = None
             if "confidence" in raw_value:
-                confidences[name] = float(raw_value["confidence"])
+                confidence_value = float(raw_value["confidence"])
+            if raw_value.get("source") == "measured":
+                confidence_value = 1.0
+            elif confidence_value is None and "value" in raw_value:
+                confidence_value = 1.0
+            if confidence_value is not None:
+                confidences[name] = float(confidence_value)
+        elif isinstance(raw_value, (tuple, list)) and len(raw_value) == 2:
+            value, confidence = raw_value
+            values[name] = float(value)
+            confidences[name] = float(confidence)
         else:
             values[name] = float(raw_value)
 

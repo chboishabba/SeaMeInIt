@@ -33,6 +33,39 @@ def _load_measurements(path: Path | None) -> Mapping[str, float] | None:
     return {key: float(value) for key, value in payload.items()}
 
 
+def _compose_measurement_map(
+    record: Mapping[str, Any],
+    overrides: Mapping[str, float] | None,
+) -> dict[str, tuple[float, float]]:
+    measurement_map: dict[str, tuple[float, float]] = {}
+
+    report = record.get("measurement_report") if isinstance(record, Mapping) else None
+    if isinstance(report, Mapping):
+        values = report.get("values")
+        if isinstance(values, Sequence):
+            for entry in values:
+                if not isinstance(entry, Mapping):
+                    continue
+                name = entry.get("name")
+                value = entry.get("value")
+                if name is None or value is None:
+                    continue
+                confidence = entry.get("confidence")
+                source = entry.get("source")
+                weight = 1.0 if source == "measured" else float(confidence) if confidence is not None else 1.0
+                name_str = str(name)
+                # Prefer measured entries when duplicates are encountered
+                if name_str in measurement_map and measurement_map[name_str][1] >= 1.0 and weight < 1.0:
+                    continue
+                measurement_map[name_str] = (float(value), float(weight))
+
+    if overrides:
+        for name, value in overrides.items():
+            measurement_map[str(name)] = (float(value), 1.0)
+
+    return measurement_map
+
+
 def _ensure_output_dir(base_dir: Path | None, body_path: Path) -> Path:
     if base_dir is None:
         target = OUTPUT_ROOT / body_path.stem
@@ -171,8 +204,14 @@ def generate_undersuit(
     """Run the undersuit generation pipeline and persist all artefacts."""
 
     record = load_body_record(body_path)
+    measurement_pairs = _compose_measurement_map(record, measurements)
+    measurement_values = {name: pair[0] for name, pair in measurement_pairs.items()}
+    generator_measurements: Mapping[str, tuple[float, float]] | None = (
+        measurement_pairs if measurement_pairs else None
+    )
+
     generator = UnderSuitGenerator()
-    result = generator.generate(record, options=options, measurements=measurements)
+    result = generator.generate(record, options=options, measurements=generator_measurements)
 
     seam_generator = SeamGenerator()
     joint_lookup = (
@@ -185,14 +224,14 @@ def generate_undersuit(
         result.base_layer.vertices,
         result.base_layer.faces,
         axis_map,
-        measurements=measurements,
+        measurements=measurement_values or None,
     )
     seam_graph = seam_generator.generate(
         result.base_layer.vertices,
         result.base_layer.faces,
         loops,
         axis_map,
-        measurements=measurements,
+        measurements=measurement_values or None,
     )
 
     target_dir = _ensure_output_dir(output_dir, body_path)
