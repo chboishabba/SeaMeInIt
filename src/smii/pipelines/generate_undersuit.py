@@ -200,6 +200,10 @@ def generate_undersuit(
     embed_cooling: bool = False,
     cooling_medium: str = "liquid",
     joint_map: Mapping[str, Sequence[float]] | None = None,
+    panels_json: Path | None = None,
+    seams_json: Path | None = None,
+    pattern_backend: str = "simple",
+
 ) -> None:
     """Run the undersuit generation pipeline and persist all artefacts."""
 
@@ -275,6 +279,7 @@ def generate_undersuit(
             metadata=metadata,
         )
 
+
     pattern_dir = target_dir / "patterns"
     exporter = PatternExporter()
     mesh_payload = seam_graph.to_payload()
@@ -300,6 +305,32 @@ def generate_undersuit(
         },
         "axis_map": {key: axis_map[key].tolist() for key in ("longitudinal", "lateral", "anterior")},
     }
+
+    panel_definitions = _load_panel_definitions(panels_json)
+    if panel_definitions:
+        seams = _load_seam_overrides(seams_json)
+        mesh_payload = _build_panel_payload(result.base_layer.vertices, panel_definitions)
+        exporter = PatternExporter(backend=pattern_backend)
+        pattern_dir = target_dir / "patterns"
+        exported = exporter.export(
+            mesh_payload,
+            seams,
+            output_dir=pattern_dir,
+            metadata={"body_record": str(body_path)},
+        )
+        pattern_metadata: dict[str, Any] = {
+            "panel_source": str(panels_json),
+            "panels": [panel["name"] for panel in mesh_payload["panels"]],
+            "files": {fmt: str(path) for fmt, path in exported.items()},
+            "panel_count": len(mesh_payload["panels"]),
+            "backend": pattern_backend,
+        }
+        if seams_json is not None:
+            pattern_metadata["seam_source"] = str(seams_json)
+        if seams is not None:
+            pattern_metadata["seams"] = seams
+        metadata["patterns"] = pattern_metadata
+
 
     _write_metadata(target_dir / "metadata.json", metadata)
 
@@ -425,6 +456,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         type=Path,
         help="Optional JSON file describing joint coordinates used to orient seams.",
     )
+    parser.add_argument(
+        "--pattern-backend",
+        choices=("simple", "lscm"),
+        default="simple",
+        help="Flattening backend used when exporting undersuit patterns.",
+    )
     args = parser.parse_args(argv)
 
     measurements = _load_measurements(args.measurements)
@@ -440,6 +477,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         embed_cooling=args.embed_cooling,
         cooling_medium=args.cooling_medium,
         joint_map=joint_map,
+        panels_json=args.panels_json,
+        seams_json=args.seams_json,
+        pattern_backend=args.pattern_backend,
+
     )
 
     return 0

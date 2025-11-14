@@ -10,6 +10,8 @@ from typing import Iterable, Sequence
 import json
 import numpy as np
 
+from smii.meshing import repair_mesh_with_pymeshfix
+
 __all__ = [
     "InteractiveSession",
     "launch_interactive_session",
@@ -244,7 +246,15 @@ def run_afflec_fixture_demo(
 
         mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
         if not mesh.is_watertight:
-            raise ValueError("Fitted SMPL-X body is not watertight")
+            repaired = repair_mesh_with_pymeshfix(vertices, faces)
+            if repaired is not None:
+                vertices, faces = repaired
+                mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
+        if not mesh.is_watertight:
+            raise ValueError(
+                "Fitted SMPL-X body is not watertight. Install PyMeshFix (`pip install pymeshfix`) "
+                "or repair the mesh manually with tools/repair_body_mesh.py."
+            )
     else:  # pragma: no cover - fallback path without parameter record
         vertices, faces = mesh_output
 
@@ -280,13 +290,13 @@ def run_image_fitting_pipeline(
     target_dir.mkdir(parents=True, exist_ok=True)
 
     from smii.pipelines import (
-        fit_smplx_from_images,
+        regress_smplx_from_images,
         save_regression_json,
         save_regression_mesh,
     )
 
     print(f"Fitting SMPL-X parameters from {len(image_list)} image(s) using {detector}...")
-    result = fit_smplx_from_images(
+    result = regress_smplx_from_images(
         image_list,
         detector=detector,
         refine_with_measurements=refine_with_measurements,

@@ -78,7 +78,7 @@ class SimplePlaneProjectionBackend(CADBackend):
                 _, _, vh = np.linalg.svd(shifted, full_matrices=False)
                 basis = vh[:2, :]
                 projected = shifted @ basis.T
-                outline = [(float(x) * scale, float(y) * scale) for x, y in projected]
+                outline = _ordered_outline(projected * scale)
             else:
                 outline = [
                     (float(vertex[0]) * scale, float(vertex[1]) * scale)
@@ -101,19 +101,123 @@ class SimplePlaneProjectionBackend(CADBackend):
         return flattened
 
 
+def _fan_triangulation(count: int) -> list[tuple[int, int, int]]:
+    if count < 3:
+        return []
+    return [(0, i, i + 1) for i in range(1, count - 1)]
+
+
+class LSCMUnwrapBackend(CADBackend):
+    """Flatten panels using libigl's Least Squares Conformal Maps solver."""
+
+    def __init__(self, *, fallback: CADBackend | None = None) -> None:
+        if np is None:  # pragma: no cover - numpy is an optional dependency up-stream
+            raise ModuleNotFoundError(
+                "LSCMUnwrapBackend requires NumPy. Install the 'numpy' package to enable it."
+            )
+        try:
+            import igl  # type: ignore[import-not-found]
+        except ModuleNotFoundError as exc:  # pragma: no cover - exercised in tests via stubs
+            raise ModuleNotFoundError(
+                "LSCMUnwrapBackend requires the 'igl' package. Install python-igl to enable UV unwrapping."
+            ) from exc
+        self._igl = igl
+        self._fallback = fallback or SimplePlaneProjectionBackend()
+
+    def flatten_panels(
+        self,
+        panels: Sequence[Panel3D],
+        seams: Mapping[str, Mapping[str, Any]] | None = None,
+        *,
+        scale: float,
+        seam_allowance: float,
+    ) -> list[Panel2D]:
+        flattened: list[Panel2D] = []
+        seam_lookup = seams or {}
+        for panel in panels:
+            allowance = float(seam_lookup.get(panel.name, {}).get("seam_allowance", seam_allowance))
+            metadata = {
+                "original_vertex_count": len(panel.vertices),
+                "seam_allowance": allowance,
+                "backend": "lscm",
+            }
+            try:
+                outline = self._unwrap_panel(panel, scale=scale)
+            except Exception:
+                fallback = self._fallback.flatten_panels(
+                    [panel],
+                    seams,
+                    scale=scale,
+                    seam_allowance=seam_allowance,
+                )
+                flattened.extend(fallback)
+                continue
+            flattened.append(
+                Panel2D(
+                    name=panel.name,
+                    outline=outline,
+                    seam_allowance=allowance,
+                    metadata=metadata,
+                )
+            )
+        return flattened
+
+    def _unwrap_panel(self, panel: Panel3D, *, scale: float) -> list[tuple[float, float]]:
+        if len(panel.vertices) < 3:
+            return []
+        vertices = np.asarray(panel.vertices, dtype=float)
+        faces = panel.faces or _fan_triangulation(len(panel.vertices))
+        if not faces:
+            raise ValueError("Panel must provide at least one triangular face for LSCM unwrapping.")
+        triangles = np.asarray(faces, dtype=int)
+
+        boundary = self._igl.boundary_loop(triangles)
+        if boundary.size < 2:
+            raise ValueError("Panel must have a boundary loop for conformal unwrapping.")
+
+        anchors = np.array(
+            [int(boundary[0]), int(boundary[int(boundary.size // 2)])],
+            dtype=int,
+        )
+        anchor_targets = np.array([[0.0, 0.0], [1.0, 0.0]], dtype=float)
+
+        _, parameterisation = self._igl.lscm(vertices, triangles, anchors, anchor_targets)
+        if parameterisation.shape[0] != vertices.shape[0]:
+            raise ValueError("LSCM returned coordinates with unexpected dimensionality.")
+
+        if boundary.size >= 3:
+            outline_points = parameterisation[boundary]
+        else:
+            outline_points = parameterisation
+        return _ordered_outline(outline_points * float(scale))
+
+
 class PatternExporter:
     """Export undersuit panels to 2D pattern files in multiple formats."""
 
     def __init__(
         self,
         *,
-        backend: CADBackend | None = None,
+        backend: CADBackend | str | None = None,
         scale: float = 1.0,
         seam_allowance: float = 0.01,
     ) -> None:
-        self.backend = backend or SimplePlaneProjectionBackend()
+        self.backend = self._resolve_backend(backend)
         self.scale = float(scale)
         self.seam_allowance = float(seam_allowance)
+
+    @staticmethod
+    def _resolve_backend(candidate: CADBackend | str | None) -> CADBackend:
+        if candidate is None:
+            return SimplePlaneProjectionBackend()
+        if isinstance(candidate, str):
+            normalized = candidate.lower()
+            if normalized == "simple":
+                return SimplePlaneProjectionBackend()
+            if normalized == "lscm":
+                return LSCMUnwrapBackend()
+            raise ValueError(f"Unknown pattern backend '{candidate}'.")
+        return candidate
 
     def export(
         self,
@@ -165,6 +269,32 @@ class PatternExporter:
                 raise ValueError(msg)
             created[normalized] = path
         return created
+
+
+def _ordered_outline(points: "np.ndarray") -> list[tuple[float, float]]:
+    if len(points) == 0:
+        return []
+    if len(points) < 3:
+        return [(float(x), float(y)) for x, y in points]
+
+    centroid = points.mean(axis=0)
+    offsets = points - centroid
+    norms = np.linalg.norm(offsets, axis=1)
+    if np.all(norms < 1e-9):
+        return [(float(x), float(y)) for x, y in points]
+
+    angles = np.arctan2(offsets[:, 1], offsets[:, 0])
+    order = np.argsort(angles)
+    ordered = points[order]
+    deduped: list[tuple[float, float]] = []
+    seen: set[tuple[int, int]] = set()
+    for x, y in ordered:
+        key = (int(round(float(x) * 1e6)), int(round(float(y) * 1e6)))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append((float(x), float(y)))
+    return deduped
 
 
 def _panel_bounds(panels: Sequence[Panel2D]) -> tuple[float, float, float, float]:
@@ -314,6 +444,6 @@ __all__ = [
     "Panel2D",
     "CADBackend",
     "SimplePlaneProjectionBackend",
+    "LSCMUnwrapBackend",
     "PatternExporter",
 ]
-

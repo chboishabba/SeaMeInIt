@@ -181,6 +181,52 @@ def extract_measurements_from_afflec_images(image_paths: Iterable[Path]) -> dict
     return extractor.batch_extract(image_paths)
 
 
+def _normalise_image_paths(image_paths: Iterable[Path]) -> tuple[Path, ...]:
+    paths = tuple(Path(path) for path in image_paths)
+    if not paths:
+        raise ValueError("At least one image must be provided for SMPL-X processing.")
+    return paths
+
+
+def _infer_measurements_from_images(paths: Sequence[Path]) -> dict[str, float]:
+    try:
+        from pipelines.afflec_regression import regress_measurements_from_images
+    except ModuleNotFoundError:  # pragma: no cover - exercised in integration usage
+        warnings.warn(
+            "pipelines.afflec_regression is not available (and is not shipped here); using the Ben Afflec fixture metadata instead.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return extract_measurements_from_afflec_images(paths)
+    return regress_measurements_from_images(paths)
+
+
+def fit_smplx_from_images(
+    image_paths: Iterable[Path],
+    *,
+    backend: str = "smplx",
+    schema_path: Path | None = None,
+    models: Sequence["MeasurementModel"] | None = None,
+    num_shape_coeffs: int | None = None,
+    inference_model: "GaussianMeasurementModel | None" = None,
+) -> "FitResult":
+    """Fit SMPL-X parameters by inferring measurements from annotated PGM images."""
+
+    paths = _normalise_image_paths(image_paths)
+    measurements = _infer_measurements_from_images(paths)
+
+    from smii.pipelines.fit_from_measurements import fit_smplx_from_measurements
+
+    return fit_smplx_from_measurements(
+        measurements,
+        backend=backend,
+        schema_path=schema_path,
+        models=models,
+        num_shape_coeffs=num_shape_coeffs,
+        inference_model=inference_model,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Image based regression helpers
 
@@ -285,19 +331,6 @@ class SMPLXRegressionResult:
     right_hand_pose: np.ndarray | None = None
     measurement_fit: "FitResult | None" = None
 
-    paths = tuple(Path(path) for path in image_paths)
-
-    try:
-        from pipelines.afflec_regression import regress_measurements_from_images
-    except ModuleNotFoundError:  # pragma: no cover - exercised in integration usage
-        warnings.warn(
-            "pipelines.afflec_regression is not available (and is not shipped here); using the Ben Afflec fixture metadata instead.",
-            RuntimeWarning,
-            stacklevel=2,
-        )
-        measurements = extract_measurements_from_afflec_images(paths)
-    else:
-        measurements = regress_measurements_from_images(paths)
     def to_dict(self) -> dict[str, object]:
         payload: dict[str, object] = {
             "betas": self.betas.tolist(),
@@ -593,17 +626,15 @@ def aggregate_regression_frames(frames: Sequence[SMPLXRegressionFrame]) -> SMPLX
     )
 
 
-def fit_smplx_from_images(
+def regress_smplx_from_images(
     image_paths: Iterable[Path],
     *,
     detector: str = "mediapipe",
     refine_with_measurements: bool = True,
 ) -> SMPLXRegressionResult:
-    """Fit SMPL-X parameters from a collection of RGB images."""
+    """Regress SMPL-X parameters from a collection of RGB images."""
 
-    paths = [Path(path) for path in image_paths]
-    if not paths:
-        raise ValueError("At least one image must be provided for SMPL-X regression.")
+    paths = _normalise_image_paths(image_paths)
 
     frames: list[SMPLXRegressionFrame] = []
     for path in paths:
@@ -728,6 +759,7 @@ __all__ = [
     "aggregate_regression_frames",
     "create_body_mesh_from_regression",
     "fit_smplx_from_images",
+    "regress_smplx_from_images",
     "regress_smplx_from_landmarks",
     "save_regression_json",
     "save_regression_mesh",

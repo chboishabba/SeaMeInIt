@@ -47,12 +47,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         type=str,
         help="Optional identifier stored inside exported metadata.",
     )
+    parser.add_argument(
+        "--backend",
+        choices=("simple", "lscm"),
+        default="simple",
+        help="Flattening backend used when generating 2D panels.",
+    )
     args = parser.parse_args(argv)
 
     mesh_payload = _load_json(args.mesh)
     seams_payload = _load_json(args.seams)
 
-    exporter = PatternExporter(scale=args.scale, seam_allowance=args.seam_allowance)
+    exporter = PatternExporter(
+        backend=args.backend,
+        scale=args.scale,
+        seam_allowance=args.seam_allowance,
+    )
     metadata: dict[str, Any] = {}
     if args.label:
         metadata["label"] = args.label
@@ -72,4 +82,3 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 if __name__ == "__main__":  # pragma: no cover - CLI entry point
     raise SystemExit(main())
-

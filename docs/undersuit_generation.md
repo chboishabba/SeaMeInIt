@@ -24,7 +24,8 @@ python -m smii.pipelines.generate_undersuit \
   --base-thickness 0.0015 \
   --insulation-thickness 0.003 \
   --comfort-thickness 0.001 \
-  --ease-percent 0.04
+  --ease-percent 0.04 \
+  --pattern-backend lscm
 ```
 
 This command writes the following artefacts:
@@ -49,6 +50,8 @@ Layer toggles and thicknesses are configured via CLI switches or the
 - `--ease-percent` applies a global proportional ease to accommodate movement.
 - `--weight chest_circumference=2.0`: emphasise individual measurements when
   computing scaling.
+- `--pattern-backend lscm`: unwrap panels with libigl’s Least Squares Conformal
+  Maps solver (defaults to a simple projection fallback).
 
 By default all layers are generated using the fitted mesh normals to maintain
 seam continuity. Metadata includes a `seam_max_deviation` metric that should

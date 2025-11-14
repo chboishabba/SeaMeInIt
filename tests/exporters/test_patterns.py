@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import math
+import sys
 from pathlib import Path
+from types import ModuleType
 
+import numpy as np
 import pytest
 
 from exporters.lscm_backend import LSCMConformalBackend
 from exporters.patterns import Panel2D, Panel3D, PatternExporter
+from exporters.patterns import LSCMUnwrapBackend, Panel2D, Panel3D, PatternExporter
 
 
 class DummyBackend:
@@ -87,6 +92,7 @@ def test_export_writes_metadata(tmp_path: Path, mesh_payload: dict, seam_payload
     assert b"allowance=0.012" in pdf_bytes
 
 
+<<<<<<< HEAD
 def _square_panel(name: str = "square") -> dict:
     return {
         "name": name,
@@ -180,3 +186,89 @@ def test_pattern_exporter_collects_panel_warnings(tmp_path: Path) -> None:
     # The exporter attaches warnings into the combined metadata comment header.
     assert "panel_warnings" in svg_text
 
+=======
+def test_simple_backend_orders_outline() -> None:
+    exporter = PatternExporter()
+    mesh_payload = {
+        "panels": [
+            {
+                "name": "chaotic",
+                "vertices": [
+                    (0.0, 1.0, 0.0),
+                    (1.0, 0.0, 0.0),
+                    (0.0, -1.0, 0.0),
+                    (-1.0, 0.0, 0.0),
+                    (0.7, 0.7, 0.0),
+                ],
+                "faces": [(0, 1, 2)],
+            }
+        ]
+    }
+
+    panel = Panel3D.from_mapping(mesh_payload["panels"][0])
+    flattened = exporter.backend.flatten_panels([panel], None, scale=1.0, seam_allowance=0.01)
+
+    outline = flattened[0].outline
+    angles = [math.atan2(y, x) for x, y in outline]
+    assert angles == sorted(angles)
+
+
+def test_lscm_backend_requires_igl(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delitem(sys.modules, "igl", raising=False)
+    with pytest.raises(ModuleNotFoundError):
+        LSCMUnwrapBackend()
+
+
+def _install_igl_stub(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = ModuleType("igl")
+
+    def boundary_loop(faces: np.ndarray) -> np.ndarray:
+        return np.asarray([0, 1, 2], dtype=int)
+
+    def lscm(vertices, triangles, anchors, targets):
+        coords = np.column_stack(
+            [
+                np.linspace(0.0, 1.0, len(vertices), dtype=float),
+                np.linspace(0.0, 0.5, len(vertices), dtype=float),
+            ]
+        )
+        return 0, coords
+
+    module.boundary_loop = boundary_loop
+    module.lscm = lscm
+    monkeypatch.setitem(sys.modules, "igl", module)
+
+
+def test_lscm_backend_flattens_panel(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install_igl_stub(monkeypatch)
+    backend = LSCMUnwrapBackend()
+    panel = Panel3D(
+        name="tri",
+        vertices=[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)],
+        faces=[(0, 1, 2)],
+    )
+
+    flattened = backend.flatten_panels([panel], seams=None, scale=1.0, seam_allowance=0.01)
+
+    assert flattened[0].name == "tri"
+    assert flattened[0].metadata.get("backend") == "lscm"
+    assert len(flattened[0].outline) >= 3
+
+
+def test_pattern_exporter_supports_lscm_backend(
+    tmp_path: Path,
+    mesh_payload: dict,
+    seam_payload: dict,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_igl_stub(monkeypatch)
+    exporter = PatternExporter(backend="lscm")
+
+    created = exporter.export(
+        mesh_payload,
+        seam_payload,
+        output_dir=tmp_path,
+        formats=["svg"],
+    )
+
+    assert "svg" in created and created["svg"].exists()

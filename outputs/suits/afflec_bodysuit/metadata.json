@@ -1,0 +1,23 @@
+{
+  "scale_factor": 1.03,
+  "measurement_scale": 1.0,
+  "ease_percent": 0.03,
+  "watertight": true,
+  "layers": {
+    "base": {
+      "thickness": 0.0015,
+      "surface_area": 2.026302896568776
+    },
+    "insulation": {
+      "thickness": 0.003,
+      "surface_area": 2.1305125397939046
+    },
+    "comfort": {
+      "thickness": 0.001,
+      "surface_area": 2.166726935375982
+    }
+  },
+  "seam_max_deviation": 0.0,
+  "output_directory": "outputs/suits/afflec_bodysuit",
+  "body_record": "outputs/afflec_demo/afflec_body.npz"
+}
