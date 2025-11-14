@@ -1,4 +1,5 @@
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -22,37 +23,47 @@ def _write_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
+def _build_cylinder_body() -> tuple[list[list[float]], list[list[int]]]:
+    segments = 12
+    levels = [0.0, 0.28, 0.56, 0.82]
+    radii = [0.22, 0.28, 0.25, 0.2]
+    vertices: list[list[float]] = []
+    for z, radius in zip(levels, radii):
+        for segment in range(segments):
+            theta = (2.0 * math.pi * segment) / segments
+            x = radius * math.cos(theta)
+            y = radius * math.sin(theta)
+            vertices.append([x, y, z])
+    faces: list[list[int]] = []
+    for level in range(len(levels) - 1):
+        for segment in range(segments):
+            next_segment = (segment + 1) % segments
+            lower = level * segments
+            upper = (level + 1) * segments
+            a = lower + segment
+            b = lower + next_segment
+            c = upper + segment
+            d = upper + next_segment
+            faces.append([a, b, c])
+            faces.append([b, d, c])
+    return vertices, faces
+
+
 def test_cli_exports_pattern_files(tmp_path: Path) -> None:
     body_path = tmp_path / "body.json"
-    base_vertices = [
-        [0.0, 0.0, 0.0],
-        [1.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0],
-        [0.0, 0.0, 1.0],
-    ]
-    base_faces = [
-        [0, 1, 2],
-        [0, 1, 3],
-        [0, 2, 3],
-        [1, 2, 3],
-    ]
+    base_vertices, base_faces = _build_cylinder_body()
     _write_json(body_path, {"vertices": base_vertices, "faces": base_faces})
 
-    panels_path = tmp_path / "panels.json"
+    joint_map_path = tmp_path / "joints.json"
     _write_json(
-        panels_path,
+        joint_map_path,
         {
-            "panels": [
-                {
-                    "name": "torso_front",
-                    "indices": [0, 1, 2],
-                }
-            ]
+            "pelvis": [0.0, 0.0, 0.0],
+            "neck": [0.0, 0.0, 0.9],
+            "left_shoulder": [-0.2, 0.25, 0.65],
+            "right_shoulder": [0.2, 0.25, 0.65],
         },
     )
-
-    seams_path = tmp_path / "seams.json"
-    _write_json(seams_path, {"panels": {"torso_front": {"seam_allowance": 0.015}}})
 
     output_dir = tmp_path / "undersuit"
 
@@ -61,10 +72,8 @@ def test_cli_exports_pattern_files(tmp_path: Path) -> None:
             str(body_path),
             "--output",
             str(output_dir),
-            "--panels-json",
-            str(panels_path),
-            "--seams-json",
-            str(seams_path),
+            "--joint-map",
+            str(joint_map_path),
         ]
     )
 
@@ -81,9 +90,9 @@ def test_cli_exports_pattern_files(tmp_path: Path) -> None:
     assert "patterns" in metadata
 
     pattern_meta = metadata["patterns"]
-    assert pattern_meta["panel_source"] == str(panels_path)
-    assert pattern_meta["seam_source"] == str(seams_path)
-    assert pattern_meta["panels"] == ["torso_front"]
-    assert set(pattern_meta["files"].keys()) == {"svg", "pdf", "dxf"}
+    assert pattern_meta["panel_count"] > 0
+    assert sorted(pattern_meta["files"].keys()) == ["dxf", "pdf", "svg"]
     for path in pattern_meta["files"].values():
         assert Path(path).exists()
+    assert "measurement_loops" in pattern_meta
+    assert "seams" in pattern_meta

@@ -15,6 +15,12 @@ from .thermal_zones import (
     ThermalZoneAssignment,
     ThermalZoneSpec,
 )
+from .seam_generator import (
+    MeasurementLoop,
+    SeamGenerator,
+    SeamGraph,
+    SeamPanel,
+)
 from .undersuit_generator import (
     LAYER_REFERENCE_MEASUREMENTS,
     MeshLayer,
@@ -35,6 +41,10 @@ __all__ = [
     "ThermalZoneAssignment",
     "ThermalZoneSpec",
     "DEFAULT_THERMAL_ZONE_SPEC",
+    "MeasurementLoop",
+    "SeamGenerator",
+    "SeamGraph",
+    "SeamPanel",
     "LAYER_REFERENCE_MEASUREMENTS",
     "MeshLayer",
     "UnderSuitGenerator",
