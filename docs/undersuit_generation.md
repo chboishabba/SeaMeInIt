@@ -224,7 +224,7 @@ and durable (seams aren’t placed where they’ll be pulled apart constantly). 
 clean, since we prefer seams along out-of-sight areas (like your inner arm or the side of a leg) over
 front-and-center lines.
 
-## • • • • • • • •
+
 
 
 **4. Unwrap panels with guided flattening (no “starburst” shapes)**
@@ -260,12 +260,5 @@ This approach is **adaptive** and works across different body types or even spec
 geometry and metrics, not hard-coded patterns. As long as we have a 3D body mesh and some key
 measurements, the system can generate an optimal undersuit pattern that upholds these principles.
 
-## •
-
-## •
-
-## •
-
-## •
 
 
