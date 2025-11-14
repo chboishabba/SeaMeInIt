@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import statistics
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
@@ -78,12 +79,12 @@ class SimplePlaneProjectionBackend(CADBackend):
                 _, _, vh = np.linalg.svd(shifted, full_matrices=False)
                 basis = vh[:2, :]
                 projected = shifted @ basis.T
-                outline = _ordered_outline(projected * scale)
+                outline = _cleanup_panel_outline(_ordered_outline(projected * scale))
             else:
-                outline = [
+                outline = _cleanup_panel_outline(
                     (float(vertex[0]) * scale, float(vertex[1]) * scale)
                     for vertex in panel.vertices
-                ]
+                )
 
             allowance = float(seam_lookup.get(panel.name, {}).get("seam_allowance", seam_allowance))
             metadata = {
@@ -189,7 +190,8 @@ class LSCMUnwrapBackend(CADBackend):
             outline_points = parameterisation[boundary]
         else:
             outline_points = parameterisation
-        return _ordered_outline(outline_points * float(scale))
+        ordered = _ordered_outline(outline_points * float(scale))
+        return _cleanup_panel_outline(ordered)
 
 
 class PatternExporter:
@@ -295,6 +297,186 @@ def _ordered_outline(points: "np.ndarray") -> list[tuple[float, float]]:
         seen.add(key)
         deduped.append((float(x), float(y)))
     return deduped
+
+
+def _cleanup_panel_outline(points: Iterable[tuple[float, float]]) -> list[tuple[float, float]]:
+    """Normalize, smooth, and simplify an outline polyline."""
+
+    normalized = _dedupe_consecutive([(float(x), float(y)) for x, y in points])
+    if len(normalized) < 3:
+        return normalized
+
+    without_outliers = _remove_outlier_edges(normalized)
+    if len(without_outliers) < 3:
+        return without_outliers
+
+    smoothed = _laplacian_smooth(without_outliers, iterations=2, weight=0.5)
+    simplified = _simplify_polyline(smoothed)
+    return simplified
+
+
+def _dedupe_consecutive(points: Sequence[tuple[float, float]]) -> list[tuple[float, float]]:
+    deduped: list[tuple[float, float]] = []
+    last: tuple[float, float] | None = None
+    for point in points:
+        if last is not None and math.isclose(point[0], last[0], rel_tol=1e-9, abs_tol=1e-9) and math.isclose(
+            point[1], last[1], rel_tol=1e-9, abs_tol=1e-9
+        ):
+            continue
+        deduped.append(point)
+        last = point
+    if len(deduped) >= 2 and math.isclose(deduped[0][0], deduped[-1][0], rel_tol=1e-9, abs_tol=1e-9) and math.isclose(
+        deduped[0][1], deduped[-1][1], rel_tol=1e-9, abs_tol=1e-9
+    ):
+        deduped.pop()
+    return deduped
+
+
+def _remove_outlier_edges(points: Sequence[tuple[float, float]]) -> list[tuple[float, float]]:
+    cleaned = list(points)
+    if len(cleaned) < 4:
+        return cleaned
+
+    for _ in range(len(points)):
+        count = len(cleaned)
+        if count < 4:
+            break
+        lengths = [
+            _euclidean_distance(cleaned[i], cleaned[(i + 1) % count])
+            for i in range(count)
+        ]
+        positive = [length for length in lengths if length > 0]
+        if not positive:
+            break
+        median_length = statistics.median(positive)
+        max_length = max(lengths)
+        if median_length <= 0:
+            threshold = max_length
+        else:
+            threshold = median_length * 3.0
+        if max_length <= threshold:
+            break
+        idx = lengths.index(max_length)
+        remove_idx = (idx + 1) % count
+        cleaned.pop(remove_idx)
+    return cleaned
+
+
+def _laplacian_smooth(
+    points: Sequence[tuple[float, float]], *, iterations: int = 1, weight: float = 0.5
+) -> list[tuple[float, float]]:
+    if len(points) < 3:
+        return list(points)
+    smoothed = list(points)
+    centroid = _polygon_centroid(smoothed)
+    for _ in range(max(1, int(iterations))):
+        next_points: list[tuple[float, float]] = []
+        count = len(smoothed)
+        for idx, current in enumerate(smoothed):
+            prev_point = smoothed[(idx - 1) % count]
+            next_point = smoothed[(idx + 1) % count]
+            avg = ((prev_point[0] + next_point[0]) / 2.0, (prev_point[1] + next_point[1]) / 2.0)
+            candidate = (
+                current[0] * (1.0 - weight) + avg[0] * weight,
+                current[1] * (1.0 - weight) + avg[1] * weight,
+            )
+            constrained = _constrain_to_interior(candidate, current, centroid)
+            next_points.append(constrained)
+        smoothed = next_points
+        centroid = _polygon_centroid(smoothed)
+    return smoothed
+
+
+def _constrain_to_interior(
+    candidate: tuple[float, float],
+    original: tuple[float, float],
+    centroid: tuple[float, float],
+) -> tuple[float, float]:
+    vec_candidate = (candidate[0] - centroid[0], candidate[1] - centroid[1])
+    vec_original = (original[0] - centroid[0], original[1] - centroid[1])
+    candidate_length = math.hypot(*vec_candidate)
+    original_length = math.hypot(*vec_original)
+    if original_length == 0:
+        return candidate
+    if candidate_length <= original_length or candidate_length == 0:
+        return candidate
+    scale = original_length / candidate_length
+    return (centroid[0] + vec_candidate[0] * scale, centroid[1] + vec_candidate[1] * scale)
+
+
+def _simplify_polyline(points: Sequence[tuple[float, float]]) -> list[tuple[float, float]]:
+    if len(points) < 3:
+        return list(points)
+    min_x = min(point[0] for point in points)
+    max_x = max(point[0] for point in points)
+    min_y = min(point[1] for point in points)
+    max_y = max(point[1] for point in points)
+    scale = max(max_x - min_x, max_y - min_y)
+    tolerance = 1e-3 if scale == 0 else scale * 0.005
+    simplified = _douglas_peucker(points + points[:1], tolerance)
+    if simplified and simplified[-1] == simplified[0]:
+        simplified.pop()
+    return simplified
+
+
+def _douglas_peucker(points: Sequence[tuple[float, float]], tolerance: float) -> list[tuple[float, float]]:
+    if len(points) <= 2:
+        return list(points)
+    first = points[0]
+    last = points[-1]
+    max_distance = -1.0
+    index = -1
+    for idx in range(1, len(points) - 1):
+        distance = _point_to_segment_distance(points[idx], first, last)
+        if distance > max_distance:
+            max_distance = distance
+            index = idx
+    if max_distance > tolerance:
+        left = _douglas_peucker(points[: index + 1], tolerance)
+        right = _douglas_peucker(points[index:], tolerance)
+        return left[:-1] + right
+    return [first, last]
+
+
+def _point_to_segment_distance(
+    point: tuple[float, float],
+    start: tuple[float, float],
+    end: tuple[float, float],
+) -> float:
+    if start == end:
+        return _euclidean_distance(point, start)
+    seg_vec = (end[0] - start[0], end[1] - start[1])
+    point_vec = (point[0] - start[0], point[1] - start[1])
+    seg_len_sq = seg_vec[0] ** 2 + seg_vec[1] ** 2
+    proj = max(0.0, min(1.0, (point_vec[0] * seg_vec[0] + point_vec[1] * seg_vec[1]) / seg_len_sq))
+    closest = (start[0] + seg_vec[0] * proj, start[1] + seg_vec[1] * proj)
+    return _euclidean_distance(point, closest)
+
+
+def _euclidean_distance(a: tuple[float, float], b: tuple[float, float]) -> float:
+    return math.hypot(a[0] - b[0], a[1] - b[1])
+
+
+def _polygon_centroid(points: Sequence[tuple[float, float]]) -> tuple[float, float]:
+    if len(points) == 0:
+        return (0.0, 0.0)
+    twice_area = 0.0
+    c_x = 0.0
+    c_y = 0.0
+    count = len(points)
+    for idx in range(count):
+        x0, y0 = points[idx]
+        x1, y1 = points[(idx + 1) % count]
+        cross = x0 * y1 - x1 * y0
+        twice_area += cross
+        c_x += (x0 + x1) * cross
+        c_y += (y0 + y1) * cross
+    if abs(twice_area) < 1e-9:
+        avg_x = sum(point[0] for point in points) / count
+        avg_y = sum(point[1] for point in points) / count
+        return (avg_x, avg_y)
+    factor = 1.0 / (3.0 * twice_area)
+    return (c_x * factor, c_y * factor)
 
 
 def _panel_bounds(panels: Sequence[Panel2D]) -> tuple[float, float, float, float]:
