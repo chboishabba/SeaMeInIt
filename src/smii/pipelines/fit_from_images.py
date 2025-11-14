@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Iterable, Mapping, Sequence
+from typing import Iterable, Mapping, Sequence, TYPE_CHECKING
 
 import warnings
 
