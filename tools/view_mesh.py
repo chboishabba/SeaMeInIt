@@ -23,7 +23,7 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help=(
             "Path to a fitted body record (JSON or NumPy .npz) containing 'vertices' "
-            "and 'faces' arrays. The Afflec demo writes this to "
+            "and 'faces' arrays. The Ben Afflec demo writes this to "
             "outputs/afflec_demo/afflec_body.npz."
         ),
     )

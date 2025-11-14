@@ -2,7 +2,7 @@
 
 SeaMeInIt's fitting pipeline can now complete partial manual measurement sets by
 conditioning a multivariate Gaussian model on the values provided by the user or
-Afflec image extraction. The default dataset lives at
+the Ben Afflec fixture extraction. The default dataset lives at
 `data/templates/manual_measurement_samples.csv` and captures 15 representative
 samples covering the canonical manual measurements used by the SMPL-X
 calibration workflow.
@@ -10,7 +10,7 @@ calibration workflow.
 ## Usage Overview
 
 1. The CLI (`python -m smii.pipelines.fit_from_measurements`) accepts raw
-   measurements from JSON or Afflec images.
+   measurements from JSON or Afflec fixture images.
 2. Before validation, the pipeline loads the Gaussian model defined in
    `pipelines.measurement_inference` and infers any missing measurements.
 3. The completed vector, along with provenance metadata, is stored in the

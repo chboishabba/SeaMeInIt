@@ -699,7 +699,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--images",
         type=Path,
         nargs="+",
-        help="One or more Afflec preprocessed images containing measurement headers.",
+        help="One or more Ben Afflec-style preprocessed images containing measurement headers.",
     )
     args = parser.parse_args(argv)
 

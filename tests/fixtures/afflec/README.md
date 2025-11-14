@@ -1,8 +1,9 @@
 # Afflec Image Fixtures
 
-The fixtures in this directory emulate Afflec captures by embedding measurement
-metadata inside ASCII portable graymap headers. They are intentionally tiny so
-that they remain human-readable and avoid committing binary blobs.
+The fixtures in this directory are cheeky Ben Afflec stills that emulate a
+fully-instrumented capture pipeline by embedding measurement metadata inside
+ASCII portable graymap headers. They are intentionally tiny so that they remain
+human-readable and avoid committing binary blobs.
 
 Each comment line that starts with `# measurement:` supplies a measurement name
 and value. The extractor used by `smii.pipelines.fit_from_images` parses these
