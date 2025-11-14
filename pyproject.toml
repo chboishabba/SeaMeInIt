@@ -17,6 +17,7 @@ dependencies = [
 [project.optional-dependencies]
 tools = [
     "requests>=2.31.0",
+    "trimesh>=4.9.0",
 ]
 
 dynamic = []
