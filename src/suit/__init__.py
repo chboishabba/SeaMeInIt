@@ -9,6 +9,7 @@ from .material_model import (
     PressureComfortRatings,
     ThermalResistance,
 )
+from .body_axes import BodyAxes, fit_body_axes
 from .thermal_zones import (
     DEFAULT_THERMAL_ZONE_SPEC,
     ThermalZone,
@@ -31,6 +32,7 @@ __all__ = [
     "MaterialStack",
     "PressureComfortRatings",
     "ThermalResistance",
+    "BodyAxes",
     "ThermalZone",
     "ThermalZoneAssignment",
     "ThermalZoneSpec",
@@ -40,4 +42,5 @@ __all__ = [
     "UnderSuitGenerator",
     "UnderSuitOptions",
     "UnderSuitResult",
+    "fit_body_axes",
 ]
