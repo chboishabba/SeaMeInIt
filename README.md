@@ -2,17 +2,17 @@
 SMII(gol?)  Parametric design of next-generation, made-to-fit clothing. We aim to address major factors such as climate adaptation and refugees, accessiblity, as well as hobbyists and cosplayers.
 
 Please see our docs:
-[We use Ben Afflec as our test fixture because we thought he'd appreciate an Iron Man suit of his own.](docs/afflec_image_preprocessing.md)
-[Avatar Model](docs/avatar_model.md)
-[Engine Integration](docs/engine_integration.md)
-[Hard Layer Export](docs/hard_layer_export.md)
-[Hard Layer Shell](docs/hard_layer_shell.md)
-[Hard Shell Clearance](docs/hard_shell_clearance.md)
-[Measurement Inference](docs/measurement_inference.md)
-[Schemas](docs/schemas.md)
-[Undersuit Generation](docs/undersuit_generation.md) - Currently in progress.
-[Cooling](docs/modules/cooling.md)
-[Deployable Tent](docs/modules/tent.md)
+- [We use Ben Afflec as our test fixture because we thought he'd appreciate an Iron Man suit of his own.](docs/afflec_image_preprocessing.md)
+- [Avatar Model](docs/avatar_model.md)
+- [Engine Integration](docs/engine_integration.md)
+- [Hard Layer Export](docs/hard_layer_export.md)
+- [Hard Layer Shell](docs/hard_layer_shell.md)
+- [Hard Shell Clearance](docs/hard_shell_clearance.md)
+- [Measurement Inference](docs/measurement_inference.md)
+- [Schemas](docs/schemas.md)
+- [Undersuit Generation](docs/undersuit_generation.md) - Currently in progress.
+- [Cooling](docs/modules/cooling.md)
+- [Deployable Tent](docs/modules/tent.md)
 
 
 
