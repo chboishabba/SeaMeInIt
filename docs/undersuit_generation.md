@@ -125,18 +125,18 @@ and measurement priors change between species.
 
 For **undersuits, compression layers, and animal garments** , our pattern generator is designed to:
 
-```
-Minimise seams: Use as few pattern pieces as possible for comfort and strength.
-Avoid “starburst” panels: Prevent extreme, pointy pattern shapes that are impractical to cut or
+
+- Minimise seams: Use as few pattern pieces as possible for comfort and strength.
+- Avoid “starburst” panels: Prevent extreme, pointy pattern shapes that are impractical to cut or
 sew.
-Respect body movement: Place seams where the body bends least, and ensure the fabric can
+- Respect body movement: Place seams where the body bends least, and ensure the fabric can
 stretch where the body needs to flex.
-Generalise across species: The same approach works for human suits, canine vests, etc.,
+- Generalise across species: The same approach works for human suits, canine vests, etc.,
 without being hand-tuned to one anatomy.
-Stay vendor-neutral: We don’t imitate any specific brand’s style or cut. Instead, we base our
+- Stay vendor-neutral: We don’t imitate any specific brand’s style or cut. Instead, we base our
 designs on fundamental geometric and biomechanical principles rather than a corporate “house
 style.”
-```
+
 _(In other words, we look to state-of-the-art athletic and tactical wear techniques, but without name-dropping
 or endorsing any particular company—especially those with questionable labor or inclusion records.)_
 
@@ -145,11 +145,11 @@ or endorsing any particular company—especially those with questionable labor o
 We treat **seam placement** as a geometric optimization problem, guided by both the body’s shape **and**
 measured dimensions. The goal is to balance several factors:
 
-> Flattenability: How easily each region of the 3D body can become a flat pattern without
+- Flattenability: How easily each region of the 3D body can become a flat pattern without
 distortion.
-> Tension & movement: Where the suit will be under stretch or compression when worn.
-> Topology: How many cuts (seams) are needed to turn the 3D surface into flat pieces.
-> Measurement accuracy: Ensuring the flat pattern, once sewn, matches target measurements
+- Tension & movement: Where the suit will be under stretch or compression when worn.
+- Topology: How many cuts (seams) are needed to turn the 3D surface into flat pieces.
+- Measurement accuracy: Ensuring the flat pattern, once sewn, matches target measurements
 (chest, waist, girth, etc.).
 
 The pipeline follows four main steps:
