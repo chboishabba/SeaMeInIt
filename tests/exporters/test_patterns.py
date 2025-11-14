@@ -11,7 +11,6 @@ import numpy as np
 import pytest
 
 from exporters.lscm_backend import LSCMConformalBackend
-from exporters.patterns import Panel2D, Panel3D, PatternExporter
 from exporters.patterns import LSCMUnwrapBackend, Panel2D, Panel3D, PatternExporter
 
 
@@ -92,7 +91,6 @@ def test_export_writes_metadata(tmp_path: Path, mesh_payload: dict, seam_payload
     assert b"allowance=0.012" in pdf_bytes
 
 
-<<<<<<< HEAD
 def _square_panel(name: str = "square") -> dict:
     return {
         "name": name,
@@ -186,7 +184,6 @@ def test_pattern_exporter_collects_panel_warnings(tmp_path: Path) -> None:
     # The exporter attaches warnings into the combined metadata comment header.
     assert "panel_warnings" in svg_text
 
-=======
 def test_simple_backend_orders_outline() -> None:
     exporter = PatternExporter()
     mesh_payload = {
