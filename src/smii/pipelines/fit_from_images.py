@@ -104,12 +104,12 @@ _FEATURE_WEIGHT_MATRIX = np.array(
 
 
 class MeasurementExtractionError(RuntimeError):
-    """Raised when an Afflec image payload cannot be parsed."""
+    """Raised when a Ben Afflec fixture image payload cannot be parsed."""
 
 
 @dataclass(frozen=True)
 class AfflecImageMeasurementExtractor:
-    """Extract manual measurement values embedded in Afflec image headers."""
+    """Extract manual measurement values embedded in Ben Afflec fixture headers."""
 
     header_prefix: str = HEADER_PREFIX
 
@@ -175,7 +175,7 @@ class AfflecImageMeasurementExtractor:
 
 
 def extract_measurements_from_afflec_images(image_paths: Iterable[Path]) -> dict[str, float]:
-    """Convenience wrapper used by the CLI pipeline."""
+    """Convenience wrapper used by the CLI pipeline to read the Ben Afflec fixtures."""
 
     extractor = AfflecImageMeasurementExtractor()
     return extractor.batch_extract(image_paths)
@@ -291,7 +291,7 @@ class SMPLXRegressionResult:
         from pipelines.afflec_regression import regress_measurements_from_images
     except ModuleNotFoundError:  # pragma: no cover - exercised in integration usage
         warnings.warn(
-            "pipelines.afflec_regression is not available; falling back to Afflec metadata embedded in the images.",
+            "pipelines.afflec_regression is not available (and is not shipped here); using the Ben Afflec fixture metadata instead.",
             RuntimeWarning,
             stacklevel=2,
         )

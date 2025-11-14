@@ -125,6 +125,8 @@ def launch_interactive_session(
 
 
 def _default_afflec_images() -> list[Path]:
+    """Return the bundled Ben Afflec fixture captures used for smoke tests."""
+
     fixture_dir = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "afflec"
     return sorted(fixture_dir.glob("*.pgm"))
 
@@ -171,7 +173,7 @@ def run_afflec_fixture_demo(
     model_assets: Path | None = None,
     model_backend: str = "smplx",
 ) -> Path:
-    """Fit SMPL family parameters from the bundled Afflec fixture images."""
+    """Fit SMPL family parameters from the tongue-in-cheek Ben Afflec fixtures."""
 
     if importlib_util.find_spec("jsonschema") is None:
         raise ModuleNotFoundError(
@@ -195,7 +197,7 @@ def run_afflec_fixture_demo(
             "No Afflec fixture images were found. Provide --images to supply custom data."
         )
 
-    print("Regressing SMPL-X parameters from Afflec imagery...")
+    print("Regressing SMPL-X parameters from the Ben Afflec fixtures...")
     result = fit_smplx_from_images(image_paths)
     target_dir = output_dir or Path("outputs/afflec_demo")
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -347,13 +349,13 @@ def build_cli(argv: Sequence[str] | None = None) -> int:
 
     afflec = subparsers.add_parser(
         "afflec-demo",
-        help="Process the Afflec measurement fixtures bundled with the repo",
+        help="Process the tongue-in-cheek Ben Afflec fixtures bundled with the repo",
     )
     afflec.add_argument(
         "--images",
         type=Path,
         nargs="*",
-        help="Custom Afflec-annotated images to process",
+        help="Custom Ben Afflec-style annotated images to process",
     )
     afflec.add_argument(
         "--output",

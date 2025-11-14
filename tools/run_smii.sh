@@ -59,7 +59,7 @@ Bootstraps the SeaMeInIt development environment (virtualenv + editable install)
 and dispatches to a common helper. Recognised commands:
 
   interactive   Launch the clearance CLI (python -m smii interactive)
-  afflec-demo   Run the Afflec measurement demo (python -m smii afflec-demo)
+  afflec-demo   Run the Ben Afflec fixture demo (python -m smii afflec-demo)
   pytest        Execute the test suite (python -m pytest)
   download-smplx
                 Fetch SMPL-X assets (python tools/download_smplx.py)

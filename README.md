@@ -41,7 +41,7 @@ Inspect the manifest at any time to confirm the bundle metadata, for example: `j
 
 ### Visualising fitted meshes
 
-The Afflec demo writes a NumPy archive containing the fitted SMPL-X body mesh to `outputs/afflec_demo/afflec_body.npz`. Install the viewer dependencies with `pip install trimesh "pyglet<2" scipy`, then launch an interactive preview:
+The Afflec demo exists purely as a smoke test that runs our pipelines against a few tongue-in-cheek stills of Ben Afflec. We do **not** ship or rely on an "Afflec model"—it's simply a lightweight fixture bundle that lets contributors exercise the CLI end to end without redistributing sensitive body scans. The demo writes a NumPy archive containing the fitted SMPL-X body mesh to `outputs/afflec_demo/afflec_body.npz`. Install the viewer dependencies with `pip install trimesh "pyglet<2" scipy`, then launch an interactive preview:
 
 ```bash
 python tools/view_mesh.py outputs/afflec_demo/afflec_body.npz
