@@ -17,6 +17,122 @@ Please see our docs:
 - [Contributing](CONTRIBUTING.md)
 - [Roadmap](ROADMAP.md)
 
+## 📁 Project layout
+
+The repository intentionally mirrors the end-to-end garment pipeline—from data prep, to
+mesh inference, to shell clearance analysis. The high-level directory map below should
+help you find the right module quickly:
+
+| Path | Purpose |
+| --- | --- |
+| `src/` | Python packages that power avatar fitting, measurement inference, exporters, and higher level orchestration. The public CLI lives in `src/smii/`. |
+| `src/avatar_model/` | Helpers that talk to different SMPL-compatible providers and abstract the body parameter schema. |
+| `src/modules/` | Self-contained suit modules (cooling, tent, heating, power) that can be toggled in the CAD pipeline. |
+| `src/pipelines/` | Batchable primitives such as SMPL-X regression, mesh repair, and hard-shell clearance checks. |
+| `tests/` | Mirrors the `src/` tree with fixtures in `tests/fixtures/` (including the tongue-in-cheek Ben Afflec bundle) so every subsystem has coverage. |
+| `tools/` | Lightweight operational scripts, e.g., `download_smplx.py` for provisioning licensed models and `view_mesh.py` for quick mesh inspection. |
+| `docs/` | Deep dives referenced above. Add new design notes or how-tos here. |
+| `assets/` | Placeholder for licensed SMPL(-X/er-X) bundles that are provisioned locally via the helper scripts. Not checked into git. |
+| `data/`, `examples/`, `exports/`, `outputs/` | Staging areas for curated datasets, reference payloads, generated CAD/mesh assets, and run artifacts. |
+
+Within `src/smii/` you will find the `app.py` CLI glue, mesh repair helpers under
+`smii/meshing/`, and pipeline adaptors under `smii/pipelines/`. These subpackages expose
+functions used by both the CLI entry point and the test suite.
+
+## 🚀 Getting started
+
+1. **Install Python 3.11+ and system requirements.** PyMeshFix (optional but recommended)
+   requires CGAL on some platforms—consult their docs if you need watertight mesh repair.
+2. **Create a virtual environment** and install the project in editable mode:
+
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate
+   pip install -U pip
+   pip install -e .[tools,vision]
+   ```
+
+   - Use `[tools]` when you plan to run provisioning scripts or view meshes.
+   - Use `[vision]` for the MediaPipe-based landmark detector inside the image
+     regression pipeline.
+3. **Provision SMPL assets** that match your licensing constraints:
+
+   ```bash
+   # SMPL-X (requires an authenticated download URL)
+   python tools/download_smplx.py --model smplx --dest assets/smplx
+
+   # SMPLer-X (open download under S-Lab 1.0)
+   python tools/download_smplx.py --model smplerx --dest assets/smplerx
+   ```
+
+   You can pass `--archive <path>` to reuse a pre-downloaded zip, `--url` to override the
+   manifest URL, or `--sha256` to enforce integrity verification.
+
+## 🧰 Usage quick-start
+
+The CLI is exposed via `python -m smii ...` (or `smii` if you install the package as a
+console script). Run `python -m smii --help` for the authoritative argument list. The
+three primary flows are summarised below:
+
+### 1. Hard-shell clearance (interactive)
+
+Prompts for missing inputs and runs `smii.pipelines.run_clearance` to ensure shell/soft
+body compatibility.
+
+```bash
+python -m smii interactive \
+  --shell exports/shell.json \
+  --target outputs/avatar/subject_body.npz \
+  --poses data/poses/example.json \
+  --samples-per-segment 4
+```
+
+### 2. Ben Afflec smoke demo
+
+Runs the pre-bundled fixtures, fits SMPL-X parameters, repairs the watertight mesh with
+PyMeshFix when available, and emits artifacts into `outputs/afflec_demo/`.
+
+```bash
+python -m smii afflec-demo --model-backend smplerx --assets-root assets/smplerx
+```
+
+Add `--images path/to/custom_images/` to override the fixture inputs and `--output` to
+change the destination directory.
+
+### 3. General image-to-avatar regression
+
+Accepts arbitrary RGB photos (or folders) and writes both the parameter JSON and mesh NPZ
+for the inferred subject.
+
+```bash
+python -m smii fit-from-images \
+  --images data/photo_front.jpg data/photo_side.jpg \
+  --output outputs/alex \
+  --subject-id alex \
+  --model-backend smplx \
+  --gender neutral \
+  --detector mediapipe
+```
+
+Append `--skip-measurement-refinement` if you want raw SMPL-X regression without the
+measurement-based adjustment pass.
+
+## ✅ Testing & maintenance workflow
+
+We encourage contributors to follow the same workflow as CI:
+
+```bash
+ruff format
+ruff check --fix
+pytest --maxfail=1 -q
+```
+
+Targeted typing checks (`mypy .`) are also helpful before submitting PRs. Tests mirror the
+package structure, so when you touch `src/pipelines/fit_from_measurements.py`, add or
+update `tests/pipelines/test_fit_from_measurements.py` accordingly. When adding new data
+fixtures, place them under `tests/fixtures/<feature>/` and reference them via helper
+functions rather than ad-hoc paths to keep things portable.
+
 ## 🛡️ License Summary
 
 SeaMeInIt 🛠️ is currently licensed under GPL-3.0, with intention towards a custom [Business Source License](./LICENSE) or similar.
