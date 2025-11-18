@@ -339,104 +339,192 @@ def run_image_fitting_pipeline(
 def build_cli(argv: Sequence[str] | None = None) -> int:
     import argparse
 
-    parser = argparse.ArgumentParser(description="SeaMeInIt command launcher")
+    parser = argparse.ArgumentParser(
+        description=(
+            "SeaMeInIt command launcher for running clearance checks, exercising "
+            "the Afflec smoke test, and fitting SMPL-X bodies from photos."
+        ),
+        epilog=(
+            "Provision SMPL-compatible assets first with `python tools/download_smplx.py "
+            "--model <smplx|smplerx>` and run `python -m smii <command> --help` for "
+            "per-command tips."
+        ),
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     interactive = subparsers.add_parser(
         "interactive",
-        help="Prompt-driven hard-shell clearance analysis",
+        description=(
+            "Prompts for any missing inputs and writes clearance reports that "
+            "compare a rigid shell mesh against a target body mesh."
+        ),
+        help="Prompt-driven hard-shell clearance analysis that emits HTML/JSON reports",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    interactive.add_argument("--shell", type=Path, help="Path to the hard shell mesh")
-    interactive.add_argument("--target", type=Path, help="Path to the target mesh")
-    interactive.add_argument("--poses", type=Path, help="Optional JSON pose sequence")
-    interactive.add_argument("--output", type=Path, help="Directory for generated reports")
+    interactive.add_argument(
+        "--shell",
+        type=Path,
+        help=(
+            "Path to the rigid shell mesh (JSON/NPZ). If omitted, the command will "
+            "prompt for it interactively."
+        ),
+    )
+    interactive.add_argument(
+        "--target",
+        type=Path,
+        help=(
+            "Path to the target soft-body mesh (JSON/NPZ). You will be prompted when "
+            "this flag is left empty."
+        ),
+    )
+    interactive.add_argument(
+        "--poses",
+        type=Path,
+        help=(
+            "Optional JSON pose sequence used to sample relative motion between the "
+            "shell and body. Leave blank to use the identity pose."
+        ),
+    )
+    interactive.add_argument(
+        "--output",
+        type=Path,
+        help=(
+            "Directory for generated reports. Defaults to an auto-generated folder "
+            "beneath outputs/."
+        ),
+    )
     interactive.add_argument(
         "--samples-per-segment",
         type=int,
         default=None,
-        help="Interpolated samples inserted between keyframes",
+        help=(
+            "Interpolated samples inserted between pose keyframes (use 0 to reuse "
+            "only the provided keyframes)."
+        ),
     )
 
     afflec = subparsers.add_parser(
         "afflec-demo",
-        help="Process the tongue-in-cheek Ben Afflec fixtures bundled with the repo",
+        description=(
+            "Runs the tongue-in-cheek Ben Afflec fixtures from tests/fixtures/afflec "
+            "to regress SMPL-X parameters, generate a watertight mesh, and plot the "
+            "measurement report."
+        ),
+        help="Process the bundled Ben Afflec fixtures and export meshes/parameter JSON",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     afflec.add_argument(
         "--images",
         type=Path,
         nargs="*",
-        help="Custom Ben Afflec-style annotated images to process",
+        help=(
+            "Optional override for the bundled fixture images; accepts individual "
+            "files or directories of annotated RGB captures."
+        ),
     )
     afflec.add_argument(
         "--output",
         type=Path,
-        help="Where to store the fitted parameter JSON",
+        help=(
+            "Where to store outputs such as afflec_measurement_fit.json, the mesh "
+            "NPZ, and the measurement plot. Defaults to outputs/afflec_demo."
+        ),
     )
     afflec.add_argument(
         "--model-backend",
         choices=("smplx", "smplerx"),
         default="smplx",
         help=(
-            "Which asset bundle to use when generating meshes. 'smplx' requires a licensed download; "
-            "'smplerx' installs the S-Lab 1.0 manifest. Use tools/download_smplx.py to provision the assets."
+            "Which asset bundle to use when generating meshes. 'smplx' requires a "
+            "licensed download; 'smplerx' installs the S-Lab 1.0 manifest and is "
+            "recommended for first-time users. Use tools/download_smplx.py to "
+            "provision the assets."
         ),
     )
     afflec.add_argument(
         "--assets-root",
         type=Path,
         help=(
-            "Override the asset directory. Defaults to assets/<model-backend> and must contain a manifest.json."
+            "Override the asset directory. Defaults to assets/<model-backend> and "
+            "must contain a manifest.json generated by tools/download_smplx.py."
         ),
     )
 
     fit_from_images = subparsers.add_parser(
         "fit-from-images",
-        help="Regress SMPL-X parameters directly from RGB images",
+        description=(
+            "Regresses SMPL-X parameters directly from RGB photos, saves the JSON "
+            "payload, and emits a watertight mesh NPZ to the chosen output folder."
+        ),
+        help="Regress SMPL-X parameters directly from RGB images and export meshes",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     fit_from_images.add_argument(
         "--images",
         type=Path,
         nargs="+",
         required=True,
-        help="One or more image files or directories containing images",
+        help=(
+            "One or more image files or directories containing RGB photos. "
+            "Directories are scanned recursively for common image extensions."
+        ),
     )
     fit_from_images.add_argument(
         "--output",
         type=Path,
-        help="Directory for generated parameter files",
+        help=(
+            "Directory for generated parameter files and meshes. Defaults to "
+            "outputs/<subject-id>."
+        ),
     )
     fit_from_images.add_argument(
         "--subject-id",
         type=str,
-        help="Identifier used when naming generated artifacts",
+        help=(
+            "Identifier used when naming generated artifacts. Defaults to the "
+            "first non-empty stem derived from the supplied image paths."
+        ),
     )
     fit_from_images.add_argument(
         "--model-backend",
         choices=("smplx", "smplerx"),
         default="smplx",
-        help="Which asset bundle to use when generating meshes.",
+        help=(
+            "Which asset bundle to use when generating meshes. 'smplerx' is the "
+            "quick-start bundle; 'smplx' requires a licensed download."
+        ),
     )
     fit_from_images.add_argument(
         "--assets-root",
         type=Path,
-        help="Override the asset directory. Defaults to assets/<model-backend>.",
+        help=(
+            "Override the asset directory. Defaults to assets/<model-backend> and "
+            "must include a manifest.json generated by tools/download_smplx.py."
+        ),
     )
     fit_from_images.add_argument(
         "--gender",
         choices=("neutral", "male", "female"),
         default="neutral",
-        help="Gendered SMPL-X model variant to load.",
+        help="Gendered SMPL-X model variant to load when producing the mesh output.",
     )
     fit_from_images.add_argument(
         "--detector",
         choices=("mediapipe",),
         default="mediapipe",
-        help="Keypoint detector used for landmark extraction.",
+        help=(
+            "Keypoint detector used for landmark extraction. MediaPipe is bundled "
+            "with the [vision] extra and is the recommended default."
+        ),
     )
     fit_from_images.add_argument(
         "--skip-measurement-refinement",
         action="store_true",
-        help="Disable measurement-model refinement of the regressed betas.",
+        help=(
+            "Disable measurement-model refinement of the regressed betas. Leave "
+            "unset to use anthropometric measurements to tighten the fit."
+        ),
     )
 
     args = parser.parse_args(argv)
