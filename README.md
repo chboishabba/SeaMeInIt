@@ -11,6 +11,7 @@ Please see our docs:
 - [Measurement Inference](docs/measurement_inference.md)
 - [Schemas](docs/schemas.md)
 - [Undersuit Generation](docs/undersuit_generation.md) - Currently in progress.
+- [CLI reference and walkthrough](docs/cli_reference.md)
 - [Cooling](docs/modules/cooling.md)
 - [Deployable Tent](docs/modules/tent.md)
 - [Agents](AGENTS.md)
@@ -71,13 +72,15 @@ functions used by both the CLI entry point and the test suite.
 ## 🧰 Usage quick-start
 
 The CLI is exposed via `python -m smii ...` (or `smii` if you install the package as a
-console script). Run `python -m smii --help` for the authoritative argument list. The
-three primary flows are summarised below:
+console script). Run `python -m smii --help` or consult the
+[CLI walkthrough](docs/cli_reference.md) for the authoritative argument list and
+tips on preparing inputs. The three primary flows are summarised below:
 
 ### 1. Hard-shell clearance (interactive)
 
 Prompts for missing inputs and runs `smii.pipelines.run_clearance` to ensure shell/soft
-body compatibility.
+body compatibility. When `--output` is omitted, the command auto-creates an
+`outputs/` subdirectory and writes the HTML/JSON clearance summaries there.
 
 ```bash
 python -m smii interactive \
@@ -90,7 +93,9 @@ python -m smii interactive \
 ### 2. Ben Afflec smoke demo
 
 Runs the pre-bundled fixtures, fits SMPL-X parameters, repairs the watertight mesh with
-PyMeshFix when available, and emits artifacts into `outputs/afflec_demo/`.
+PyMeshFix when available, and emits artifacts into `outputs/afflec_demo/`. Use
+`--model-backend smplerx` with `--assets-root assets/smplerx` for the fastest
+non-commercial workflow, or switch to `smplx` when you have licensed assets.
 
 ```bash
 python -m smii afflec-demo --model-backend smplerx --assets-root assets/smplerx
@@ -101,8 +106,10 @@ change the destination directory.
 
 ### 3. General image-to-avatar regression
 
-Accepts arbitrary RGB photos (or folders) and writes both the parameter JSON and mesh NPZ
-for the inferred subject.
+Accepts arbitrary RGB photos (or folders, scanned recursively) and writes both the
+parameter JSON and mesh NPZ for the inferred subject. Leave measurement refinement
+enabled to blend detector results with anthropometric priors, or pass
+`--skip-measurement-refinement` when you want a quick, detector-only fit.
 
 ```bash
 python -m smii fit-from-images \
