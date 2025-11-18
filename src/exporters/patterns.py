@@ -663,7 +663,7 @@ class SimplePlaneProjectionBackend(CADBackend):
                 seam_outline = [
                     (float(vertex[0]) * scale, float(vertex[1]) * scale)
                     for vertex in panel.vertices
-                )
+                ]
 
             allowance = float(seam_lookup.get(panel.name, {}).get("seam_allowance", seam_allowance))
             metadata = {
@@ -671,7 +671,7 @@ class SimplePlaneProjectionBackend(CADBackend):
                 "seam_allowance": allowance,
             }
             annotations = build_panel_annotations(
-                outline,
+                seam_outline,
                 seam_metadata=seam_lookup.get(panel.name, {}),
                 panel_metadata=panel.metadata,
                 panel_name=panel.name,
@@ -1055,27 +1055,257 @@ def _point_to_segment_distance(
 def _euclidean_distance(a: tuple[float, float], b: tuple[float, float]) -> float:
     return math.hypot(a[0] - b[0], a[1] - b[1])
 
+def _escape_pdf_text(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+def _write_pdf(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any]) -> None:
+    min_x, min_y, max_x, max_y = _panel_bounds(panels)
+    points_per_meter = 72.0 / 0.0254
+    margin = 36.0
+    drawing_width = (max_x - min_x) * points_per_meter
+    drawing_height = (max_y - min_y) * points_per_meter
+    width = max(200.0, drawing_width + margin * 2)
+    height = max(200.0, drawing_height + margin * 2)
+
+    def to_pdf(point: tuple[float, float]) -> tuple[float, float]:
+        return (
+            (point[0] - min_x) * points_per_meter + margin,
+            (point[1] - min_y) * points_per_meter + margin,
+        )
+
+    info_lines = [
+        "SMII Pattern Export",
+        f"Scale: {metadata['scale']}",
+        f"Seam allowance: {metadata['seam_allowance']}",
+        f"Panels: {metadata['panel_count']}",
+    ]
+
+    summary_lines: list[str] = []
+    for panel in panels:
+        seam_coords = ", ".join(f"{x:.2f},{y:.2f}" for x, y in panel.seam_outline)
+        cut_coords = ", ".join(f"{x:.2f},{y:.2f}" for x, y in (panel.cut_outline or []))
+        if seam_coords:
+            summary_lines.append(
+                f"{panel.name} seam: {seam_coords} (allowance={panel.seam_allowance})"
+            )
+        else:
+            summary_lines.append(
+                f"{panel.name} seam: unavailable (allowance={panel.seam_allowance})"
+            )
+        if cut_coords:
+            summary_lines.append(f"{panel.name} cut: {cut_coords}")
+        else:
+            summary_lines.append(f"{panel.name} cut: unavailable")
+
+    drawing_ops: list[str] = []
+    drawing_ops.extend(["0.6 w", "0 0 0 RG", "0 0 0 rg", "[] 0 d"])
+    grain_color = (0.102, 0.451, 0.909)
+    fold_color = (0.333, 0.333, 0.333)
+
+    label_blocks: list[list[str]] = []
+
+    for panel in panels:
+        if panel.outline:
+            transformed = [to_pdf(point) for point in panel.outline]
+            x0, y0 = transformed[0]
+            drawing_ops.append(f"{x0:.2f} {y0:.2f} m")
+            for x, y in transformed[1:]:
+                drawing_ops.append(f"{x:.2f} {y:.2f} l")
+            drawing_ops.append("h")
+            drawing_ops.append("S")
+
+            for grain in panel.grainlines:
+                start_pt, end_pt = grain.endpoints()
+                start = to_pdf(start_pt)
+                end = to_pdf(end_pt)
+                drawing_ops.extend(
+                    [
+                        f"{grain_color[0]:.3f} {grain_color[1]:.3f} {grain_color[2]:.3f} RG",
+                        "0.4 w",
+                        "[] 0 d",
+                        f"{start[0]:.2f} {start[1]:.2f} m",
+                        f"{end[0]:.2f} {end[1]:.2f} l",
+                        "S",
+                    ]
+                )
+                drawing_ops.append(
+                    f"{grain_color[0]:.3f} {grain_color[1]:.3f} {grain_color[2]:.3f} rg"
+                )
+                for arrow in grain.arrowheads():
+                    if not arrow:
+                        continue
+                    a0 = to_pdf(arrow[0])
+                    a1 = to_pdf(arrow[1])
+                    a2 = to_pdf(arrow[2])
+                    drawing_ops.extend(
+                        [
+                            f"{a0[0]:.2f} {a0[1]:.2f} m",
+                            f"{a1[0]:.2f} {a1[1]:.2f} l",
+                            f"{a2[0]:.2f} {a2[1]:.2f} l",
+                            "h",
+                            "f",
+                        ]
+                    )
+                drawing_ops.extend(["0 0 0 rg", "0 0 0 RG", "0.6 w"])
+
+            for notch in panel.notches:
+                triangle = [to_pdf(point) for point in notch.triangle()]
+                drawing_ops.extend(
+                    [
+                        "0 0 0 rg",
+                        f"{triangle[0][0]:.2f} {triangle[0][1]:.2f} m",
+                        f"{triangle[1][0]:.2f} {triangle[1][1]:.2f} l",
+                        f"{triangle[2][0]:.2f} {triangle[2][1]:.2f} l",
+                        "h",
+                        "f",
+                    ]
+                )
+                if notch.label:
+                    label_x, label_y = to_pdf(
+                        (
+                            notch.position[0] + notch.normal[0] * 1.5,
+                            notch.position[1] + notch.normal[1] * 1.5,
+                        )
+                    )
+                    block = [
+                        "0 0 0 rg",
+                        "BT",
+                        "/F1 6 Tf",
+                        f"{label_x:.2f} {label_y:.2f} Td",
+                        f"({_escape_pdf_text(str(notch.label))}) Tj",
+                        "ET",
+                    ]
+                    label_blocks.append(block)
+
+            for fold in panel.folds:
+                start = to_pdf(fold.start)
+                end = to_pdf(fold.end)
+                drawing_ops.extend(
+                    [
+                        f"{fold_color[0]:.3f} {fold_color[1]:.3f} {fold_color[2]:.3f} RG",
+                        "0.4 w",
+                        "[2 2] 0 d",
+                        f"{start[0]:.2f} {start[1]:.2f} m",
+                        f"{end[0]:.2f} {end[1]:.2f} l",
+                        "S",
+                    ]
+                )
+                drawing_ops.append("[] 0 d")
+                for chevron in fold.chevrons():
+                    c0 = to_pdf(chevron[0])
+                    c1 = to_pdf(chevron[1])
+                    drawing_ops.extend(
+                        [
+                            f"{fold_color[0]:.3f} {fold_color[1]:.3f} {fold_color[2]:.3f} RG",
+                            "0.3 w",
+                            f"{c0[0]:.2f} {c0[1]:.2f} m",
+                            f"{c1[0]:.2f} {c1[1]:.2f} l",
+                            "S",
+                        ]
+                    )
+                drawing_ops.extend(["0 0 0 RG", "0.6 w"])
+
+        if panel.label:
+            xs = [point[0] for point in panel.outline] or [panel.label.position[0]]
+            ys = [point[1] for point in panel.outline] or [panel.label.position[1]]
+            extent = max(max(xs) - min(xs), max(ys) - min(ys), 1.0)
+            px, py = to_pdf(panel.label.position)
+            size = min(18.0, max(8.0, extent * 0.12))
+            block: list[str] = ["0 0 0 rg", "BT", f"/F1 {size:.1f} Tf"]
+            if abs(panel.label.rotation) > 1e-3:
+                angle = math.radians(panel.label.rotation)
+                cos_a = math.cos(angle)
+                sin_a = math.sin(angle)
+                block.append(
+                    f"{cos_a:.4f} {sin_a:.4f} {-sin_a:.4f} {cos_a:.4f} {px:.2f} {py:.2f} Tm"
+                )
+            else:
+                block.append(f"{px:.2f} {py:.2f} Td")
+            block.append(f"({_escape_pdf_text(panel.label.text)}) Tj")
+            block.append("ET")
+            label_blocks.append(block)
+
+    header_ops = ["BT", "/F1 12 Tf"]
+    top_text_y = height - margin
+    for index, line in enumerate(info_lines):
+        escaped = _escape_pdf_text(line)
+        offset = 14.0 * index
+        header_ops.append(f"1 0 0 1 {margin:.2f} {top_text_y - offset:.2f} Tm")
+        header_ops.append(f"({escaped}) Tj")
+    header_ops.append("ET")
+
+    text_ops = ["0 0 0 rg", "BT", "/F1 12 Tf", f"{margin:.2f} {height - margin - 56:.2f} Td"]
+    for index, line in enumerate(summary_lines):
+        escaped = _escape_pdf_text(line)
+        if index == 0:
+            text_ops.append(f"({escaped}) Tj")
+        else:
+            text_ops.append(f"0 -14 Td ({escaped}) Tj")
+    text_ops.append("ET")
+
+    content_parts = drawing_ops + header_ops + text_ops
+    for block in label_blocks:
+        content_parts.extend(block)
+
+    content_stream = "\n".join(content_parts).encode("utf-8")
+
+    objects: list[bytes] = []
+    catalog = b"<< /Type /Catalog /Pages 2 0 R >>"
+    pages = b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>"
+    page = (
+        f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {width:.2f} {height:.2f}] "
+        "/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>".encode("utf-8")
+    )
+    font = b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"
+    contents = (
+        f"<< /Length {len(content_stream)} >>\nstream\n".encode("utf-8")
+        + content_stream
+        + b"\nendstream"
+    )
+    objects.extend([catalog, pages, page, font, contents])
+
+    buffer = bytearray()
+    buffer.extend(b"%PDF-1.4\n")
+    offsets = [0]
+    for idx, obj in enumerate(objects, start=1):
+        offsets.append(len(buffer))
+        buffer.extend(f"{idx} 0 obj\n".encode("utf-8"))
+        buffer.extend(obj)
+        if not obj.endswith(b"\n"):
+            buffer.extend(b"\n")
+        buffer.extend(b"endobj\n")
+    xref_offset = len(buffer)
+    count = len(objects) + 1
+    buffer.extend(f"xref\n0 {count}\n".encode("utf-8"))
+    buffer.extend(b"0000000000 65535 f \n")
+    for offset in offsets[1:]:
+        buffer.extend(f"{offset:010d} 00000 n \n".encode("utf-8"))
+    buffer.extend(
+        f"trailer\n<< /Size {count} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF".encode("utf-8")
+    )
+    path.write_bytes(buffer)
+
 
 def _polygon_centroid(points: Sequence[tuple[float, float]]) -> tuple[float, float]:
-    if len(points) == 0:
-        return (0.0, 0.0)
-    twice_area = 0.0
-    c_x = 0.0
-    c_y = 0.0
-    count = len(points)
-    for idx in range(count):
-        x0, y0 = points[idx]
-        x1, y1 = points[(idx + 1) % count]
+    if not points:
+        return 0.0, 0.0
+    area = 0.0
+    centroid_x = 0.0
+    centroid_y = 0.0
+    for index, (x0, y0) in enumerate(points):
+        x1, y1 = points[(index + 1) % len(points)]
         cross = x0 * y1 - x1 * y0
-        twice_area += cross
-        c_x += (x0 + x1) * cross
-        c_y += (y0 + y1) * cross
-    if abs(twice_area) < 1e-9:
-        avg_x = sum(point[0] for point in points) / count
-        avg_y = sum(point[1] for point in points) / count
-        return (avg_x, avg_y)
-    factor = 1.0 / (3.0 * twice_area)
-    return (c_x * factor, c_y * factor)
+        area += cross
+        centroid_x += (x0 + x1) * cross
+        centroid_y += (y0 + y1) * cross
+    area *= 0.5
+    if math.isclose(area, 0.0):
+        avg_x = sum(point[0] for point in points) / len(points)
+        avg_y = sum(point[1] for point in points) / len(points)
+        return avg_x, avg_y
+    factor = 1.0 / (6.0 * area)
+    return centroid_x * factor, centroid_y * factor
 
 
 def _panel_bounds(panels: Sequence[Panel2D]) -> tuple[float, float, float, float]:
@@ -1268,7 +1498,6 @@ def _write_dxf(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any
                     lines.extend(["10", f"{x:.4f}", "20", f"{y:.4f}"])
         for notch in panel.notches:
             triangle = notch.triangle()
-        if panel.seam_outline:
             lines.extend([
                 "0",
                 "LWPOLYLINE",
@@ -1348,7 +1577,12 @@ def _write_dxf(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any
                 "50",
                 f"{panel.label.rotation:.2f}",
             ])
-                panel.name,
+        if panel.seam_outline:
+            lines.extend([
+                "0",
+                "LWPOLYLINE",
+                "8",
+                f"{panel.name}_SEAM",
                 "90",
                 str(len(panel.seam_outline)),
             ])
@@ -1371,258 +1605,6 @@ def _write_dxf(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def _escape_pdf_text(value: str) -> str:
-    return value.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
-
-
-def _write_pdf(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any]) -> None:
-    min_x, min_y, max_x, max_y = _panel_bounds(panels)
-    margin = 20.0
-    width = max(100.0, (max_x - min_x) + margin * 2)
-    height = max(100.0, (max_y - min_y) + margin * 2)
-
-    def to_pdf(point: tuple[float, float]) -> tuple[float, float]:
-        return point[0] - min_x + margin, point[1] - min_y + margin
-
-    lines = [
-    points_per_meter = 72.0 / 0.0254
-    margin = 36.0
-    drawing_width = (max_x - min_x) * points_per_meter
-    drawing_height = (max_y - min_y) * points_per_meter
-    width = max(200.0, drawing_width + margin * 2)
-    height = max(200.0, drawing_height + margin * 2)
-
-    info_lines = [
-        "SMII Pattern Export",
-        f"Scale: {metadata['scale']}",
-        f"Seam allowance: {metadata['seam_allowance']}",
-        f"Panels: {metadata['panel_count']}",
-    ]
-    for panel in panels:
-        seam_coords = ", ".join(f"{x:.2f},{y:.2f}" for x, y in panel.seam_outline)
-        cut_coords = ", ".join(f"{x:.2f},{y:.2f}" for x, y in (panel.cut_outline or []))
-        if seam_coords:
-            lines.append(
-                f"{panel.name} seam: {seam_coords} (allowance={panel.seam_allowance})"
-            )
-        else:
-            lines.append(
-                f"{panel.name} seam: unavailable (allowance={panel.seam_allowance})"
-            )
-        if cut_coords:
-            lines.append(f"{panel.name} cut: {cut_coords}")
-        else:
-            lines.append(f"{panel.name} cut: unavailable")
-
-    drawing_ops: list[str] = []
-    drawing_ops.extend(["0.6 w", "0 0 0 RG", "0 0 0 rg", "[] 0 d"])
-    grain_color = (0.102, 0.451, 0.909)
-    fold_color = (0.333, 0.333, 0.333)
-
-    label_blocks: list[list[str]] = []
-
-    for panel in panels:
-        if panel.outline:
-            transformed = [to_pdf(point) for point in panel.outline]
-            x0, y0 = transformed[0]
-            drawing_ops.append(f"{x0:.2f} {y0:.2f} m")
-            for x, y in transformed[1:]:
-                drawing_ops.append(f"{x:.2f} {y:.2f} l")
-            drawing_ops.append("h")
-            drawing_ops.append("S")
-
-            for grain in panel.grainlines:
-                start_pt, end_pt = grain.endpoints()
-                start = to_pdf(start_pt)
-                end = to_pdf(end_pt)
-                drawing_ops.extend(
-                    [
-                        f"{grain_color[0]:.3f} {grain_color[1]:.3f} {grain_color[2]:.3f} RG",
-                        "0.4 w",
-                        "[] 0 d",
-                        f"{start[0]:.2f} {start[1]:.2f} m",
-                        f"{end[0]:.2f} {end[1]:.2f} l",
-                        "S",
-                    ]
-                )
-                drawing_ops.append(
-                    f"{grain_color[0]:.3f} {grain_color[1]:.3f} {grain_color[2]:.3f} rg"
-                )
-                for arrow in grain.arrowheads():
-                    if not arrow:
-                        continue
-                    a0 = to_pdf(arrow[0])
-                    a1 = to_pdf(arrow[1])
-                    a2 = to_pdf(arrow[2])
-                    drawing_ops.extend(
-                        [
-                            f"{a0[0]:.2f} {a0[1]:.2f} m",
-                            f"{a1[0]:.2f} {a1[1]:.2f} l",
-                            f"{a2[0]:.2f} {a2[1]:.2f} l",
-                            "h",
-                            "f",
-                        ]
-                    )
-                drawing_ops.extend(["0 0 0 rg", "0 0 0 RG", "0.6 w"])
-
-            for notch in panel.notches:
-                triangle = [to_pdf(point) for point in notch.triangle()]
-                drawing_ops.extend(
-                    [
-                        "0 0 0 rg",
-                        f"{triangle[0][0]:.2f} {triangle[0][1]:.2f} m",
-                        f"{triangle[1][0]:.2f} {triangle[1][1]:.2f} l",
-                        f"{triangle[2][0]:.2f} {triangle[2][1]:.2f} l",
-                        "h",
-                        "f",
-                    ]
-                )
-                if notch.label:
-                    label_x, label_y = to_pdf(
-                        (
-                            notch.position[0] + notch.normal[0] * 1.5,
-                            notch.position[1] + notch.normal[1] * 1.5,
-                        )
-                    )
-                    block = [
-                        "0 0 0 rg",
-                        "BT",
-                        "/F1 6 Tf",
-                        f"{label_x:.2f} {label_y:.2f} Td",
-                        f"({_escape_pdf_text(str(notch.label))}) Tj",
-                        "ET",
-                    ]
-                    label_blocks.append(block)
-
-            for fold in panel.folds:
-                start = to_pdf(fold.start)
-                end = to_pdf(fold.end)
-                drawing_ops.extend(
-                    [
-                        f"{fold_color[0]:.3f} {fold_color[1]:.3f} {fold_color[2]:.3f} RG",
-                        "0.4 w",
-                        "[2 2] 0 d",
-                        f"{start[0]:.2f} {start[1]:.2f} m",
-                        f"{end[0]:.2f} {end[1]:.2f} l",
-                        "S",
-                    ]
-                )
-                drawing_ops.append("[] 0 d")
-                for chevron in fold.chevrons():
-                    c0 = to_pdf(chevron[0])
-                    c1 = to_pdf(chevron[1])
-                    drawing_ops.extend(
-                        [
-                            f"{fold_color[0]:.3f} {fold_color[1]:.3f} {fold_color[2]:.3f} RG",
-                            "0.3 w",
-                            f"{c0[0]:.2f} {c0[1]:.2f} m",
-                            f"{c1[0]:.2f} {c1[1]:.2f} l",
-                            "S",
-                        ]
-                    )
-                drawing_ops.extend(["0 0 0 RG", "0.6 w"])
-
-        if panel.label:
-            xs = [point[0] for point in panel.outline] or [panel.label.position[0]]
-            ys = [point[1] for point in panel.outline] or [panel.label.position[1]]
-            extent = max(max(xs) - min(xs), max(ys) - min(ys), 1.0)
-            px, py = to_pdf(panel.label.position)
-            size = min(18.0, max(8.0, extent * 0.12))
-            block: list[str] = ["0 0 0 rg", "BT", f"/F1 {size:.1f} Tf"]
-            if abs(panel.label.rotation) > 1e-3:
-                angle = math.radians(panel.label.rotation)
-                cos_a = math.cos(angle)
-                sin_a = math.sin(angle)
-                block.append(
-                    f"{cos_a:.4f} {sin_a:.4f} {-sin_a:.4f} {cos_a:.4f} {px:.2f} {py:.2f} Tm"
-                )
-            else:
-                block.append(f"{px:.2f} {py:.2f} Td")
-            block.append(f"({_escape_pdf_text(panel.label.text)}) Tj")
-            block.append("ET")
-            label_blocks.append(block)
-
-    text_ops = ["0 0 0 rg", "BT", "/F1 12 Tf", f"20 {height - 40:.2f} Td"]
-    for index, line in enumerate(lines):
-    header_ops = ["BT", "/F1 12 Tf"]
-    top_text_y = height - margin
-    for index, line in enumerate(info_lines):
-        escaped = _escape_pdf_text(line)
-        if index == 0:
-            header_ops.append(f"1 0 0 1 {margin:.2f} {top_text_y:.2f} Tm")
-            header_ops.append(f"({escaped}) Tj")
-        else:
-            text_ops.append(f"0 -14 Td ({escaped}) Tj")
-    text_ops.append("ET")
-    content_parts = drawing_ops + text_ops
-    for block in label_blocks:
-        content_parts.extend(block)
-            offset = 14.0 * index
-            header_ops.append(f"1 0 0 1 {margin:.2f} {top_text_y - offset:.2f} Tm")
-            header_ops.append(f"({escaped}) Tj")
-    header_ops.append("ET")
-
-    content_parts = drawing_ops + header_ops + label_ops
-    content_stream = "\n".join(content_parts).encode("utf-8")
-
-    objects: list[bytes] = []
-    catalog = b"<< /Type /Catalog /Pages 2 0 R >>"
-    pages = b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>"
-    page = (
-        f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {width:.2f} {height:.2f}] "
-        "/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>".encode("utf-8")
-    )
-    font = b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"
-    contents = (
-        f"<< /Length {len(content_stream)} >>\nstream\n".encode("utf-8")
-        + content_stream
-        + b"\nendstream"
-    )
-    objects.extend([catalog, pages, page, font, contents])
-
-    buffer = bytearray()
-    buffer.extend(b"%PDF-1.4\n")
-    offsets = [0]
-    for idx, obj in enumerate(objects, start=1):
-        offsets.append(len(buffer))
-        buffer.extend(f"{idx} 0 obj\n".encode("utf-8"))
-        buffer.extend(obj)
-        if not obj.endswith(b"\n"):
-            buffer.extend(b"\n")
-        buffer.extend(b"endobj\n")
-    xref_offset = len(buffer)
-    count = len(objects) + 1
-    buffer.extend(f"xref\n0 {count}\n".encode("utf-8"))
-    buffer.extend(b"0000000000 65535 f \n")
-    for offset in offsets[1:]:
-        buffer.extend(f"{offset:010d} 00000 n \n".encode("utf-8"))
-    buffer.extend(
-        f"trailer\n<< /Size {count} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF".encode("utf-8")
-    )
-    path.write_bytes(buffer)
-
-
-def _polygon_centroid(points: Sequence[tuple[float, float]]) -> tuple[float, float]:
-    if not points:
-        return 0.0, 0.0
-    area = 0.0
-    centroid_x = 0.0
-    centroid_y = 0.0
-    for index, (x0, y0) in enumerate(points):
-        x1, y1 = points[(index + 1) % len(points)]
-        cross = x0 * y1 - x1 * y0
-        area += cross
-        centroid_x += (x0 + x1) * cross
-        centroid_y += (y0 + y1) * cross
-    area *= 0.5
-    if math.isclose(area, 0.0):
-        avg_x = sum(point[0] for point in points) / len(points)
-        avg_y = sum(point[1] for point in points) / len(points)
-        return avg_x, avg_y
-    factor = 1.0 / (6.0 * area)
-    return centroid_x * factor, centroid_y * factor
-
-
 __all__ = [
     "Panel3D",
     "Panel2D",
@@ -1637,3 +1619,5 @@ __all__ = [
     "LSCMUnwrapBackend",
     "PatternExporter",
 ]
+
+
