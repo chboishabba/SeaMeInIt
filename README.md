@@ -17,6 +17,7 @@ Please see our docs:
 - [Agents](AGENTS.md)
 - [Contributing](CONTRIBUTING.md)
 - [Roadmap](ROADMAP.md)
+<img width="6603" height="13536" alt="NotebookLM Mind Map(12)" src="https://github.com/user-attachments/assets/ebd5e891-c2ee-404b-800e-5922023ea95e" />
 
 ## 📁 Project layout
 
