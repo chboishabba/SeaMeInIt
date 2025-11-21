@@ -90,6 +90,25 @@ prevent starburst artefacts, reduce manual clean-up, and support non-human
 topologies such as dogs. The process enforces four rules that combine geometric
 developability with biomechanical constraints.
 
+### Roadmap: simulation-guided seam tuning
+
+The current metric-driven process is intentionally conservative: curvature,
+topology, and anisotropic stretch rules determine where seams land before any
+physics runs. A planned extension introduces a **simulation-in-the-loop** pass
+that perturbs seam parameters (e.g., side seam offsets or dorsal arm split
+angles) while monitoring strain fields from range-of-motion exercises. An
+optimizer then relaxes each seam into low-strain channels while respecting
+panel-count constraints and manufacturability. Cost terms blend maximum
+seam-adjacent strain, total seam length, and penalties for cutting through
+high-pressure zones so the resulting pattern remains comfortable and durable.
+
+This roadmap keeps the existing pipeline intact: metric-guided seams still
+generate watertight, starburst-free panels, and the optimizer simply nudges
+control points within that feasible family. If a simulation detects excessive
+distortion on a flattened panel, the system can introduce a relief seam and
+re-run flattening, ensuring iterative refinements remain grounded in both
+geometry and biomechanics.
+
 ### 1. Detect flattenable regions
 
 - Evaluate Gaussian and mean curvature per vertex (or use triangle angular
