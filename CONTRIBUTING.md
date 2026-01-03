@@ -30,6 +30,12 @@ This includes [Hypothesis](https://hypothesis.readthedocs.io/) for property-base
 - Validate typing coverage with `mypy .`.
 - Explore CLI features with `python -m smii.cli --help`.
 
+## Current Focus
+The immediate workstream is the manufacturable panel layer for undersuit
+patterns. Contributions should prioritize the Panel abstraction, sewability
+constraints before flattening, and deterministic boundary regularization to
+produce clean vector-ready outlines.
+
 ## Writing Tests
 New features and bug fixes must include automated tests.
 

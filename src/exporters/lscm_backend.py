@@ -125,6 +125,7 @@ class LSCMConformalBackend(CADBackend):
         *,
         scale: float,
         seam_allowance: float,
+        budgets: object | None = None,
     ) -> list[Panel2D]:
         flattened: list[Panel2D] = []
         seam_lookup = seams or {}
@@ -145,7 +146,7 @@ class LSCMConformalBackend(CADBackend):
                     "requires_subdivision": True,
                 }
                 annotations = build_panel_annotations(
-                    outline,
+                    seam_outline,
                     seam_metadata=seam_lookup.get(panel.name, {}),
                     panel_metadata=panel.metadata,
                     panel_name=panel.name,
@@ -153,6 +154,7 @@ class LSCMConformalBackend(CADBackend):
                 flattened.append(
                     Panel2D(
                         name=panel.name,
+                        outline=seam_outline,
                         seam_outline=seam_outline,
                         seam_allowance=allowance,
                         metadata=metadata,
@@ -391,4 +393,3 @@ class LSCMConformalBackend(CADBackend):
 
 
 __all__ = ["LSCMConformalBackend"]
-

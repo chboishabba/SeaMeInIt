@@ -1,0 +1,17 @@
+{
+  "name": "str",
+  "vertices": [
+    [
+      "float"
+    ]
+  ],
+  "faces": [
+    [
+      "int"
+    ]
+  ],
+  "metadata": {
+    "source": "str",
+    "scale": "float"
+  }
+}

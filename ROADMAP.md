@@ -3,6 +3,16 @@
 
 Currently we're struggling with producing biblically accurate bodysuit patterns which are entirely unfeasible to sew.
 
+## Blocking gap: manufacturable panel layer
+
+We need an explicit "panel" abstraction between 3D geometry and 2D export so sewability is enforced before flattening.
+Without this, LSCM/ABF output will keep producing spiky, unsewable outlines.
+
+Near-term steps:
+1. Define a Panel data model (surface patch, 3D/2D boundaries, seam partners, grain direction, distortion/sewability budgets).
+2. Enforce sewability constraints pre-flattening (split panels when thresholds are exceeded).
+3. Add deterministic boundary regularization (resample, clamp curvature/turning, suppress tiny features, spline fit, reconcile seams).
+
 Perfect — these examples tell me **exactly** what final form you want:
 
 ✔️ **Clean vector-style outlines**
@@ -251,6 +261,7 @@ This is 100% implementable.
 
 🧪 Offset + segmentation test suite
 - Validate motion boundary at high ROM joints
+🧭 Model valid ROM as a constrained latent space (see CONTEXT.md lines 1-120)
 
 🧲 Ergonomic layer mapping
 - Define soft, tight, rigid layers and suit variants per body region
@@ -411,4 +422,3 @@ This is 100% implementable.
 * ⬜ Space tourism (bespoke spacesuits for astronauts)
 * ⬜ Manufacturing testbed (CNC/sewing + 3D print layout test)
 * ⬜ Field test feedback loop (thermal stress, mobility, durability)
-

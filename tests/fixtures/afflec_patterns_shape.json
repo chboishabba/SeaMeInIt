@@ -1,0 +1,137 @@
+{
+  "axis_map": {
+    "anterior": [
+      "float"
+    ],
+    "lateral": [
+      "float"
+    ],
+    "longitudinal": [
+      "float"
+    ]
+  },
+  "files": {
+    "dxf": "str",
+    "pdf": "str",
+    "svg": "str"
+  },
+  "material": "str",
+  "measurement_loops": {
+    "chest_circumference": {
+      "axis_coordinate": "float",
+      "vertex_count": "int"
+    },
+    "hip_circumference": {
+      "axis_coordinate": "float",
+      "vertex_count": "int"
+    },
+    "neck_circumference": {
+      "axis_coordinate": "float",
+      "vertex_count": "int"
+    },
+    "thigh_circumference": {
+      "axis_coordinate": "float",
+      "vertex_count": "int"
+    },
+    "waist_circumference": {
+      "axis_coordinate": "float",
+      "vertex_count": "int"
+    }
+  },
+  "panel_count": "int",
+  "panel_validation": {
+    "chest_circumference_to_neck_circumference_left": {
+      "issues": [],
+      "ok": "bool",
+      "regularization_issues": []
+    },
+    "chest_circumference_to_neck_circumference_right": {
+      "issues": [],
+      "ok": "bool",
+      "regularization_issues": []
+    },
+    "hip_circumference_to_waist_circumference_left": {
+      "issues": [],
+      "ok": "bool",
+      "regularization_issues": []
+    },
+    "hip_circumference_to_waist_circumference_right": {
+      "issues": [],
+      "ok": "bool",
+      "regularization_issues": []
+    },
+    "thigh_circumference_to_hip_circumference_left": {
+      "issues": [],
+      "ok": "bool",
+      "regularization_issues": []
+    },
+    "thigh_circumference_to_hip_circumference_right": {
+      "issues": [],
+      "ok": "bool",
+      "regularization_issues": []
+    },
+    "waist_circumference_to_chest_circumference_left": {
+      "issues": [],
+      "ok": "bool",
+      "regularization_issues": []
+    },
+    "waist_circumference_to_chest_circumference_right": {
+      "issues": [],
+      "ok": "bool",
+      "regularization_issues": []
+    }
+  },
+  "panels": [
+    "str"
+  ],
+  "seams": {
+    "chest_circumference_to_neck_circumference_left": {
+      "mean_curvature": "float",
+      "panel_curvature": "float",
+      "seam_allowance": "float",
+      "tension_ratio": "float"
+    },
+    "chest_circumference_to_neck_circumference_right": {
+      "mean_curvature": "float",
+      "panel_curvature": "float",
+      "seam_allowance": "float",
+      "tension_ratio": "float"
+    },
+    "hip_circumference_to_waist_circumference_left": {
+      "mean_curvature": "float",
+      "panel_curvature": "float",
+      "seam_allowance": "float",
+      "tension_ratio": "float"
+    },
+    "hip_circumference_to_waist_circumference_right": {
+      "mean_curvature": "float",
+      "panel_curvature": "float",
+      "seam_allowance": "float",
+      "tension_ratio": "float"
+    },
+    "thigh_circumference_to_hip_circumference_left": {
+      "mean_curvature": "float",
+      "panel_curvature": "float",
+      "seam_allowance": "float",
+      "tension_ratio": "float"
+    },
+    "thigh_circumference_to_hip_circumference_right": {
+      "mean_curvature": "float",
+      "panel_curvature": "float",
+      "seam_allowance": "float",
+      "tension_ratio": "float"
+    },
+    "waist_circumference_to_chest_circumference_left": {
+      "mean_curvature": "float",
+      "panel_curvature": "float",
+      "seam_allowance": "float",
+      "tension_ratio": "float"
+    },
+    "waist_circumference_to_chest_circumference_right": {
+      "mean_curvature": "float",
+      "panel_curvature": "float",
+      "seam_allowance": "float",
+      "tension_ratio": "float"
+    }
+  }
+}

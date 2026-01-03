@@ -64,6 +64,31 @@ the pipeline. Any panel missing an explicit entry in the seams JSON inherits the
 You can hand author these files for custom garments as long as they keep the
 same structure.
 
+## Demo output model
+
+The current demo output model is the panel payload emitted by
+`src/smii/pipelines/generate_undersuit.py` and exercised in
+`examples/undersuit_pattern_export.py`. It matches the `PanelPayload` dataclass
+in `src/suit/panel_payload.py` and the exporter `Panel3D` shape, even before the
+full `Panel` schema (see `CONTEXT.md` lines 564-604) is wired through.
+
+A recent run example is `outputs/suits/afflec_body/metadata.json`, where
+`patterns.panels` lists the exported panel names alongside file outputs.
+
+## Outline cleanup and annotations
+
+Flattened outlines are post-processed to keep sewing patterns clean and usable:
+
+- consecutive duplicate vertices are removed
+- extreme outlier edges are dropped when they exceed 3x the median edge length
+- boundaries are Laplacian smoothed with an interior constraint to avoid drift
+- polylines are simplified with Douglas-Peucker to reduce jagged nodes
+
+Annotation metadata can include `grainline`, `notches`, `folds`, and `label`
+entries. The exporter renders these as dedicated layers in SVG/DXF/PDF output,
+with `panel-outline` drawn from the seam outline and explicit `seam-outline` and
+`cut-outline` layers showing seam vs. seam-allowance geometry.
+
 ## Backend, scaling, and warnings
 
 - `simple` backend performs a PCA-based projection and is fast enough for smoke

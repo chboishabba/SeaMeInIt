@@ -25,7 +25,8 @@ python -m smii.pipelines.generate_undersuit \
   --insulation-thickness 0.003 \
   --comfort-thickness 0.001 \
   --ease-percent 0.04 \
-  --pattern-backend lscm
+  --pattern-backend lscm \
+  --material neoprene
 ```
 
 This command writes the following artefacts:
@@ -52,10 +53,19 @@ Layer toggles and thicknesses are configured via CLI switches or the
   computing scaling.
 - `--pattern-backend lscm`: unwrap panels with libigl’s Least Squares Conformal
   Maps solver (defaults to a simple projection fallback).
+- `--material neoprene`: select the material profile used for panel budgets.
 
 👉 Refer to [Flattened Panel Export](./pattern_flattening.md) for a detailed walk
 through of the new seam-driven panel generation, the `PatternExporter` CLI, and
 tips on re-flattening saved payloads.
+
+Pattern metadata now includes the selected material profile (`material`),
+matching the guidance in `CONTEXT.md` lines 2376-2407 to keep validation
+traceable for downstream tooling.
+
+Woven defaults are intentionally conservative (see `CONTEXT.md` lines 2572-2640)
+and assume a plain weave without bias-cut allowances; they should be revisited
+once boundary regularization is in place.
 
 By default all layers are generated using the fitted mesh normals to maintain
 seam continuity. Metadata includes a `seam_max_deviation` metric that should
@@ -82,6 +92,64 @@ print(result.metadata["layers"])
 
 When integrating into broader pipelines ensure the source mesh is watertight;
 the generator validates this before producing layers.
+
+## Manufacturable panel layer (current focus)
+
+Before flattening, the pipeline needs an explicit Panel abstraction so sewability
+constraints are enforced at the segmentation stage rather than as a post-export
+clean-up. Each panel should capture:
+
+- surface patch reference
+- 3D boundary curve (smoothed, intentional)
+- 2D boundary curve (regularized for export)
+- seam partners and correspondence metadata
+- grain direction and distortion/sewability budgets
+
+The minimal schema is tracked in `CONTEXT.md` lines 564-604; the dataclass
+skeleton in `src/suit/panel_model.py` mirrors that shape for future expansion.
+
+Flattening should only proceed once panels meet sewability thresholds. If not,
+the panel must be subdivided.
+
+Boundary regularization is a deterministic stage that produces export-ready
+outlines. The current target stages are:
+
+1. Resample boundary at uniform arc length.
+2. Clamp curvature and total turning.
+3. Suppress features below minimum size.
+4. Fit spline/Bezier curves for vector output.
+5. Reconcile seam pair lengths and notches.
+
+### Budget-driven regularization sketch
+
+This sketch follows `CONTEXT.md` lines 2622-2833 and makes explicit how
+`PanelBudgets` are consumed during regularization:
+
+1. **R1: Arc-length resampling** (preconditioner, no budget use).
+2. **R2: Curvature clamp** consumes `curvature_min_radius` and may only smooth
+   within the minimum radius.
+3. **R3: Turning budget** consumes `turning_max_per_length` over a sliding
+   window (default 40 mm).
+4. **R4: Min feature suppression** consumes `min_feature_size` to remove
+   sub-resolution details.
+5. **R5: Seam reconciliation** enforces seam correspondence without violating
+   prior budgets.
+6. **R6: Curve fitting** preserves all budgets by construction.
+
+Failure semantics must be explicit: boundary regularization **must not** fix
+budget violations silently and should return structured issues (e.g.
+`CURVATURE_EXCEEDED`, `TURNING_BUDGET_EXCEEDED`, `MIN_FEATURE_VIOLATION`,
+`SEAM_MISMATCH`).
+
+R1-R2 are implemented in `src/suit/panel_boundary_regularization.py` and are
+invoked during pattern export using the active material budgets.
+Regularization issues are surfaced under `patterns.panel_validation` as
+`regularization_issues` for traceability.
+
+Neoprene-tuned defaults live in `src/suit/panel_defaults.py` as
+`NEOPRENE_DEFAULT_BUDGETS` and are grounded in `CONTEXT.md` lines 1561-1597.
+Budgets are expressed in metres and radians-per-metre (with angle distortion in
+degrees) so validation can remain unit-consistent across pipelines.
 
 ## Seam-Minimal Panel Extraction
 
@@ -113,6 +181,9 @@ developability with biomechanical constraints.
   direction and magnitude.
 - Prohibit seams across high-tension axes (e.g., human chest, canine shoulder
   saddle) and prefer placements where loads are minimal or visibility is low.
+- Seam placement should also avoid ROM boundary regions that are highly
+  constrained; the ROM latent-space notes in `CONTEXT.md` (lines 1-120) define
+  the validity boundaries we should treat as high-cost seam zones.
 
 ### 4. Supervise UV unwrapping
 
@@ -286,4 +357,3 @@ The 2D export pipeline now carries grainline arrows, notches, fold indicators, a
   * ``label``/``label_text`` – overrides for the on-panel label generated from the panel metadata.
 
 Call :func:`exporters.build_panel_annotations` to transform these payloads into explicit geometry when constructing custom back-ends. The helper returns ``PanelAnnotations`` which the :class:`Panel2D` dataclass now stores alongside the outline, ensuring SVG, DXF, and PDF writers draw consistent styling across toolchains.
-

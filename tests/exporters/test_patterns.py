@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import builtins
 import math
+import re
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -20,16 +22,24 @@ from exporters.patterns import (
     Panel3D,
     PatternExporter,
     build_panel_annotations,
+    LSCMUnwrapBackend,
 )
-from exporters.patterns import LSCMUnwrapBackend
-from exporters.patterns import LSCMUnwrapBackend, Panel2D, Panel3D, PatternExporter
+from suit import NEOPRENE_DEFAULT_BUDGETS
 
 
 class DummyBackend:
     def __init__(self) -> None:
         self.calls: list[tuple[float, float]] = []
 
-    def flatten_panels(self, panels, seams, *, scale, seam_allowance):  # noqa: D401 - simple stub
+    def flatten_panels(  # noqa: D401 - simple stub
+        self,
+        panels,
+        seams,
+        *,
+        scale,
+        seam_allowance,
+        budgets=None,
+    ):
         self.calls.append((scale, seam_allowance))
         outline = [
             (0.0, 0.0),
@@ -60,15 +70,13 @@ class DummyBackend:
             Panel2D(
                 name="test_panel",
                 outline=outline,
+                seam_outline=outline,
                 seam_allowance=0.012,
                 metadata={"source": "dummy"},
                 grainlines=[grain],
                 notches=[notch],
                 folds=[fold],
                 label=label,
-                seam_outline=outline,
-                seam_allowance=0.012,
-                metadata={"source": "dummy"},
             )
         ]
 
@@ -118,7 +126,9 @@ def seam_payload() -> dict:
     return {"test_panel": {"seam_allowance": 0.012}}
 
 
-def test_export_creates_requested_formats(tmp_path: Path, mesh_payload: dict, seam_payload: dict) -> None:
+def test_export_creates_requested_formats(
+    tmp_path: Path, mesh_payload: dict, seam_payload: dict
+) -> None:
     backend = DummyBackend()
     exporter = PatternExporter(backend=backend, scale=0.95, seam_allowance=0.01)
 
@@ -151,7 +161,7 @@ def test_export_writes_metadata_and_annotations(
 
     svg_text = created["svg"].read_text(encoding="utf-8")
     assert "Scale: 1.1" in svg_text
-    assert "class=\"panel-outline\"" in svg_text
+    assert 'class="panel-outline"' in svg_text
     assert "panel-grain" in svg_text
     assert "panel-notch" in svg_text
     assert ">Test Panel<" in svg_text
@@ -166,9 +176,9 @@ def test_export_writes_metadata_and_annotations(
     assert b"Scale: 1.1" in pdf_bytes
     assert b"Test Panel" in pdf_bytes
     assert b"CF" in pdf_bytes
-    assert "data-seam-allowance=\"0.012\"" in svg_text
-    assert "class=\"seam-outline\"" in svg_text
-    assert "class=\"cut-outline\"" in svg_text
+    assert 'data-seam-allowance="0.012"' in svg_text
+    assert 'class="seam-outline"' in svg_text
+    assert 'class="cut-outline"' in svg_text
 
     dxf_text = created["dxf"].read_text(encoding="utf-8")
     assert "$SMII_SCALE" in dxf_text
@@ -276,6 +286,50 @@ def test_pattern_exporter_collects_panel_warnings(tmp_path: Path) -> None:
     assert "panel_warnings" in svg_text
 
 
+def test_pattern_exporter_annotates_panel_issues(tmp_path: Path) -> None:
+    exporter = PatternExporter(budgets=NEOPRENE_DEFAULT_BUDGETS)
+    mesh_payload = {"panels": [_square_panel("panel_issues")]}
+
+    created = exporter.export(mesh_payload, None, output_dir=tmp_path, formats=["svg"])
+
+    svg_text = created["svg"].read_text(encoding="utf-8")
+    assert "panel_issues" in svg_text
+    assert "issue-marker" in svg_text
+
+
+def test_annotations_do_not_change_outline(tmp_path: Path) -> None:
+    exporter = PatternExporter(budgets=NEOPRENE_DEFAULT_BUDGETS)
+    mesh_payload = {"panels": [_square_panel("panel_annotations")]}
+
+    created_off = exporter.export(
+        mesh_payload,
+        None,
+        output_dir=tmp_path / "plain",
+        formats=["svg"],
+        annotate_level="off",
+    )
+    created_summary = exporter.export(
+        mesh_payload,
+        None,
+        output_dir=tmp_path / "annotated",
+        formats=["svg"],
+        annotate_level="summary",
+    )
+
+    off_text = created_off["svg"].read_text(encoding="utf-8")
+    summary_text = created_summary["svg"].read_text(encoding="utf-8")
+
+    assert "<circle" not in off_text
+    assert "issue-marker" in summary_text
+
+    pattern = r'id="panel_annotations-outline" class="panel-outline" points="([^"]+)"'
+    off_match = re.search(pattern, off_text)
+    summary_match = re.search(pattern, summary_text)
+    assert off_match
+    assert summary_match
+    assert off_match.group(1) == summary_match.group(1)
+
+
 def test_simple_backend_orders_outline() -> None:
     exporter = PatternExporter()
     mesh_payload = {
@@ -304,6 +358,15 @@ def test_simple_backend_orders_outline() -> None:
 
 def test_lscm_backend_requires_igl(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delitem(sys.modules, "igl", raising=False)
+
+    real_import = builtins.__import__
+
+    def _blocked_import(name, globals=None, locals=None, fromlist=(), level=0):  # type: ignore[no-untyped-def]
+        if name == "igl":
+            raise ModuleNotFoundError("No module named 'igl'")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _blocked_import)
     with pytest.raises(ModuleNotFoundError):
         LSCMUnwrapBackend()
 
@@ -315,12 +378,7 @@ def _install_igl_stub(monkeypatch: pytest.MonkeyPatch) -> None:
         return np.asarray([0, 1, 2], dtype=int)
 
     def lscm(vertices, triangles, anchors, targets):
-        coords = np.column_stack(
-            [
-                np.linspace(0.0, 1.0, len(vertices), dtype=float),
-                np.linspace(0.0, 0.5, len(vertices), dtype=float),
-            ]
-        )
+        coords = np.asarray(vertices, dtype=float)[:, :2]
         return 0, coords
 
     module.boundary_loop = boundary_loop

@@ -9,6 +9,7 @@ Please see our docs:
 - [Hard Layer Shell](docs/hard_layer_shell.md)
 - [Hard Shell Clearance](docs/hard_shell_clearance.md)
 - [Measurement Inference](docs/measurement_inference.md)
+- [ROM Latent Space Notes](CONTEXT.md) (see lines 1-120 for the validity and latent-space framing)
 - [Schemas](docs/schemas.md)
 - [Undersuit Generation](docs/undersuit_generation.md) - Currently in progress.
 - [Cooling](docs/modules/cooling.md)
@@ -16,6 +17,17 @@ Please see our docs:
 - [Agents](AGENTS.md)
 - [Contributing](CONTRIBUTING.md)
 - [Roadmap](ROADMAP.md)
+
+## Current focus: manufacturable panels
+
+The undersuit pipeline needs an explicit "panel" layer between geometry and export. We should treat paneling and sewability as
+first-class constraints before flattening, then run deterministic boundary regularization so outputs become clean, vector-ready
+patterns.
+
+Near-term work:
+- Define a Panel abstraction (3D patch + 3D/2D boundaries + seam partners + grain direction + distortion/sewability budgets).
+- Enforce sewability constraints before LSCM/ABF (split panels when thresholds are exceeded).
+- Add boundary regularization stages (resample, clamp curvature/turning, suppress tiny features, spline fit, reconcile seams).
 
 ## 🛡️ License Summary
 
@@ -254,4 +266,3 @@ By delivering on these components step by step, we aim to create a **world-class
 [\[51\]](https://www.research.autodesk.com/publications/ai-lab-cad-llm/#:~:text=CAD,them%20to%20manipulate%20engineering%20sketches) CAD-LLM: Large Language Model for CAD Generation
 
 <https://www.research.autodesk.com/publications/ai-lab-cad-llm/>
-

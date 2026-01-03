@@ -22,6 +22,32 @@ from .seam_generator import (
     SeamGraph,
     SeamPanel,
 )
+from .panel_payload import PanelPayload
+from .panel_defaults import (
+    MATERIAL_BUDGETS,
+    NEOPRENE_DEFAULT_BUDGETS,
+    SuitMaterial,
+    WOVEN_DEFAULT_BUDGETS,
+    panel_budgets_for,
+)
+from .panel_adapter import PanelPayloadSource, panel_to_payload
+from .panel_validation import (
+    ValidationIssue,
+    ValidationResult,
+    combine_results,
+    validate_panel_budgets,
+    validate_panel_curvature,
+)
+from .panel_model import (
+    Panel,
+    PanelBoundary2D,
+    PanelBoundary3D,
+    PanelBudgets,
+    PanelGrain,
+    PanelSeams,
+    PanelStatus,
+    SurfacePatch,
+)
 from .undersuit_generator import (
     LAYER_REFERENCE_MEASUREMENTS,
     MeshLayer,
@@ -47,6 +73,27 @@ __all__ = [
     "SeamGenerator",
     "SeamGraph",
     "SeamPanel",
+    "PanelPayload",
+    "NEOPRENE_DEFAULT_BUDGETS",
+    "WOVEN_DEFAULT_BUDGETS",
+    "MATERIAL_BUDGETS",
+    "SuitMaterial",
+    "panel_budgets_for",
+    "PanelPayloadSource",
+    "ValidationIssue",
+    "ValidationResult",
+    "combine_results",
+    "Panel",
+    "PanelBoundary2D",
+    "PanelBoundary3D",
+    "PanelBudgets",
+    "PanelGrain",
+    "PanelSeams",
+    "PanelStatus",
+    "SurfacePatch",
+    "panel_to_payload",
+    "validate_panel_budgets",
+    "validate_panel_curvature",
     "LAYER_REFERENCE_MEASUREMENTS",
     "MeshLayer",
     "UnderSuitGenerator",

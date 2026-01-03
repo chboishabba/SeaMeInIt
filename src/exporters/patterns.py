@@ -9,6 +9,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
+from suit.panel_boundary_regularization import (
+    PanelIssue,
+    panel_issue_to_mapping,
+    regularize_boundary,
+    summarize_panel_issues,
+)
+from suit.panel_model import PanelBudgets
+
 try:  # pragma: no cover - optional dependency shim
     import numpy as np
 except ImportError:  # pragma: no cover - numpy optional
@@ -65,6 +73,7 @@ class GrainlineAnnotation:
         uy = dy / length
         size = max(length * 0.12, 1e-3)
         normal = (-uy, ux)
+
         def _arrow(point: tuple[float, float], sign: float) -> list[tuple[float, float]]:
             base = (point[0] - ux * size * sign, point[1] - uy * size * sign)
             width = size * 0.45
@@ -162,14 +171,50 @@ class Panel2D:
     """Flattened 2D panel representation including seam and cut outlines."""
 
     name: str
-    seam_outline: list[tuple[float, float]]
-    seam_allowance: float
+    outline: list[tuple[float, float]] | None = None
+    seam_outline: list[tuple[float, float]] | None = None
+    seam_allowance: float = 0.0
     cut_outline: list[tuple[float, float]] | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
     grainlines: list[GrainlineAnnotation] = field(default_factory=list)
     notches: list[NotchAnnotation] = field(default_factory=list)
     folds: list[FoldAnnotation] = field(default_factory=list)
     label: LabelAnnotation | None = None
+
+    def __post_init__(self) -> None:
+        self.seam_allowance = float(self.seam_allowance)
+        if not isinstance(self.metadata, dict):
+            self.metadata = dict(self.metadata)
+
+        if self.seam_outline is None:
+            self.seam_outline = []
+        self.seam_outline = [(float(x), float(y)) for x, y in self.seam_outline]
+
+        if self.outline:
+            self.outline = [(float(x), float(y)) for x, y in self.outline]
+        else:
+            self.outline = list(self.seam_outline)
+
+        if not self.seam_outline and self.outline:
+            self.seam_outline = list(self.outline)
+
+        if self.cut_outline is None:
+            if not self.seam_outline:
+                self.cut_outline = []
+            elif self.seam_allowance <= 1e-9:
+                self.cut_outline = list(self.seam_outline)
+            else:
+                offset = _offset_outline(self.seam_outline, float(self.seam_allowance))
+                if offset:
+                    self.cut_outline = offset
+                else:
+                    self.cut_outline = []
+                    warnings = self.metadata.setdefault("warnings", [])
+                    message = "Panel lacks sufficient geometry for seam allowance offset."
+                    if message not in warnings:
+                        warnings.append(message)
+        else:
+            self.cut_outline = [(float(x), float(y)) for x, y in self.cut_outline]
 
 
 def build_panel_annotations(
@@ -510,38 +555,6 @@ def _label_from_metadata(
         return None
     return LabelAnnotation(text=text, position=centroid)
 
-    def __post_init__(self) -> None:
-        self.seam_allowance = float(self.seam_allowance)
-        if not isinstance(self.metadata, dict):
-            self.metadata = dict(self.metadata)
-        self.seam_outline = [(float(x), float(y)) for x, y in self.seam_outline]
-        if self.cut_outline is None:
-            if not self.seam_outline:
-                self.cut_outline = []
-            elif self.seam_allowance <= 1e-9:
-                self.cut_outline = list(self.seam_outline)
-            else:
-                offset = _offset_outline(self.seam_outline, float(self.seam_allowance))
-                if offset:
-                    self.cut_outline = offset
-                else:
-                    self.cut_outline = []
-                    warnings = self.metadata.setdefault("warnings", [])
-                    message = "Panel lacks sufficient geometry for seam allowance offset."
-                    if message not in warnings:
-                        warnings.append(message)
-        else:
-            self.cut_outline = [(float(x), float(y)) for x, y in self.cut_outline]
-
-
-def _polygon_area(points: Sequence[tuple[float, float]]) -> float:
-    area = 0.0
-    if not points:
-        return area
-    for (x1, y1), (x2, y2) in zip(points, points[1:] + points[:1]):
-        area += x1 * y2 - x2 * y1
-    return area / 2.0
-
 
 def _line_intersection(
     point_a: tuple[float, float],
@@ -630,6 +643,7 @@ class CADBackend:
         *,
         scale: float,
         seam_allowance: float,
+        budgets: PanelBudgets | None = None,
     ) -> list[Panel2D]:  # pragma: no cover - interface definition only
         raise NotImplementedError
 
@@ -644,6 +658,7 @@ class SimplePlaneProjectionBackend(CADBackend):
         *,
         scale: float,
         seam_allowance: float,
+        budgets: PanelBudgets | None = None,
     ) -> list[Panel2D]:
         flattened: list[Panel2D] = []
         seam_lookup = seams or {}
@@ -663,15 +678,26 @@ class SimplePlaneProjectionBackend(CADBackend):
                 seam_outline = [
                     (float(vertex[0]) * scale, float(vertex[1]) * scale)
                     for vertex in panel.vertices
-                )
+                ]
+
+            seam_outline, issues = _regularize_panel_outline(seam_outline, budgets)
 
             allowance = float(seam_lookup.get(panel.name, {}).get("seam_allowance", seam_allowance))
             metadata = {
                 "original_vertex_count": len(panel.vertices),
                 "seam_allowance": allowance,
+                "backend": "simple",
             }
+            if issues:
+                metadata["warnings"] = [issue.code for issue in issues]
+                metadata["issues"] = [panel_issue_to_mapping(issue) for issue in issues]
+                summary = summarize_panel_issues(issues)
+                metadata["issue_summary"] = {
+                    "sewable": summary.sewable,
+                    "action": summary.action,
+                }
             annotations = build_panel_annotations(
-                outline,
+                seam_outline,
                 seam_metadata=seam_lookup.get(panel.name, {}),
                 panel_metadata=panel.metadata,
                 panel_name=panel.name,
@@ -679,6 +705,7 @@ class SimplePlaneProjectionBackend(CADBackend):
             flattened.append(
                 Panel2D(
                     name=panel.name,
+                    outline=seam_outline,
                     seam_outline=seam_outline,
                     seam_allowance=allowance,
                     metadata=metadata,
@@ -689,12 +716,6 @@ class SimplePlaneProjectionBackend(CADBackend):
                 )
             )
         return flattened
-
-
-def _fan_triangulation(count: int) -> list[tuple[int, int, int]]:
-    if count < 3:
-        return []
-    return [(0, i, i + 1) for i in range(1, count - 1)]
 
 
 class LSCMUnwrapBackend(CADBackend):
@@ -721,6 +742,7 @@ class LSCMUnwrapBackend(CADBackend):
         *,
         scale: float,
         seam_allowance: float,
+        budgets: PanelBudgets | None = None,
     ) -> list[Panel2D]:
         flattened: list[Panel2D] = []
         seam_lookup = seams or {}
@@ -739,18 +761,29 @@ class LSCMUnwrapBackend(CADBackend):
                     seams,
                     scale=scale,
                     seam_allowance=seam_allowance,
+                    budgets=budgets,
                 )
                 flattened.extend(fallback)
                 continue
+            seam_outline, issues = _regularize_panel_outline(seam_outline, budgets)
             annotations = build_panel_annotations(
-                outline,
+                seam_outline,
                 seam_metadata=seam_lookup.get(panel.name, {}),
                 panel_metadata=panel.metadata,
                 panel_name=panel.name,
             )
+            if issues:
+                metadata["warnings"] = [issue.code for issue in issues]
+                metadata["issues"] = [panel_issue_to_mapping(issue) for issue in issues]
+                summary = summarize_panel_issues(issues)
+                metadata["issue_summary"] = {
+                    "sewable": summary.sewable,
+                    "action": summary.action,
+                }
             flattened.append(
                 Panel2D(
                     name=panel.name,
+                    outline=seam_outline,
                     seam_outline=seam_outline,
                     seam_allowance=allowance,
                     metadata=metadata,
@@ -793,6 +826,12 @@ class LSCMUnwrapBackend(CADBackend):
         return _cleanup_panel_outline(ordered)
 
 
+def _fan_triangulation(count: int) -> list[tuple[int, int, int]]:
+    if count < 3:
+        return []
+    return [(0, i, i + 1) for i in range(1, count - 1)]
+
+
 class PatternExporter:
     """Export undersuit panels to 2D pattern files in multiple formats."""
 
@@ -802,10 +841,13 @@ class PatternExporter:
         backend: CADBackend | str | None = None,
         scale: float = 1.0,
         seam_allowance: float = 0.01,
+        budgets: PanelBudgets | None = None,
     ) -> None:
         self.backend = self._resolve_backend(backend)
         self.scale = float(scale)
         self.seam_allowance = float(seam_allowance)
+        self.budgets = budgets
+        self.last_metadata: dict[str, Any] | None = None
 
     @staticmethod
     def _resolve_backend(candidate: CADBackend | str | None) -> CADBackend:
@@ -828,6 +870,7 @@ class PatternExporter:
         output_dir: Path | str,
         formats: Iterable[str] = ("pdf", "svg", "dxf"),
         metadata: Mapping[str, Any] | None = None,
+        annotate_level: str = "summary",
     ) -> dict[str, Path]:
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
@@ -838,6 +881,7 @@ class PatternExporter:
             seams,
             scale=self.scale,
             seam_allowance=self.seam_allowance,
+            budgets=self.budgets,
         )
 
         combined_metadata = {
@@ -846,21 +890,34 @@ class PatternExporter:
             "panel_count": len(flattened),
         }
         panel_warnings: dict[str, list[str]] = {}
+        panel_issues: dict[str, list[dict[str, object]]] = {}
+        panel_issue_summaries: dict[str, dict[str, object]] = {}
         for panel in flattened:
             warnings = panel.metadata.get("warnings")
             if warnings:
                 panel_warnings[panel.name] = [str(message) for message in warnings]
+            issues = panel.metadata.get("issues")
+            if issues:
+                panel_issues[panel.name] = [dict(issue) for issue in issues]
+            summary = panel.metadata.get("issue_summary")
+            if summary:
+                panel_issue_summaries[panel.name] = dict(summary)
         if panel_warnings:
             combined_metadata["panel_warnings"] = panel_warnings
+        if panel_issues:
+            combined_metadata["panel_issues"] = panel_issues
+        if panel_issue_summaries:
+            combined_metadata["panel_issue_summaries"] = panel_issue_summaries
         if metadata:
             combined_metadata.update(metadata)
+        self.last_metadata = dict(combined_metadata)
 
         created: dict[str, Path] = {}
         for fmt in formats:
             normalized = fmt.lower()
             path = output_path / f"undersuit_pattern.{normalized}"
             if normalized == "svg":
-                _write_svg(path, flattened, combined_metadata)
+                _write_svg(path, flattened, combined_metadata, annotate_level=annotate_level)
             elif normalized == "dxf":
                 _write_dxf(path, flattened, combined_metadata)
             elif normalized == "pdf":
@@ -914,18 +971,37 @@ def _cleanup_panel_outline(points: Iterable[tuple[float, float]]) -> list[tuple[
     return simplified
 
 
+def _regularize_panel_outline(
+    points: Iterable[tuple[float, float]],
+    budgets: PanelBudgets | None,
+) -> tuple[list[tuple[float, float]], list[PanelIssue]]:
+    if budgets is None:
+        return _cleanup_panel_outline(points), []
+
+    boundary, issues = regularize_boundary(
+        [(float(x), float(y)) for x, y in points],
+        budgets,
+    )
+    cleaned = _cleanup_panel_outline(boundary)
+    return cleaned, issues
+
+
 def _dedupe_consecutive(points: Sequence[tuple[float, float]]) -> list[tuple[float, float]]:
     deduped: list[tuple[float, float]] = []
     last: tuple[float, float] | None = None
     for point in points:
-        if last is not None and math.isclose(point[0], last[0], rel_tol=1e-9, abs_tol=1e-9) and math.isclose(
-            point[1], last[1], rel_tol=1e-9, abs_tol=1e-9
+        if (
+            last is not None
+            and math.isclose(point[0], last[0], rel_tol=1e-9, abs_tol=1e-9)
+            and math.isclose(point[1], last[1], rel_tol=1e-9, abs_tol=1e-9)
         ):
             continue
         deduped.append(point)
         last = point
-    if len(deduped) >= 2 and math.isclose(deduped[0][0], deduped[-1][0], rel_tol=1e-9, abs_tol=1e-9) and math.isclose(
-        deduped[0][1], deduped[-1][1], rel_tol=1e-9, abs_tol=1e-9
+    if (
+        len(deduped) >= 2
+        and math.isclose(deduped[0][0], deduped[-1][0], rel_tol=1e-9, abs_tol=1e-9)
+        and math.isclose(deduped[0][1], deduped[-1][1], rel_tol=1e-9, abs_tol=1e-9)
     ):
         deduped.pop()
     return deduped
@@ -940,10 +1016,7 @@ def _remove_outlier_edges(points: Sequence[tuple[float, float]]) -> list[tuple[f
         count = len(cleaned)
         if count < 4:
             break
-        lengths = [
-            _euclidean_distance(cleaned[i], cleaned[(i + 1) % count])
-            for i in range(count)
-        ]
+        lengths = [_euclidean_distance(cleaned[i], cleaned[(i + 1) % count]) for i in range(count)]
         positive = [length for length in lengths if length > 0]
         if not positive:
             break
@@ -1018,7 +1091,9 @@ def _simplify_polyline(points: Sequence[tuple[float, float]]) -> list[tuple[floa
     return simplified
 
 
-def _douglas_peucker(points: Sequence[tuple[float, float]], tolerance: float) -> list[tuple[float, float]]:
+def _douglas_peucker(
+    points: Sequence[tuple[float, float]], tolerance: float
+) -> list[tuple[float, float]]:
     if len(points) <= 2:
         return list(points)
     first = points[0]
@@ -1081,6 +1156,8 @@ def _polygon_centroid(points: Sequence[tuple[float, float]]) -> tuple[float, flo
 def _panel_bounds(panels: Sequence[Panel2D]) -> tuple[float, float, float, float]:
     all_points: list[tuple[float, float]] = []
     for panel in panels:
+        if panel.outline:
+            all_points.extend(panel.outline)
         if panel.cut_outline:
             all_points.extend(panel.cut_outline)
         if panel.seam_outline:
@@ -1098,24 +1175,32 @@ def _panel_bounds(panels: Sequence[Panel2D]) -> tuple[float, float, float, float
 
 def _escape_svg_text(value: str) -> str:
     return (
-        value.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
+        value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
     )
 
 
-def _write_svg(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any]) -> None:
+def _write_svg(
+    path: Path,
+    panels: Sequence[Panel2D],
+    metadata: Mapping[str, Any],
+    *,
+    annotate_level: str = "summary",
+) -> None:
     min_x, min_y, max_x, max_y = _panel_bounds(panels)
     width = max_x - min_x
     height = max_y - min_y
     lines = [
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+        '<?xml version="1.0" encoding="UTF-8"?>',
         f"<!-- Scale: {metadata['scale']} -->",
         f"<!-- Seam allowance: {metadata['seam_allowance']} -->",
-        f"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width:.2f}\" height=\"{height:.2f}\" viewBox=\"{min_x:.2f} {min_y:.2f} {width:.2f} {height:.2f}\">",
+        (
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="{width:.2f}" '
+            f'height="{height:.2f}" viewBox="{min_x:.2f} {min_y:.2f} {width:.2f} {height:.2f}">'
+        ),
         "  <style>",
         "    .panel-outline { fill: none; stroke: #111; stroke-width: 0.6; }",
+        "    .seam-outline { fill: none; stroke: #1a1a1a; stroke-width: 0.10; stroke-dasharray: 4 2; stroke-linejoin: round; }",
+        "    .cut-outline { fill: none; stroke: #d94f4f; stroke-width: 0.20; stroke-linejoin: round; }",
         "    .panel-grain { stroke: #1a73e8; stroke-width: 0.4; fill: none; }",
         "    .panel-grain-arrow { fill: #1a73e8; stroke: none; }",
         "    .panel-notch { fill: #111; stroke: none; }",
@@ -1124,77 +1209,129 @@ def _write_svg(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any
         "    .panel-fold-mountain { stroke-dasharray: 1 1; }",
         "    .panel-fold-chevron { stroke: #555; stroke-width: 0.3; }",
         "    .panel-label { font: 4px sans-serif; fill: #000; text-anchor: middle; }",
+        "    .issue-marker { stroke: #111; stroke-width: 0.2; }",
+        "    .issue-error { fill: #d94f4f; stroke: #d94f4f; }",
+        "    .issue-warning { fill: #f0a202; stroke: #f0a202; stroke-dasharray: 1 1; }",
+        "    .issue-info { fill: #1a73e8; stroke: #1a73e8; }",
+        "    .issue-legend-label { font: 3px sans-serif; fill: #111; }",
         "  </style>",
     ]
     if metadata.get("panel_warnings"):
         warnings_json = json.dumps(metadata["panel_warnings"], sort_keys=True)
         lines.insert(3, f"<!-- panel_warnings: {warnings_json} -->")
+    if metadata.get("panel_issues"):
+        issues_json = json.dumps(metadata["panel_issues"], sort_keys=True)
+        lines.insert(3, f"<!-- panel_issues: {issues_json} -->")
+
+    if metadata.get("panel_issues") and annotate_level != "off":
+        scale = max(width, height, 1e-6)
+        legend_x = min_x + scale * 0.04
+        legend_y = min_y + scale * 0.06
+        legend_gap = scale * 0.05
+        marker_r = scale * 0.01
+        label_dx = scale * 0.02
+        lines.extend(
+            [
+                '  <g class="issue-legend">',
+                f'    <circle class="issue-marker issue-error" cx="{legend_x:.2f}" cy="{legend_y:.2f}" r="{marker_r:.2f}" />',
+                f'    <text class="issue-legend-label" x="{(legend_x + label_dx):.2f}" y="{(legend_y + marker_r):.2f}">curvature</text>',
+                f'    <circle class="issue-marker issue-warning" cx="{legend_x:.2f}" cy="{(legend_y + legend_gap):.2f}" r="{marker_r:.2f}" />',
+                f'    <text class="issue-legend-label" x="{(legend_x + label_dx):.2f}" y="{(legend_y + legend_gap + marker_r):.2f}">turning/min feature</text>',
+                f'    <circle class="issue-marker issue-info" cx="{legend_x:.2f}" cy="{(legend_y + 2 * legend_gap):.2f}" r="{marker_r:.2f}" />',
+                f'    <text class="issue-legend-label" x="{(legend_x + label_dx):.2f}" y="{(legend_y + 2 * legend_gap + marker_r):.2f}">split suggestion</text>',
+                "  </g>",
+            ]
+        )
+
     for panel in panels:
         if panel.outline:
             points = " ".join(f"{x:.2f},{y:.2f}" for x, y in panel.outline)
             lines.append(
-                f"  <polygon id=\"{panel.name}\" class=\"panel-outline\" points=\"{points}\" data-seam-allowance=\"{panel.seam_allowance}\" />"
+                "  "
+                f'<polygon id="{panel.name}-outline" class="panel-outline" '
+                f'points="{points}" data-seam-allowance="{panel.seam_allowance}" />'
             )
+            issues = metadata.get("panel_issues", {}).get(panel.name, [])
+            if issues and annotate_level != "off":
+                marker_radius = max(width, height, 1e-6) * 0.008
+                label_dx = marker_radius * 1.5
+                label_dy = marker_radius * 0.6
+                count = len(panel.outline)
+                for issue in issues:
+                    index = issue.get("index")
+                    if index is None or count == 0:
+                        continue
+                    severity = issue.get("severity", "warning")
+                    x, y = panel.outline[int(index) % count]
+                    lines.append(
+                        "  "
+                        f'<circle class="issue-marker issue-{severity}" '
+                        f'cx="{x:.2f}" cy="{y:.2f}" r="{marker_radius:.2f}" '
+                        f'data-code="{_escape_svg_text(str(issue.get("code", "")))}" />'
+                    )
+                    if annotate_level == "full":
+                        code = _escape_svg_text(str(issue.get("code", "")))
+                        lines.append(
+                            "  "
+                            f'<text class="issue-legend-label" x="{(x + label_dx):.2f}" '
+                            f'y="{(y + label_dy):.2f}">{code}</text>'
+                        )
             for grain in panel.grainlines:
                 start, end = grain.endpoints()
                 lines.append(
-                    f"  <line class=\"panel-grain\" x1=\"{start[0]:.2f}\" y1=\"{start[1]:.2f}\" x2=\"{end[0]:.2f}\" y2=\"{end[1]:.2f}\" />"
+                    "  "
+                    f'<line class="panel-grain" x1="{start[0]:.2f}" y1="{start[1]:.2f}" '
+                    f'x2="{end[0]:.2f}" y2="{end[1]:.2f}" />'
                 )
                 for arrow in grain.arrowheads():
                     if not arrow:
                         continue
                     arrow_points = " ".join(f"{x:.2f},{y:.2f}" for x, y in arrow)
-                    lines.append(
-                        f"  <polygon class=\"panel-grain-arrow\" points=\"{arrow_points}\" />"
-                    )
+                    lines.append(f'  <polygon class="panel-grain-arrow" points="{arrow_points}" />')
             for notch in panel.notches:
                 triangle = notch.triangle()
                 tri_points = " ".join(f"{x:.2f},{y:.2f}" for x, y in triangle)
-                lines.append(f"  <polygon class=\"panel-notch\" points=\"{tri_points}\" />")
+                lines.append(f'  <polygon class="panel-notch" points="{tri_points}" />')
                 if notch.label:
                     lines.append(
-                        f"  <text class=\"panel-notch-label\" x=\"{notch.position[0]:.2f}\" y=\"{notch.position[1]:.2f}\">{_escape_svg_text(str(notch.label))}</text>"
+                        "  "
+                        f'<text class="panel-notch-label" x="{notch.position[0]:.2f}" '
+                        f'y="{notch.position[1]:.2f}">{_escape_svg_text(str(notch.label))}</text>'
                     )
             for fold in panel.folds:
                 kind = fold.kind.lower().replace(" ", "-")
                 lines.append(
-                    f"  <line class=\"panel-fold panel-fold-{kind}\" x1=\"{fold.start[0]:.2f}\" y1=\"{fold.start[1]:.2f}\" x2=\"{fold.end[0]:.2f}\" y2=\"{fold.end[1]:.2f}\" />"
+                    "  "
+                    f'<line class="panel-fold panel-fold-{kind}" x1="{fold.start[0]:.2f}" '
+                    f'y1="{fold.start[1]:.2f}" x2="{fold.end[0]:.2f}" y2="{fold.end[1]:.2f}" />'
                 )
                 for chevron in fold.chevrons():
                     (cx0, cy0), (cx1, cy1) = chevron
                     lines.append(
-                        f"  <line class=\"panel-fold-chevron\" x1=\"{cx0:.2f}\" y1=\"{cy0:.2f}\" x2=\"{cx1:.2f}\" y2=\"{cy1:.2f}\" />"
+                        "  "
+                        f'<line class="panel-fold-chevron" x1="{cx0:.2f}" y1="{cy0:.2f}" '
+                        f'x2="{cx1:.2f}" y2="{cy1:.2f}" />'
                     )
         if panel.label:
             text = _escape_svg_text(panel.label.text)
             x, y = panel.label.position
             rotate_attr = (
-                f" transform=\"rotate({panel.label.rotation:.2f} {x:.2f} {y:.2f})\""
+                f' transform="rotate({panel.label.rotation:.2f} {x:.2f} {y:.2f})"'
                 if abs(panel.label.rotation) > 1e-3
                 else ""
             )
             lines.append(
-                f"  <text class=\"panel-label\" x=\"{x:.2f}\" y=\"{y:.2f}\"{rotate_attr}>{text}</text>"
+                f'  <text class="panel-label" x="{x:.2f}" y="{y:.2f}"{rotate_attr}>{text}</text>'
             )
         if not panel.seam_outline and not panel.cut_outline:
             continue
-        lines.append(
-            f"  <g id=\"{panel.name}\" data-seam-allowance=\"{panel.seam_allowance}\">"
-        )
+        lines.append(f'  <g id="{panel.name}" data-seam-allowance="{panel.seam_allowance}">')
         if panel.cut_outline:
             cut_points = " ".join(f"{x:.2f},{y:.2f}" for x, y in panel.cut_outline)
-            lines.append(
-                "    "
-                f"<polygon class=\"cut-outline\" points=\"{cut_points}\" fill=\"none\" "
-                "stroke=\"#d94f4f\" stroke-width=\"0.20\" stroke-linejoin=\"round\" />"
-            )
+            lines.append(f'    <polygon class="cut-outline" points="{cut_points}" />')
         if panel.seam_outline:
             seam_points = " ".join(f"{x:.2f},{y:.2f}" for x, y in panel.seam_outline)
-            lines.append(
-                "    "
-                f"<polygon class=\"seam-outline\" points=\"{seam_points}\" fill=\"none\" "
-                "stroke=\"#1a1a1a\" stroke-width=\"0.10\" stroke-dasharray=\"4 2\" stroke-linejoin=\"round\" />"
-            )
+            lines.append(f'    <polygon class="seam-outline" points="{seam_points}" />')
         lines.append("  </g>")
     lines.append("</svg>")
     path.write_text("\n".join(lines), encoding="utf-8")
@@ -1221,27 +1358,34 @@ def _write_dxf(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any
         "2",
         "ENTITIES",
     ]
-    for panel in panels:
-        if not panel.outline:
-            continue
-        lines.extend([
-            "0",
-            "LWPOLYLINE",
-            "8",
-            panel.name,
-            "90",
-            str(len(panel.outline)),
-        ])
-        for x, y in panel.outline:
+
+    def _add_polyline(
+        layer: str, points: Sequence[tuple[float, float]], *, closed: bool = True
+    ) -> None:
+        if not points:
+            return
+        lines.extend(
+            [
+                "0",
+                "LWPOLYLINE",
+                "8",
+                layer,
+                "90",
+                str(len(points)),
+                "70",
+                "1" if closed else "0",
+            ]
+        )
+        for x, y in points:
             lines.extend(["10", f"{x:.4f}", "20", f"{y:.4f}"])
-        lines.extend(["43", f"{panel.seam_allowance:.4f}"])
-        for grain in panel.grainlines:
-            start, end = grain.endpoints()
-            lines.extend([
+
+    def _add_line(layer: str, start: tuple[float, float], end: tuple[float, float]) -> None:
+        lines.extend(
+            [
                 "0",
                 "LINE",
                 "8",
-                f"{panel.name}_GRAIN",
+                layer,
                 "10",
                 f"{start[0]:.4f}",
                 "20",
@@ -1250,123 +1394,69 @@ def _write_dxf(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any
                 f"{end[0]:.4f}",
                 "21",
                 f"{end[1]:.4f}",
-            ])
+            ]
+        )
+
+    def _add_text(layer: str, position: tuple[float, float], text: str, height: float) -> None:
+        lines.extend(
+            [
+                "0",
+                "TEXT",
+                "8",
+                layer,
+                "10",
+                f"{position[0]:.4f}",
+                "20",
+                f"{position[1]:.4f}",
+                "40",
+                f"{height:.4f}",
+                "1",
+                text,
+            ]
+        )
+
+    for panel in panels:
+        if panel.outline:
+            _add_polyline(panel.name, panel.outline)
+            lines.extend(["43", f"{panel.seam_allowance:.4f}"])
+        for grain in panel.grainlines:
+            start, end = grain.endpoints()
+            _add_line(f"{panel.name}_GRAIN", start, end)
             for arrow in grain.arrowheads():
                 if not arrow:
                     continue
-                lines.extend([
-                    "0",
-                    "LWPOLYLINE",
-                    "8",
-                    f"{panel.name}_GRAIN",
-                    "90",
-                    "3",
-                    "70",
-                    "1",
-                ])
-                for x, y in arrow:
-                    lines.extend(["10", f"{x:.4f}", "20", f"{y:.4f}"])
+                _add_polyline(f"{panel.name}_GRAIN", arrow, closed=True)
         for notch in panel.notches:
             triangle = notch.triangle()
-        if panel.seam_outline:
-            lines.extend([
-                "0",
-                "LWPOLYLINE",
-                "8",
-                f"{panel.name}_NOTCH",
-                "90",
-                "3",
-                "70",
-                "1",
-            ])
-            for x, y in triangle:
-                lines.extend(["10", f"{x:.4f}", "20", f"{y:.4f}"])
+            _add_polyline(f"{panel.name}_NOTCH", triangle, closed=True)
             if notch.label:
-                lines.extend([
-                    "0",
-                    "TEXT",
-                    "8",
-                    f"{panel.name}_NOTCH",
-                    "10",
-                    f"{notch.position[0]:.4f}",
-                    "20",
-                    f"{notch.position[1]:.4f}",
-                    "40",
-                    "2.0",
-                    "1",
-                    str(notch.label),
-                ])
+                label_pos = (
+                    notch.position[0] + notch.normal[0] * 1.5,
+                    notch.position[1] + notch.normal[1] * 1.5,
+                )
+                _add_text(f"{panel.name}_NOTCH", label_pos, str(notch.label), height=2.0)
         for fold in panel.folds:
             kind_layer = f"{panel.name}_FOLD_{fold.kind.upper()}"
-            lines.extend([
-                "0",
-                "LINE",
-                "8",
-                kind_layer,
-                "10",
-                f"{fold.start[0]:.4f}",
-                "20",
-                f"{fold.start[1]:.4f}",
-                "11",
-                f"{fold.end[0]:.4f}",
-                "21",
-                f"{fold.end[1]:.4f}",
-            ])
+            _add_line(kind_layer, fold.start, fold.end)
             for chevron in fold.chevrons():
-                (cx0, cy0), (cx1, cy1) = chevron
-                lines.extend([
-                    "0",
-                    "LINE",
-                    "8",
-                    kind_layer,
-                    "10",
-                    f"{cx0:.4f}",
-                    "20",
-                    f"{cy0:.4f}",
-                    "11",
-                    f"{cx1:.4f}",
-                    "21",
-                    f"{cy1:.4f}",
-                ])
+                _add_line(kind_layer, chevron[0], chevron[1])
         if panel.label:
             xs = [point[0] for point in panel.outline] or [panel.label.position[0]]
             ys = [point[1] for point in panel.outline] or [panel.label.position[1]]
             extent = max(max(xs) - min(xs), max(ys) - min(ys), 1.0)
-            lines.extend([
-                "0",
-                "TEXT",
-                "8",
+            _add_text(
                 f"{panel.name}_LABEL",
-                "10",
-                f"{panel.label.position[0]:.4f}",
-                "20",
-                f"{panel.label.position[1]:.4f}",
-                "40",
-                f"{extent * 0.06:.4f}",
-                "1",
+                panel.label.position,
                 panel.label.text,
-                "50",
-                f"{panel.label.rotation:.2f}",
-            ])
-                panel.name,
-                "90",
-                str(len(panel.seam_outline)),
-            ])
-            for x, y in panel.seam_outline:
-                lines.extend(["10", f"{x:.4f}", "20", f"{y:.4f}"])
+                height=extent * 0.06,
+            )
+        if panel.seam_outline:
+            _add_polyline(f"{panel.name}_SEAM", panel.seam_outline)
             lines.extend(["43", f"{panel.seam_allowance:.4f}"])
         if panel.cut_outline:
-            lines.extend([
-                "0",
-                "LWPOLYLINE",
-                "8",
-                f"{panel.name}_CUT",
-                "90",
-                str(len(panel.cut_outline)),
-            ])
-            for x, y in panel.cut_outline:
-                lines.extend(["10", f"{x:.4f}", "20", f"{y:.4f}"])
+            _add_polyline(f"{panel.name}_CUT", panel.cut_outline)
             lines.extend(["43", f"{panel.seam_allowance:.4f}"])
+
     lines.extend(["0", "ENDSEC", "0", "EOF"])
     path.write_text("\n".join(lines), encoding="utf-8")
 
@@ -1377,14 +1467,6 @@ def _escape_pdf_text(value: str) -> str:
 
 def _write_pdf(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any]) -> None:
     min_x, min_y, max_x, max_y = _panel_bounds(panels)
-    margin = 20.0
-    width = max(100.0, (max_x - min_x) + margin * 2)
-    height = max(100.0, (max_y - min_y) + margin * 2)
-
-    def to_pdf(point: tuple[float, float]) -> tuple[float, float]:
-        return point[0] - min_x + margin, point[1] - min_y + margin
-
-    lines = [
     points_per_meter = 72.0 / 0.0254
     margin = 36.0
     drawing_width = (max_x - min_x) * points_per_meter
@@ -1392,99 +1474,97 @@ def _write_pdf(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any
     width = max(200.0, drawing_width + margin * 2)
     height = max(200.0, drawing_height + margin * 2)
 
-    info_lines = [
-        "SMII Pattern Export",
-        f"Scale: {metadata['scale']}",
-        f"Seam allowance: {metadata['seam_allowance']}",
-        f"Panels: {metadata['panel_count']}",
-    ]
-    for panel in panels:
-        seam_coords = ", ".join(f"{x:.2f},{y:.2f}" for x, y in panel.seam_outline)
-        cut_coords = ", ".join(f"{x:.2f},{y:.2f}" for x, y in (panel.cut_outline or []))
-        if seam_coords:
-            lines.append(
-                f"{panel.name} seam: {seam_coords} (allowance={panel.seam_allowance})"
-            )
-        else:
-            lines.append(
-                f"{panel.name} seam: unavailable (allowance={panel.seam_allowance})"
-            )
-        if cut_coords:
-            lines.append(f"{panel.name} cut: {cut_coords}")
-        else:
-            lines.append(f"{panel.name} cut: unavailable")
+    def to_pdf(point: tuple[float, float]) -> tuple[float, float]:
+        return (
+            (point[0] - min_x) * points_per_meter + margin,
+            (point[1] - min_y) * points_per_meter + margin,
+        )
 
-    drawing_ops: list[str] = []
-    drawing_ops.extend(["0.6 w", "0 0 0 RG", "0 0 0 rg", "[] 0 d"])
+    drawing_ops: list[str] = ["0 0 0 RG", "0.6 w", "0 0 0 rg", "[] 0 d"]
     grain_color = (0.102, 0.451, 0.909)
     fold_color = (0.333, 0.333, 0.333)
 
-    label_blocks: list[list[str]] = []
+    def _stroke_polyline(points: Sequence[tuple[float, float]], *, close: bool = True) -> None:
+        if not points:
+            return
+        start = to_pdf(points[0])
+        drawing_ops.append(f"{start[0]:.2f} {start[1]:.2f} m")
+        for point in points[1:]:
+            px, py = to_pdf(point)
+            drawing_ops.append(f"{px:.2f} {py:.2f} l")
+        if close:
+            drawing_ops.append("h")
+        drawing_ops.append("S")
+
+    def _fill_polygon(points: Sequence[tuple[float, float]]) -> None:
+        if not points:
+            return
+        start = to_pdf(points[0])
+        drawing_ops.append(f"{start[0]:.2f} {start[1]:.2f} m")
+        for point in points[1:]:
+            px, py = to_pdf(point)
+            drawing_ops.append(f"{px:.2f} {py:.2f} l")
+        drawing_ops.append("h")
+        drawing_ops.append("f")
+
+    label_ops: list[str] = []
 
     for panel in panels:
         if panel.outline:
-            transformed = [to_pdf(point) for point in panel.outline]
-            x0, y0 = transformed[0]
-            drawing_ops.append(f"{x0:.2f} {y0:.2f} m")
-            for x, y in transformed[1:]:
-                drawing_ops.append(f"{x:.2f} {y:.2f} l")
-            drawing_ops.append("h")
-            drawing_ops.append("S")
+            _stroke_polyline(panel.outline, close=True)
+        if panel.cut_outline:
+            drawing_ops.extend(
+                [
+                    "0.85 0.31 0.31 RG",
+                    "0.25 w",
+                ]
+            )
+            _stroke_polyline(panel.cut_outline, close=True)
+            drawing_ops.extend(["0 0 0 RG", "0.6 w"])
+        if panel.seam_outline:
+            drawing_ops.extend(
+                [
+                    "0.1 0.1 0.1 RG",
+                    "0.2 w",
+                    "[3 2] 0 d",
+                ]
+            )
+            _stroke_polyline(panel.seam_outline, close=True)
+            drawing_ops.extend(["[] 0 d", "0 0 0 RG", "0.6 w"])
 
-            for grain in panel.grainlines:
-                start_pt, end_pt = grain.endpoints()
-                start = to_pdf(start_pt)
-                end = to_pdf(end_pt)
-                drawing_ops.extend(
-                    [
-                        f"{grain_color[0]:.3f} {grain_color[1]:.3f} {grain_color[2]:.3f} RG",
-                        "0.4 w",
-                        "[] 0 d",
-                        f"{start[0]:.2f} {start[1]:.2f} m",
-                        f"{end[0]:.2f} {end[1]:.2f} l",
-                        "S",
-                    ]
-                )
-                drawing_ops.append(
-                    f"{grain_color[0]:.3f} {grain_color[1]:.3f} {grain_color[2]:.3f} rg"
-                )
-                for arrow in grain.arrowheads():
-                    if not arrow:
-                        continue
-                    a0 = to_pdf(arrow[0])
-                    a1 = to_pdf(arrow[1])
-                    a2 = to_pdf(arrow[2])
-                    drawing_ops.extend(
-                        [
-                            f"{a0[0]:.2f} {a0[1]:.2f} m",
-                            f"{a1[0]:.2f} {a1[1]:.2f} l",
-                            f"{a2[0]:.2f} {a2[1]:.2f} l",
-                            "h",
-                            "f",
-                        ]
-                    )
-                drawing_ops.extend(["0 0 0 rg", "0 0 0 RG", "0.6 w"])
+        for grain in panel.grainlines:
+            start_pt, end_pt = grain.endpoints()
+            start = to_pdf(start_pt)
+            end = to_pdf(end_pt)
+            drawing_ops.extend(
+                [
+                    f"{grain_color[0]:.3f} {grain_color[1]:.3f} {grain_color[2]:.3f} RG",
+                    "0.4 w",
+                    "[] 0 d",
+                    f"{start[0]:.2f} {start[1]:.2f} m",
+                    f"{end[0]:.2f} {end[1]:.2f} l",
+                    "S",
+                ]
+            )
+            drawing_ops.append(f"{grain_color[0]:.3f} {grain_color[1]:.3f} {grain_color[2]:.3f} rg")
+            for arrow in grain.arrowheads():
+                if not arrow:
+                    continue
+                _fill_polygon(arrow)
+            drawing_ops.extend(["0 0 0 rg", "0 0 0 RG", "0.6 w"])
 
-            for notch in panel.notches:
-                triangle = [to_pdf(point) for point in notch.triangle()]
-                drawing_ops.extend(
-                    [
-                        "0 0 0 rg",
-                        f"{triangle[0][0]:.2f} {triangle[0][1]:.2f} m",
-                        f"{triangle[1][0]:.2f} {triangle[1][1]:.2f} l",
-                        f"{triangle[2][0]:.2f} {triangle[2][1]:.2f} l",
-                        "h",
-                        "f",
-                    ]
-                )
-                if notch.label:
-                    label_x, label_y = to_pdf(
-                        (
-                            notch.position[0] + notch.normal[0] * 1.5,
-                            notch.position[1] + notch.normal[1] * 1.5,
-                        )
+        for notch in panel.notches:
+            drawing_ops.append("0 0 0 rg")
+            _fill_polygon(notch.triangle())
+            if notch.label:
+                label_x, label_y = to_pdf(
+                    (
+                        notch.position[0] + notch.normal[0] * 1.5,
+                        notch.position[1] + notch.normal[1] * 1.5,
                     )
-                    block = [
+                )
+                label_ops.extend(
+                    [
                         "0 0 0 rg",
                         "BT",
                         "/F1 6 Tf",
@@ -1492,35 +1572,35 @@ def _write_pdf(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any
                         f"({_escape_pdf_text(str(notch.label))}) Tj",
                         "ET",
                     ]
-                    label_blocks.append(block)
+                )
 
-            for fold in panel.folds:
-                start = to_pdf(fold.start)
-                end = to_pdf(fold.end)
+        for fold in panel.folds:
+            start = to_pdf(fold.start)
+            end = to_pdf(fold.end)
+            drawing_ops.extend(
+                [
+                    f"{fold_color[0]:.3f} {fold_color[1]:.3f} {fold_color[2]:.3f} RG",
+                    "0.4 w",
+                    "[2 2] 0 d",
+                    f"{start[0]:.2f} {start[1]:.2f} m",
+                    f"{end[0]:.2f} {end[1]:.2f} l",
+                    "S",
+                ]
+            )
+            drawing_ops.append("[] 0 d")
+            for chevron in fold.chevrons():
+                c0 = to_pdf(chevron[0])
+                c1 = to_pdf(chevron[1])
                 drawing_ops.extend(
                     [
                         f"{fold_color[0]:.3f} {fold_color[1]:.3f} {fold_color[2]:.3f} RG",
-                        "0.4 w",
-                        "[2 2] 0 d",
-                        f"{start[0]:.2f} {start[1]:.2f} m",
-                        f"{end[0]:.2f} {end[1]:.2f} l",
+                        "0.3 w",
+                        f"{c0[0]:.2f} {c0[1]:.2f} m",
+                        f"{c1[0]:.2f} {c1[1]:.2f} l",
                         "S",
                     ]
                 )
-                drawing_ops.append("[] 0 d")
-                for chevron in fold.chevrons():
-                    c0 = to_pdf(chevron[0])
-                    c1 = to_pdf(chevron[1])
-                    drawing_ops.extend(
-                        [
-                            f"{fold_color[0]:.3f} {fold_color[1]:.3f} {fold_color[2]:.3f} RG",
-                            "0.3 w",
-                            f"{c0[0]:.2f} {c0[1]:.2f} m",
-                            f"{c1[0]:.2f} {c1[1]:.2f} l",
-                            "S",
-                        ]
-                    )
-                drawing_ops.extend(["0 0 0 RG", "0.6 w"])
+            drawing_ops.extend(["0 0 0 RG", "0.6 w"])
 
         if panel.label:
             xs = [point[0] for point in panel.outline] or [panel.label.position[0]]
@@ -1528,41 +1608,57 @@ def _write_pdf(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any
             extent = max(max(xs) - min(xs), max(ys) - min(ys), 1.0)
             px, py = to_pdf(panel.label.position)
             size = min(18.0, max(8.0, extent * 0.12))
-            block: list[str] = ["0 0 0 rg", "BT", f"/F1 {size:.1f} Tf"]
+            label_ops.extend(
+                [
+                    "0 0 0 rg",
+                    "BT",
+                    f"/F1 {size:.1f} Tf",
+                ]
+            )
             if abs(panel.label.rotation) > 1e-3:
                 angle = math.radians(panel.label.rotation)
                 cos_a = math.cos(angle)
                 sin_a = math.sin(angle)
-                block.append(
+                label_ops.append(
                     f"{cos_a:.4f} {sin_a:.4f} {-sin_a:.4f} {cos_a:.4f} {px:.2f} {py:.2f} Tm"
                 )
             else:
-                block.append(f"{px:.2f} {py:.2f} Td")
-            block.append(f"({_escape_pdf_text(panel.label.text)}) Tj")
-            block.append("ET")
-            label_blocks.append(block)
+                label_ops.append(f"{px:.2f} {py:.2f} Td")
+            label_ops.append(f"({_escape_pdf_text(panel.label.text)}) Tj")
+            label_ops.append("ET")
 
-    text_ops = ["0 0 0 rg", "BT", "/F1 12 Tf", f"20 {height - 40:.2f} Td"]
-    for index, line in enumerate(lines):
-    header_ops = ["BT", "/F1 12 Tf"]
-    top_text_y = height - margin
-    for index, line in enumerate(info_lines):
-        escaped = _escape_pdf_text(line)
-        if index == 0:
-            header_ops.append(f"1 0 0 1 {margin:.2f} {top_text_y:.2f} Tm")
-            header_ops.append(f"({escaped}) Tj")
+    header_lines = [
+        "SMII Pattern Export",
+        f"Scale: {metadata['scale']}",
+        f"Seam allowance: {metadata['seam_allowance']}",
+        f"Panels: {metadata['panel_count']}",
+    ]
+
+    info_lines = list(header_lines)
+    for panel in panels:
+        seam_coords = ", ".join(f"{x:.2f},{y:.2f}" for x, y in panel.seam_outline)
+        cut_coords = ", ".join(f"{x:.2f},{y:.2f}" for x, y in (panel.cut_outline or []))
+        if seam_coords:
+            info_lines.append(
+                f"{panel.name} seam: {seam_coords} (allowance={panel.seam_allowance})"
+            )
         else:
-            text_ops.append(f"0 -14 Td ({escaped}) Tj")
-    text_ops.append("ET")
-    content_parts = drawing_ops + text_ops
-    for block in label_blocks:
-        content_parts.extend(block)
-            offset = 14.0 * index
-            header_ops.append(f"1 0 0 1 {margin:.2f} {top_text_y - offset:.2f} Tm")
-            header_ops.append(f"({escaped}) Tj")
-    header_ops.append("ET")
+            info_lines.append(f"{panel.name} seam: unavailable (allowance={panel.seam_allowance})")
+        if cut_coords:
+            info_lines.append(f"{panel.name} cut: {cut_coords}")
+        else:
+            info_lines.append(f"{panel.name} cut: unavailable")
 
-    content_parts = drawing_ops + header_ops + label_ops
+    text_ops: list[str] = ["0 0 0 rg", "BT", "/F1 12 Tf"]
+    text_y = height - margin
+    for line in info_lines:
+        escaped = _escape_pdf_text(line)
+        text_ops.append(f"1 0 0 1 {margin:.2f} {text_y:.2f} Tm")
+        text_ops.append(f"({escaped}) Tj")
+        text_y -= 14.0
+    text_ops.append("ET")
+
+    content_parts = drawing_ops + text_ops + label_ops
     content_stream = "\n".join(content_parts).encode("utf-8")
 
     objects: list[bytes] = []
@@ -1600,27 +1696,6 @@ def _write_pdf(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any
         f"trailer\n<< /Size {count} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF".encode("utf-8")
     )
     path.write_bytes(buffer)
-
-
-def _polygon_centroid(points: Sequence[tuple[float, float]]) -> tuple[float, float]:
-    if not points:
-        return 0.0, 0.0
-    area = 0.0
-    centroid_x = 0.0
-    centroid_y = 0.0
-    for index, (x0, y0) in enumerate(points):
-        x1, y1 = points[(index + 1) % len(points)]
-        cross = x0 * y1 - x1 * y0
-        area += cross
-        centroid_x += (x0 + x1) * cross
-        centroid_y += (y0 + y1) * cross
-    area *= 0.5
-    if math.isclose(area, 0.0):
-        avg_x = sum(point[0] for point in points) / len(points)
-        avg_y = sum(point[1] for point in points) / len(points)
-        return avg_x, avg_y
-    factor = 1.0 / (6.0 * area)
-    return centroid_x * factor, centroid_y * factor
 
 
 __all__ = [

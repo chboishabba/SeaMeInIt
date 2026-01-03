@@ -21,7 +21,9 @@ def _load_json(path: Path) -> Mapping[str, Any]:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Export undersuit panels as 2D pattern files.")
-    parser.add_argument("--mesh", type=Path, required=True, help="Path to undersuit panel mesh JSON")
+    parser.add_argument(
+        "--mesh", type=Path, required=True, help="Path to undersuit panel mesh JSON"
+    )
     parser.add_argument("--seams", type=Path, required=True, help="Path to seam annotation JSON")
     parser.add_argument(
         "--output",
@@ -35,7 +37,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=["pdf", "svg", "dxf"],
         help="One or more formats to export (default: pdf svg dxf).",
     )
-    parser.add_argument("--scale", type=float, default=1.0, help="Scale factor applied during flattening.")
+    parser.add_argument(
+        "--scale", type=float, default=1.0, help="Scale factor applied during flattening."
+    )
     parser.add_argument(
         "--seam-allowance",
         type=float,
@@ -52,6 +56,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         choices=("simple", "lscm"),
         default="simple",
         help="Flattening backend used when generating 2D panels.",
+    )
+    parser.add_argument(
+        "--annotate-level",
+        choices=("off", "summary", "full"),
+        default="summary",
+        help="SVG annotation level for issue overlays (default: summary).",
     )
     args = parser.parse_args(argv)
 
@@ -73,6 +83,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         output_dir=args.output,
         formats=args.formats,
         metadata=metadata,
+        annotate_level=args.annotate_level,
     )
 
     for fmt, path in created.items():

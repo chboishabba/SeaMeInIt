@@ -13,13 +13,28 @@ import numpy as np
 
 from exporters.patterns import PatternExporter
 from modules.cooling import plan_cooling_layout
-from suit import UnderSuitGenerator, UnderSuitOptions
+from suit import (
+    Panel,
+    PanelStatus,
+    SurfacePatch,
+    SuitMaterial,
+    UnderSuitGenerator,
+    UnderSuitOptions,
+    combine_results,
+    panel_budgets_for,
+    panel_to_payload,
+    validate_panel_budgets,
+    validate_panel_curvature,
+)
+from suit.panel_adapter import PanelPayloadSource
+from suit.panel_payload import PanelPayload
 from suit.seam_generator import SeamGenerator
 from suit.thermal_zones import DEFAULT_THERMAL_ZONE_SPEC
 from smii.meshing import load_body_record
 
 OUTPUT_ROOT = Path("outputs/suits")
 COOLING_OUTPUT_ROOT = Path("outputs/modules/cooling")
+
 
 __all__ = ["generate_undersuit", "load_body_record", "main"]
 
@@ -53,10 +68,20 @@ def _compose_measurement_map(
                     continue
                 confidence = entry.get("confidence")
                 source = entry.get("source")
-                weight = 1.0 if source == "measured" else float(confidence) if confidence is not None else 1.0
+                weight = (
+                    1.0
+                    if source == "measured"
+                    else float(confidence)
+                    if confidence is not None
+                    else 1.0
+                )
                 name_str = str(name)
                 # Prefer measured entries when duplicates are encountered
-                if name_str in measurement_map and measurement_map[name_str][1] >= 1.0 and weight < 1.0:
+                if (
+                    name_str in measurement_map
+                    and measurement_map[name_str][1] >= 1.0
+                    and weight < 1.0
+                ):
                     continue
                 measurement_map[name_str] = (float(value), float(weight))
 
@@ -85,8 +110,7 @@ def _resolve_body_path(path: Path) -> Path:
 
     missing = ", ".join(str(candidate) for candidate in candidates)
     raise FileNotFoundError(
-        f"Body record '{path}' not found. Provide a JSON or NPZ file "
-        f"(checked: {missing})."
+        f"Body record '{path}' not found. Provide a JSON or NPZ file (checked: {missing})."
     )
 
 
@@ -147,7 +171,7 @@ def _build_panel_payload(
     if vertices_arr.ndim != 2 or vertices_arr.shape[1] != 3:
         raise ValueError("Base layer vertices must be shaped (N, 3).")
 
-    panels: list[dict[str, Any]] = []
+    panels: list[PanelPayload] = []
     for definition in definitions:
         name = str(definition["name"])
         explicit_vertices = definition.get("vertices")
@@ -167,7 +191,8 @@ def _build_panel_payload(
         faces = definition.get("faces")
         if faces is not None:
             panel_faces = [
-                (int(face[0]), int(face[1]), int(face[2])) for face in faces  # type: ignore[index]
+                (int(face[0]), int(face[1]), int(face[2]))
+                for face in faces  # type: ignore[index]
             ]
         else:
             count = panel_vertices.shape[0]
@@ -175,14 +200,18 @@ def _build_panel_payload(
                 raise ValueError(f"Panel '{name}' must include at least three vertices.")
             panel_faces = [(0, i, i + 1) for i in range(1, count - 1)]
 
+        metadata = dict(definition.get("metadata", {}) or {})
+        vertices = tuple(tuple(map(float, vertex)) for vertex in panel_vertices.tolist())
+        faces = tuple(panel_faces)
         panels.append(
-            {
-                "name": name,
-                "vertices": panel_vertices.tolist(),
-                "faces": [list(face) for face in panel_faces],
-            }
+            PanelPayload(
+                name=name,
+                vertices=vertices,
+                faces=faces,
+                metadata=metadata,
+            )
         )
-    return {"panels": panels}
+    return {"panels": [panel.to_mapping() for panel in panels]}
 
 
 def _ensure_output_dir(base_dir: Path | None, body_path: Path) -> Path:
@@ -316,13 +345,13 @@ def generate_undersuit(
     output_dir: Path | None = None,
     measurements: Mapping[str, float] | None = None,
     options: UnderSuitOptions | None = None,
+    material: SuitMaterial = SuitMaterial.NEOPRENE,
     embed_cooling: bool = False,
     cooling_medium: str = "liquid",
     joint_map: Mapping[str, Sequence[float]] | None = None,
     panels_json: Path | None = None,
     seams_json: Path | None = None,
     pattern_backend: str = "simple",
-
 ) -> None:
     """Run the undersuit generation pipeline and persist all artefacts."""
 
@@ -399,20 +428,79 @@ def generate_undersuit(
             metadata=metadata,
         )
 
-
     pattern_dir = target_dir / "patterns"
-    exporter = PatternExporter()
-    mesh_payload = seam_graph.to_payload()
+    budgets = panel_budgets_for(material)
+    exporter = PatternExporter(budgets=budgets)
+    panel_payloads: list[PanelPayload] = []
+    panel_validation: dict[str, dict[str, object]] = {}
+    for seam_panel in seam_graph.panels:
+        vertices = tuple(tuple(map(float, vertex)) for vertex in seam_panel.vertices.tolist())
+        faces = tuple(tuple(int(idx) for idx in face) for face in seam_panel.faces.tolist())
+        source = PanelPayloadSource(vertices=vertices, faces=faces)
+        surface_patch = SurfacePatch(
+            vertex_indices=tuple(range(len(vertices))),
+            face_indices=tuple(range(len(faces))),
+            metadata={"panel_curvature": seam_panel.metadata.get("panel_curvature")},
+        )
+        panel = Panel(
+            panel_id=seam_panel.name,
+            surface_patch=surface_patch,
+            budgets=budgets,
+        )
+        validation = combine_results(
+            validate_panel_budgets(panel),
+            validate_panel_curvature(panel),
+        )
+        if not validation.ok:
+            panel = Panel(
+                panel_id=panel.panel_id,
+                surface_patch=panel.surface_patch,
+                boundary_3d=panel.boundary_3d,
+                boundary_2d=panel.boundary_2d,
+                seams=panel.seams,
+                grain=panel.grain,
+                budgets=panel.budgets,
+                status=PanelStatus(
+                    sewable=False,
+                    reason="; ".join(issue.code for issue in validation.issues),
+                ),
+            )
+        payload = panel_to_payload(panel, source, include_surface_metadata=False)
+        panel_payloads.append(payload)
+        panel_validation[seam_panel.name] = {
+            "ok": validation.ok,
+            "issues": [issue.code for issue in validation.issues],
+        }
+
+    mesh_payload = {"panels": [panel.to_mapping() for panel in panel_payloads]}
     exported = exporter.export(
         mesh_payload,
         seam_graph.seam_metadata,
         output_dir=pattern_dir,
         metadata={"body_record": str(body_path)},
     )
+    regularization_warnings = {}
+    regularization_issues = {}
+    regularization_summaries = {}
+    if exporter.last_metadata:
+        regularization_warnings = exporter.last_metadata.get("panel_warnings", {})
+        regularization_issues = exporter.last_metadata.get("panel_issues", {})
+        regularization_summaries = exporter.last_metadata.get("panel_issue_summaries", {})
+    for panel_name, warnings in regularization_warnings.items():
+        entry = panel_validation.setdefault(panel_name, {"ok": True, "issues": []})
+        entry["regularization_issues"] = list(warnings)
+    for panel_name, issues in regularization_issues.items():
+        entry = panel_validation.setdefault(panel_name, {"ok": True, "issues": []})
+        entry["regularization_issue_details"] = list(issues)
+    for panel_name, summary in regularization_summaries.items():
+        entry = panel_validation.setdefault(panel_name, {"ok": True, "issues": []})
+        entry["regularization_status"] = dict(summary)
     metadata["patterns"] = {
         "panels": [panel.name for panel in seam_graph.panels],
         "files": {fmt: str(path) for fmt, path in exported.items()},
         "panel_count": len(seam_graph.panels),
+        "material": material.value,
+        "panel_validation": panel_validation,
         "measurement_loops": {
             loop.name: {
                 "axis_coordinate": loop.axis_coordinate,
@@ -420,17 +508,17 @@ def generate_undersuit(
             }
             for loop in seam_graph.measurement_loops
         },
-        "seams": {
-            name: dict(values) for name, values in seam_graph.seam_metadata.items()
+        "seams": {name: dict(values) for name, values in seam_graph.seam_metadata.items()},
+        "axis_map": {
+            key: axis_map[key].tolist() for key in ("longitudinal", "lateral", "anterior")
         },
-        "axis_map": {key: axis_map[key].tolist() for key in ("longitudinal", "lateral", "anterior")},
     }
 
     panel_definitions = _load_panel_definitions(panels_json)
     if panel_definitions:
         seams = _load_seam_overrides(seams_json)
         mesh_payload = _build_panel_payload(result.base_layer.vertices, panel_definitions)
-        exporter = PatternExporter(backend=pattern_backend)
+        exporter = PatternExporter(backend=pattern_backend, budgets=budgets)
         pattern_dir = target_dir / "patterns"
         exported = exporter.export(
             mesh_payload,
@@ -450,7 +538,6 @@ def generate_undersuit(
         if seams is not None:
             pattern_metadata["seams"] = seams
         metadata["patterns"] = pattern_metadata
-
 
     _write_metadata(target_dir / "metadata.json", metadata)
 
@@ -592,6 +679,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         default="simple",
         help="Flattening backend used when exporting undersuit patterns.",
     )
+    parser.add_argument(
+        "--material",
+        choices=tuple(material.value for material in SuitMaterial),
+        default=SuitMaterial.NEOPRENE.value,
+        help="Material profile used to select panel budgets.",
+    )
     args = parser.parse_args(argv)
 
     measurements = _load_measurements(args.measurements)
@@ -604,13 +697,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         output_dir=args.output,
         measurements=measurements,
         options=options,
+        material=SuitMaterial(args.material),
         embed_cooling=args.embed_cooling,
         cooling_medium=args.cooling_medium,
         joint_map=joint_map,
         panels_json=args.panels_json,
         seams_json=args.seams_json,
         pattern_backend=args.pattern_backend,
-
     )
 
     return 0
