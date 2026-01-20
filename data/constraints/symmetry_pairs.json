@@ -1,0 +1,77 @@
+{
+  "vertex_pairs": [
+    [
+      110,
+      890
+    ],
+    [
+      125,
+      875
+    ],
+    [
+      140,
+      860
+    ],
+    [
+      155,
+      845
+    ],
+    [
+      170,
+      830
+    ]
+  ],
+  "edge_pairs": [
+    {
+      "left": [
+        110,
+        125
+      ],
+      "right": [
+        890,
+        875
+      ]
+    },
+    {
+      "left": [
+        125,
+        140
+      ],
+      "right": [
+        875,
+        860
+      ]
+    },
+    {
+      "left": [
+        140,
+        155
+      ],
+      "right": [
+        860,
+        845
+      ]
+    },
+    {
+      "left": [
+        155,
+        170
+      ],
+      "right": [
+        845,
+        830
+      ]
+    },
+    {
+      "left": [
+        170,
+        190
+      ],
+      "right": [
+        830,
+        810
+      ]
+    }
+  ],
+  "notes": "Symmetry pairs mirror left/right seams across the sagittal plane; edge pairs use explicit left/right endpoints for clarity in loaders and diagnostics."
+}

@@ -121,7 +121,7 @@ def test_woven_flags_where_neoprene_allows() -> None:
 
     assert neoprene_outline
     assert woven_outline
-    assert not neoprene_issues
+    assert {issue.code for issue in neoprene_issues} <= {"SPLINE_FIT_APPLIED"}
     assert any(issue.code == "TURNING_BUDGET_EXCEEDED" for issue in woven_issues)
 
 
@@ -186,7 +186,7 @@ def test_suppress_min_features_removes_short_runs() -> None:
     boundary = _make_zigzag(step_mm=3.0, amplitude_mm=6.0, segments=20)
     base = boundary[:-1] if boundary[0] == boundary[-1] else boundary
 
-    suppressed, _ = suppress_min_features(boundary, 3.0, NEOPRENE_DEFAULT_BUDGETS)
+    suppressed, _, _, _ = suppress_min_features(boundary, 3.0, NEOPRENE_DEFAULT_BUDGETS)
 
     assert len(suppressed) < len(base)
 

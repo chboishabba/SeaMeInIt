@@ -1,89 +1,41 @@
-"""Tests for panel validation helpers."""
+"""Tests for panel validation gate aggregation."""
 
 from __future__ import annotations
 
-from suit import (
-    Panel,
-    PanelBudgets,
-    SurfacePatch,
-    combine_results,
-    validate_panel_budgets,
-    validate_panel_curvature,
-)
+from suit import SuitMaterial
+from suit.panel_validation import gate_panel_validation
 
 
-def test_validate_panel_budgets_requires_budgets() -> None:
-    result = validate_panel_budgets(Panel(panel_id="front"))
-
-    assert not result.ok
-    assert result.issues
-    assert result.issues[0].code == "missing_budgets"
-
-
-def test_validate_panel_budgets_accepts_positive_values() -> None:
-    panel = Panel(
-        panel_id="front",
-        budgets=PanelBudgets(
-            distortion_max=0.1,
-            curvature_min_radius=0.01,
-            turning_max_per_length=0.5,
-            min_feature_size=0.02,
-        ),
+def test_gate_panel_validation_ok() -> None:
+    result = gate_panel_validation(
+        budget_issue_codes=[],
+        regularization_issues=[],
+        material=SuitMaterial.NEOPRENE,
     )
 
-    result = validate_panel_budgets(panel)
+    assert result.status == "ok"
+    assert result.blocking_codes == ()
+    assert result.advisory_codes == ()
 
-    assert result.ok
-    assert result.issues == ()
 
-
-def test_validate_panel_budgets_flags_invalid_values() -> None:
-    panel = Panel(
-        panel_id="front",
-        budgets=PanelBudgets(
-            distortion_max=-1.0,
-            curvature_min_radius=0.0,
-            turning_max_per_length=-0.1,
-            min_feature_size=0.0,
-        ),
+def test_gate_panel_validation_warning() -> None:
+    result = gate_panel_validation(
+        budget_issue_codes=[],
+        regularization_issues=[{"code": "TURNING_BUDGET_EXCEEDED", "severity": "warning"}],
+        material=SuitMaterial.NEOPRENE,
     )
 
-    result = validate_panel_budgets(panel)
-
-    assert not result.ok
-    assert {issue.code for issue in result.issues} == {
-        "distortion_max_missing",
-        "curvature_min_radius_missing",
-        "turning_max_per_length_missing",
-        "min_feature_size_missing",
-    }
+    assert result.status == "warning"
+    assert "TURNING_BUDGET_EXCEEDED" in result.advisory_codes
+    assert result.blocking_codes == ()
 
 
-def test_validate_panel_curvature_checks_budget() -> None:
-    panel = Panel(
-        panel_id="front",
-        surface_patch=SurfacePatch(metadata={"panel_curvature": 200.0}),
-        budgets=PanelBudgets(
-            distortion_max=0.1,
-            curvature_min_radius=0.01,
-            turning_max_per_length=0.5,
-            min_feature_size=0.02,
-        ),
+def test_gate_panel_validation_error() -> None:
+    result = gate_panel_validation(
+        budget_issue_codes=[],
+        regularization_issues=[{"code": "SEAM_MISMATCH", "severity": "error"}],
+        material=SuitMaterial.NEOPRENE,
     )
 
-    result = validate_panel_curvature(panel)
-
-    assert not result.ok
-    assert result.issues[0].code == "curvature_budget_exceeded"
-
-
-def test_combine_results_merges_issues() -> None:
-    panel = Panel(panel_id="front")
-
-    combined = combine_results(
-        validate_panel_budgets(panel),
-        validate_panel_curvature(panel),
-    )
-
-    assert not combined.ok
-    assert combined.issues
+    assert result.status == "error"
+    assert "SEAM_MISMATCH" in result.blocking_codes

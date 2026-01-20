@@ -8,7 +8,7 @@ from typing import Iterable, Iterator, Mapping, MutableMapping, Sequence
 
 import numpy as np
 
-from ..schemas.validators import validate_attachment_catalog
+from schemas.validators import validate_attachment_catalog
 
 __all__ = [
     "Attachment",

@@ -21,6 +21,7 @@ from suit import (
     UnderSuitGenerator,
     UnderSuitOptions,
     combine_results,
+    gate_panel_validation,
     panel_budgets_for,
     panel_to_payload,
     validate_panel_budgets,
@@ -29,6 +30,7 @@ from suit import (
 from suit.panel_adapter import PanelPayloadSource
 from suit.panel_payload import PanelPayload
 from suit.seam_generator import SeamGenerator
+from suit.seam_metadata import normalize_seam_metadata
 from suit.thermal_zones import DEFAULT_THERMAL_ZONE_SPEC
 from smii.meshing import load_body_record
 
@@ -352,6 +354,8 @@ def generate_undersuit(
     panels_json: Path | None = None,
     seams_json: Path | None = None,
     pattern_backend: str = "simple",
+    auto_split: bool = False,
+    pdf_page_size: str = "a4",
 ) -> None:
     """Run the undersuit generation pipeline and persist all artefacts."""
 
@@ -430,7 +434,7 @@ def generate_undersuit(
 
     pattern_dir = target_dir / "patterns"
     budgets = panel_budgets_for(material)
-    exporter = PatternExporter(budgets=budgets)
+    exporter = PatternExporter(budgets=budgets, pdf_page_size=pdf_page_size)
     panel_payloads: list[PanelPayload] = []
     panel_validation: dict[str, dict[str, object]] = {}
     for seam_panel in seam_graph.panels:
@@ -473,11 +477,13 @@ def generate_undersuit(
         }
 
     mesh_payload = {"panels": [panel.to_mapping() for panel in panel_payloads]}
+    seam_metadata = normalize_seam_metadata(seam_graph.seam_metadata) or {}
     exported = exporter.export(
         mesh_payload,
-        seam_graph.seam_metadata,
+        seam_metadata,
         output_dir=pattern_dir,
         metadata={"body_record": str(body_path)},
+        auto_split=auto_split,
     )
     regularization_warnings = {}
     regularization_issues = {}
@@ -495,6 +501,13 @@ def generate_undersuit(
     for panel_name, summary in regularization_summaries.items():
         entry = panel_validation.setdefault(panel_name, {"ok": True, "issues": []})
         entry["regularization_status"] = dict(summary)
+    for panel_name, entry in panel_validation.items():
+        gate = gate_panel_validation(
+            budget_issue_codes=entry.get("issues", []),
+            regularization_issues=entry.get("regularization_issue_details"),
+            material=material,
+        )
+        entry["gate"] = gate.to_mapping()
     metadata["patterns"] = {
         "panels": [panel.name for panel in seam_graph.panels],
         "files": {fmt: str(path) for fmt, path in exported.items()},
@@ -508,23 +521,35 @@ def generate_undersuit(
             }
             for loop in seam_graph.measurement_loops
         },
-        "seams": {name: dict(values) for name, values in seam_graph.seam_metadata.items()},
+        "seams": {name: dict(values) for name, values in seam_metadata.items()},
         "axis_map": {
             key: axis_map[key].tolist() for key in ("longitudinal", "lateral", "anterior")
         },
     }
+    if auto_split and exporter.last_metadata:
+        auto_split_meta = exporter.last_metadata.get("auto_split")
+        if auto_split_meta:
+            metadata["patterns"]["auto_split"] = dict(auto_split_meta)
+        panel_count = exporter.last_metadata.get("panel_count")
+        if panel_count:
+            metadata["patterns"]["panel_count"] = int(panel_count)
 
     panel_definitions = _load_panel_definitions(panels_json)
     if panel_definitions:
-        seams = _load_seam_overrides(seams_json)
+        seams = normalize_seam_metadata(_load_seam_overrides(seams_json))
         mesh_payload = _build_panel_payload(result.base_layer.vertices, panel_definitions)
-        exporter = PatternExporter(backend=pattern_backend, budgets=budgets)
+        exporter = PatternExporter(
+            backend=pattern_backend,
+            budgets=budgets,
+            pdf_page_size=pdf_page_size,
+        )
         pattern_dir = target_dir / "patterns"
         exported = exporter.export(
             mesh_payload,
             seams,
             output_dir=pattern_dir,
             metadata={"body_record": str(body_path)},
+            auto_split=auto_split,
         )
         pattern_metadata: dict[str, Any] = {
             "panel_source": str(panels_json),
@@ -537,6 +562,13 @@ def generate_undersuit(
             pattern_metadata["seam_source"] = str(seams_json)
         if seams is not None:
             pattern_metadata["seams"] = seams
+        if auto_split and exporter.last_metadata:
+            auto_split_meta = exporter.last_metadata.get("auto_split")
+            if auto_split_meta:
+                pattern_metadata["auto_split"] = dict(auto_split_meta)
+            panel_count = exporter.last_metadata.get("panel_count")
+            if panel_count:
+                pattern_metadata["panel_count"] = int(panel_count)
         metadata["patterns"] = pattern_metadata
 
     _write_metadata(target_dir / "metadata.json", metadata)
@@ -680,6 +712,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Flattening backend used when exporting undersuit patterns.",
     )
     parser.add_argument(
+        "--pdf-page-size",
+        choices=("a4", "letter", "a0"),
+        default="a4",
+        help="PDF page size used for tiling (default: a4).",
+    )
+    parser.add_argument(
+        "--auto-split",
+        action="store_true",
+        help="Automatically split panels when SUGGEST_SPLIT is emitted.",
+    )
+    parser.add_argument(
         "--material",
         choices=tuple(material.value for material in SuitMaterial),
         default=SuitMaterial.NEOPRENE.value,
@@ -704,6 +747,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         panels_json=args.panels_json,
         seams_json=args.seams_json,
         pattern_backend=args.pattern_backend,
+        auto_split=args.auto_split,
+        pdf_page_size=args.pdf_page_size,
     )
 
     return 0

@@ -1,0 +1,31 @@
+# ROM sample payload schema (draft)
+
+type: object
+required:
+  - samples
+properties:
+  samples:
+    type: array
+    items:
+      type: object
+      required: [pose_id, coeffs]
+      properties:
+        pose_id:
+          type: string
+          description: Identifier for the accepted ROM derivation.
+        coeffs:
+          type: object
+          description: Mapping of field key to coefficient vector.
+          additionalProperties:
+            type: array
+            items:
+              type: number
+            description: 1-D array of length K matching the kernel basis component count.
+        fabric:
+          type: object
+          description: Optional fabric parameter subset used for this sample.
+additionalProperties: false
+
+notes: >
+  Coefficients are projected via the canonical basis defined in schemas/basis_readme.md.
+  Acceptance gating should occur before writing this file. This schema supports Sprint 2 aggregation.

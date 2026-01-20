@@ -111,9 +111,10 @@ def test_fit_from_images_uses_embedded_metadata_when_regressor_missing(monkeypat
     )
     monkeypatch.delitem(sys.modules, "pipelines.afflec_regression", raising=False)
 
-    result = fit_smplx_from_images(
-        [FIXTURE_DIR / "sample_front.pgm", FIXTURE_DIR / "sample_side.pgm"]
-    )
+    with pytest.warns(RuntimeWarning, match="afflec_regression is not available"):
+        result = fit_smplx_from_images(
+            [FIXTURE_DIR / "sample_front.pgm", FIXTURE_DIR / "sample_side.pgm"]
+        )
 
     assert result == "fit-result"
     assert called["measurements"] == {

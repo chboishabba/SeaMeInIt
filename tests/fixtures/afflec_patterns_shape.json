@@ -43,42 +43,82 @@
     "chest_circumference_to_neck_circumference_left": {
       "issues": [],
       "ok": "bool",
-      "regularization_issues": []
+      "regularization_issues": [],
+      "gate": {
+        "status": "str",
+        "blocking_codes": [],
+        "advisory_codes": []
+      }
     },
     "chest_circumference_to_neck_circumference_right": {
       "issues": [],
       "ok": "bool",
-      "regularization_issues": []
+      "regularization_issues": [],
+      "gate": {
+        "status": "str",
+        "blocking_codes": [],
+        "advisory_codes": []
+      }
     },
     "hip_circumference_to_waist_circumference_left": {
       "issues": [],
       "ok": "bool",
-      "regularization_issues": []
+      "regularization_issues": [],
+      "gate": {
+        "status": "str",
+        "blocking_codes": [],
+        "advisory_codes": []
+      }
     },
     "hip_circumference_to_waist_circumference_right": {
       "issues": [],
       "ok": "bool",
-      "regularization_issues": []
+      "regularization_issues": [],
+      "gate": {
+        "status": "str",
+        "blocking_codes": [],
+        "advisory_codes": []
+      }
     },
     "thigh_circumference_to_hip_circumference_left": {
       "issues": [],
       "ok": "bool",
-      "regularization_issues": []
+      "regularization_issues": [],
+      "gate": {
+        "status": "str",
+        "blocking_codes": [],
+        "advisory_codes": []
+      }
     },
     "thigh_circumference_to_hip_circumference_right": {
       "issues": [],
       "ok": "bool",
-      "regularization_issues": []
+      "regularization_issues": [],
+      "gate": {
+        "status": "str",
+        "blocking_codes": [],
+        "advisory_codes": []
+      }
     },
     "waist_circumference_to_chest_circumference_left": {
       "issues": [],
       "ok": "bool",
-      "regularization_issues": []
+      "regularization_issues": [],
+      "gate": {
+        "status": "str",
+        "blocking_codes": [],
+        "advisory_codes": []
+      }
     },
     "waist_circumference_to_chest_circumference_right": {
       "issues": [],
       "ok": "bool",
-      "regularization_issues": []
+      "regularization_issues": [],
+      "gate": {
+        "status": "str",
+        "blocking_codes": [],
+        "advisory_codes": []
+      }
     }
   },
   "panels": [

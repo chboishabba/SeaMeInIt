@@ -71,7 +71,7 @@ def test_almost_circle_is_clean() -> None:
 
     _, issues = regularize_boundary(boundary, budgets)
 
-    assert issues == []
+    assert {issue.code for issue in issues} <= {"SPLINE_FIT_APPLIED"}
 
 
 def test_spike_triggers_curvature_error() -> None:

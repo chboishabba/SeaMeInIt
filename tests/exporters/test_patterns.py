@@ -192,6 +192,33 @@ def test_export_writes_metadata_and_annotations(
     assert b"test_panel cut:" in pdf_bytes
 
 
+def test_pattern_exporter_tiles_pdf(tmp_path: Path) -> None:
+    exporter = PatternExporter()
+    mesh_payload = {
+        "panels": [
+            {
+                "name": "tile_panel",
+                "vertices": [
+                    (0.0, 0.0, 0.0),
+                    (0.3, 0.0, 0.0),
+                    (0.3, 0.1, 0.0),
+                    (0.0, 0.1, 0.0),
+                ],
+                "faces": [(0, 1, 2), (0, 2, 3)],
+            }
+        ]
+    }
+
+    created = exporter.export(mesh_payload, None, output_dir=tmp_path, formats=["pdf"])
+
+    assert exporter.last_metadata
+    assert exporter.last_metadata["pdf_page_size"] == "a4"
+    assert exporter.last_metadata["pdf_page_count"] == 2
+    pdf_bytes = created["pdf"].read_bytes()
+    page_count = pdf_bytes.count(b"/Type /Page") - 1
+    assert page_count == 2
+
+
 def _square_panel(name: str = "square") -> dict:
     return {
         "name": name,
@@ -199,6 +226,19 @@ def _square_panel(name: str = "square") -> dict:
             (0.0, 0.0, 0.0),
             (1.0, 0.0, 0.0),
             (1.0, 1.0, 0.0),
+            (0.0, 1.0, 0.0),
+        ],
+        "faces": [(0, 1, 2), (0, 2, 3)],
+    }
+
+
+def _rect_panel(name: str = "rect") -> dict:
+    return {
+        "name": name,
+        "vertices": [
+            (0.0, 0.0, 0.0),
+            (2.0, 0.0, 0.0),
+            (2.0, 1.0, 0.0),
             (0.0, 1.0, 0.0),
         ],
         "faces": [(0, 1, 2), (0, 2, 3)],
@@ -295,6 +335,47 @@ def test_pattern_exporter_annotates_panel_issues(tmp_path: Path) -> None:
     svg_text = created["svg"].read_text(encoding="utf-8")
     assert "panel_issues" in svg_text
     assert "issue-marker" in svg_text
+
+
+def test_pattern_exporter_flags_seam_mismatch(tmp_path: Path) -> None:
+    exporter = PatternExporter()
+    mesh_payload = {"panels": [_square_panel("panel_a"), _rect_panel("panel_b")]}
+    seams = {
+        "panel_a": {"seam_partner": "panel_b", "seam_length_tolerance": 0.01},
+        "panel_b": {"seam_partner": "panel_a", "seam_length_tolerance": 0.01},
+    }
+
+    exporter.export(mesh_payload, seams, output_dir=tmp_path, formats=["svg"])
+
+    assert exporter.last_metadata
+    panel_issues = exporter.last_metadata.get("panel_issues", {})
+    assert any(issue["code"] == "SEAM_MISMATCH" for issue in panel_issues["panel_a"])
+    assert any(issue["code"] == "SEAM_MISMATCH" for issue in panel_issues["panel_b"])
+
+
+def test_pattern_exporter_propagates_seam_split_metadata(tmp_path: Path) -> None:
+    exporter = PatternExporter()
+    mesh_payload = {"panels": [_square_panel("panel_a")]}
+    seams = {
+        "panel_a": {
+            "seam_avoid_ranges": [(2, 4)],
+            "seam_midpoint_index": 3,
+        }
+    }
+
+    exporter.export(mesh_payload, seams, output_dir=tmp_path, formats=["svg"])
+
+    assert exporter.last_metadata
+    panel_issues = exporter.last_metadata.get("panel_issues", {})
+    assert panel_issues == {}
+    panel = exporter.backend.flatten_panels(
+        [Panel3D.from_mapping(_square_panel("panel_a"))],
+        seams,
+        scale=1.0,
+        seam_allowance=0.01,
+    )[0]
+    assert panel.metadata["seam_avoid_ranges"] == [(2, 4)]
+    assert panel.metadata["seam_midpoint_index"] == 3
 
 
 def test_annotations_do_not_change_outline(tmp_path: Path) -> None:

@@ -1,0 +1,46 @@
+{
+  "object_map": {
+    "objects": {
+      "body": "canonical_body",
+      "basis": "rom_basis_b0",
+      "constraints": "constraint_set_v1"
+    },
+    "observations": {
+      "forbidden_vertices": "rom.forbidden_vertex_hits",
+      "edge_self_intersection": "rom.edge_self_intersections",
+      "shear_hotspot": "agg.max_shear",
+      "pressure_hotspot": "agg.max_pressure"
+    }
+  },
+  "rules": [
+    {
+      "id": "forbidden_vertices",
+      "description": "Forbidden vertex region was touched by a seam or hotspot sample.",
+      "threshold": 1,
+      "block": true,
+      "severity": "error"
+    },
+    {
+      "id": "edge_self_intersection",
+      "description": "Detected self-intersecting seam edges in the ROM sample.",
+      "threshold": 1,
+      "block": true,
+      "severity": "error"
+    },
+    {
+      "id": "shear_hotspot",
+      "description": "Shear exceeds comfort threshold in key zones.",
+      "threshold": 0.65,
+      "block": false,
+      "severity": "warn"
+    },
+    {
+      "id": "pressure_hotspot",
+      "description": "Pressure exceeds comfort threshold in key zones.",
+      "threshold": 0.5,
+      "block": false,
+      "severity": "warn"
+    }
+  ],
+  "notes": "Object map keys align aggregator diagnostics with PDA gates; rules capture seam/ROM couplings used for gating and logging."
+}

@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any, Iterable, Mapping, Sequence
 
+from .panel_boundary_regularization import severity_for_code
+from .panel_defaults import SuitMaterial
 from .panel_model import Panel
 
 
@@ -162,10 +165,90 @@ def combine_results(*results: ValidationResult) -> ValidationResult:
     return ValidationResult(ok=not issues, issues=tuple(issues))
 
 
+@dataclass(frozen=True, slots=True)
+class PanelGateResult:
+    """Final panel acceptance decision based on validation issues."""
+
+    status: str
+    blocking_codes: tuple[str, ...] = ()
+    advisory_codes: tuple[str, ...] = ()
+
+    def to_mapping(self) -> dict[str, object]:
+        return {
+            "status": self.status,
+            "blocking_codes": list(self.blocking_codes),
+            "advisory_codes": list(self.advisory_codes),
+        }
+
+
+def gate_panel_validation(
+    *,
+    budget_issue_codes: Sequence[str] | None,
+    regularization_issues: Sequence[Mapping[str, Any]] | None,
+    material: SuitMaterial | str | None = None,
+) -> PanelGateResult:
+    """Aggregate budget and regularization issues into an accept/warn/reject gate."""
+
+    blocking: set[str] = set()
+    advisory: set[str] = set()
+
+    for code in budget_issue_codes or []:
+        blocking.add(str(code))
+
+    for issue in regularization_issues or []:
+        code = str(issue.get("code", ""))
+        if not code:
+            continue
+        severity = str(issue.get("severity") or severity_for_code(code))
+        if severity == "error":
+            blocking.add(code)
+        elif severity in {"warning", "info"}:
+            advisory.add(code)
+
+    material_value = _normalize_material(material)
+    if material_value == SuitMaterial.WOVEN:
+        for code in _WOVEN_WARNING_ESCALATIONS:
+            if code in advisory:
+                advisory.remove(code)
+                blocking.add(code)
+
+    if blocking:
+        status = "error"
+    elif advisory:
+        status = "warning"
+    else:
+        status = "ok"
+
+    return PanelGateResult(
+        status=status,
+        blocking_codes=tuple(sorted(blocking)),
+        advisory_codes=tuple(sorted(advisory)),
+    )
+
+
+def _normalize_material(material: SuitMaterial | str | None) -> SuitMaterial | None:
+    if material is None:
+        return None
+    if isinstance(material, SuitMaterial):
+        return material
+    try:
+        return SuitMaterial(str(material))
+    except ValueError:
+        return None
+
+
+_WOVEN_WARNING_ESCALATIONS: set[str] = {
+    "TURNING_BUDGET_EXCEEDED",
+    "MIN_FEATURE_VIOLATION",
+}
+
+
 __all__ = [
+    "PanelGateResult",
     "ValidationIssue",
     "ValidationResult",
     "combine_results",
+    "gate_panel_validation",
     "validate_panel_budgets",
     "validate_panel_curvature",
 ]

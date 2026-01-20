@@ -17,6 +17,7 @@ Please see our docs:
 - [Agents](AGENTS.md)
 - [Contributing](CONTRIBUTING.md)
 - [Roadmap](ROADMAP.md)
+- [TODOs](TODO.md) (see `CONTEXT.md` lines 1141-1147 for TODO hygiene guidance)
 
 ## Current focus: manufacturable panels
 
@@ -27,7 +28,7 @@ patterns.
 Near-term work:
 - Define a Panel abstraction (3D patch + 3D/2D boundaries + seam partners + grain direction + distortion/sewability budgets).
 - Enforce sewability constraints before LSCM/ABF (split panels when thresholds are exceeded).
-- Add boundary regularization stages (resample, clamp curvature/turning, suppress tiny features, spline fit, reconcile seams).
+- Add boundary regularization stages (resample, clamp curvature/turning, suppress tiny features, spline fit) with structured issues and split suggestions.
 
 ## 🛡️ License Summary
 
@@ -266,3 +267,122 @@ By delivering on these components step by step, we aim to create a **world-class
 [\[51\]](https://www.research.autodesk.com/publications/ai-lab-cad-llm/#:~:text=CAD,them%20to%20manipulate%20engineering%20sketches) CAD-LLM: Large Language Model for CAD Generation
 
 <https://www.research.autodesk.com/publications/ai-lab-cad-llm/>
+
+
+
+
+Further references:
+
+Layer
+	
+Component
+	
+Material/Configuration
+	
+Mechanical Properties
+	
+Joint/Limb Association
+	
+Output Files
+	
+Integration Methodology
+	
+Validation Metrics
+	
+Source
+Undersuit
+	
+Liquid loops / Tubes
+	
+Liquid (water/glycol); polymer tubes; high-conductivity silicone or graphene-infused tubes; NASA LCVG archetype
+	
+Cooling capacity over time; thermal conductivity (~50% better in polymers); 30% outperformance in heat extraction; flow: 1.5 L/min
+	
+Armpits, neck, groin, major limbs; trunk-to-limb loops; body-wide thermal zones
+	
+Suit Circuit schema (JSON); liquid-loop manifest; 2D patterns (DXF, SVG, PDF)
+	
+Modular routing; graph-based tubing solver (segments=edges, fittings=nodes); Unity/Unreal brush interface
+	
+Skin temp deltas; pump flow requirements; thermal flow feedback; load balancing (zone_flow_rate)
+	
+[1-5]
+Undersuit
+	
+PCM packs / Phase-change inserts
+	
+Passive cooling; microcapsules in textile; latent-capacity packs
+	
+Thermal resistance; heat absorption via melting; passive conduction; flow rates reported as zero
+	
+Regional priority (armpits, neck, groin); thermal zones proportional to heat load
+	
+Cooling manifest (JSON); 2D patterns (DXF, SVG, PDF)
+	
+Hybrid solution (PCM + liquid chiller); programmable API; global capacity overrides
+	
+Pressure comfort levels; core temperature indicators; zone capacity matching
+	
+[3, 5]
+Hard Shell
+	
+Rigid armor plates / Segmented panels
+	
+Single-polymer; bio-fiber (basalt/aramid); bio-based recycled aramids; recyclable polymers; watertight triangle mesh
+	
+Constant-thickness offset shelling; impact stress resistance; hinge allowance; thickness profile (min/max/mean)
+	
+Shoulder, elbow, knee, hip, spine; anatomical modules (spine, scapula, humerus)
+	
+STL, STEP, GLB, FBX; shell_layer.npz; manifest.json; Parametric CAD models
+	
+Parametric armor rigs; Blender Geometry Nodes; Text2CAD/AI Python scripts; Unity/Unreal integration
+	
+Clearance map (0°/45°/90° flexion); watertightness; bone-naming preservation; joint cone overlays
+	
+[1, 2, 4, 6-8]
+Cloth
+	
+Spandex bodysuit / Spun yarn
+	
+Lycra; negative ease (~10% reduction); elastic, insulative, pressure-mapped zones
+	
+Stretch ratio (current/rest length); shear; anisotropic elastic shell; fabric anisotropy vector
+	
+Center spine, chest, shoulders, quads, hamstrings, knee cap, elbow crease
+	
+SVG/DXF patterns; strain heatmap (strain.png); PDF tiling (A4/A0)
+	
+FEM/Cloth solver (Blender/Houdini); SGD optimization; SOTA ST-Tech Cubic Barrier Solver
+	
+Max seam-adjacent strain; subjective comfort scores; pressure gradients; curvature-guided seams
+	
+[1-3, 9, 10]
+Cloth
+	
+Soft-layer / Canopy
+	
+Tyvek (waterproof); upcycled tent fabric; recycled polyester; TENCEL™ Lyocell
+	
+Stretch/shear ratios (inferred from draping); seam allowances; fold paths
+	
+Shoulder (packed behind shoulders); landmarks: c7_vertebra, sternum, acromion
+	
+suit_with_tent.glb; printable PDF fold sequence; bundle.json
+	
+Deployment planning via build_deployment_kinematics(); Unity/Unreal physics
+	
+Anchor placement; fold-path validation; anchor coverage; fold connectivity
+	
+[4, 11]
+[1] ROADMAP(1).md
+[2] les - seameinit.pdf
+[3] smii - seameinit.pdf
+[4] Next-Generation Adaptive Suit Platform – Vision and Roadmap.pdf
+[5] cooling.md
+[6] engine_integration.md
+[7] hard_layer_shell.md
+[8] hard_shell_clearance.md
+[9] les - Glove seam optimisation papers.pdf
+[10] smii - Auto-rigging cloth simulation.pdf
+[11] tent.md

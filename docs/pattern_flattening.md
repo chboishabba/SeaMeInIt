@@ -45,6 +45,8 @@ python -m smii.pipelines.export_patterns \
   --backend lscm \
   --scale 1.0 \
   --seam-allowance 0.01 \
+  --pdf-page-size a4 \
+  --annotate-level summary \
   --output exports/patterns/afflec_bodysuit
 ```
 
@@ -58,8 +60,32 @@ the pipeline. Any panel missing an explicit entry in the seams JSON inherits the
   "faces": [...]}]}`. Vertices are 3D coordinates in metres; faces form a
   triangle fan that defines the developable patch passed to the backend.
 - `seams_payload.json` maps panel names to metadata. At minimum set
-  `"seam_allowance": <metres>`; additional keys are preserved inside exported
-  metadata so downstream tooling can distinguish stitch types or reinforcements.
+  `"seam_allowance": <metres>`. Optional keys include `seam_partner` and
+  `seam_length_tolerance` for seam length reconciliation. Use `seam_partners`
+  to author explicit edge-to-edge intent; each entry captures edge index ranges
+  on the ordered outline and the partner panel/edge. If `seam_partners` are
+  present, the pipeline derives `seam_avoid_ranges` for seam-aware splitting
+  unless you set `seam_avoid_ranges` explicitly. `seam_midpoint_index` can still
+  override split placement when a seam edge is meant to be the cut axis.
+  Additional keys are preserved inside exported metadata so downstream tooling
+  can distinguish stitch types or reinforcements.
+
+Example seam partner entry (edge indices refer to the ordered outline used by
+the flattening backend):
+
+```json
+{
+  "seam_partners": [
+    {
+      "edge": [12, 20],
+      "partner_panel": "panel_B",
+      "partner_edge": [4, 12],
+      "role": "primary",
+      "zone": "side_torso"
+    }
+  ]
+}
+```
 
 You can hand author these files for custom garments as long as they keep the
 same structure.
@@ -98,16 +124,30 @@ with `panel-outline` drawn from the seam outline and explicit `seam-outline` and
 - `scale` globally scales panel outlines before writing SVG/DXF/PDF.
 - Per-panel seam allowances override the exporter default; mismatches are
   surfaced via `metadata["panel_warnings"]`.
+- Regularization issues are exported as `metadata["panel_issues"]` with severity
+  and per-issue fields, plus `metadata["panel_issue_summaries"]` for rollups.
+- When auto-splitting is enabled, `metadata["auto_split"]` records the split
+  strategy and resulting panel count.
+- Seam length mismatches emit `SEAM_MISMATCH` issues when `seam_partner` metadata
+  is present.
+Auto-split guidance follows `CONTEXT.md` lines 4555-4675 for pipeline gating.
 
 The exported PDF includes a textual summary of all panels, seam allowances, and
 the backend used. SVG and DXF files embed seam allowance values as attributes so
 local CAD or nesting software can pick them up automatically.
 
+## PDF tiling and page size
+
+PDF output tiles panels across multiple pages when a single sheet is too small.
+Supported page sizes are `a4` (default), `letter`, and `a0`. The tiling preserves
+panel coordinates so downstream assembly remains deterministic; the multi-page
+PDF mirrors the pipeline order shown in `CONTEXT.md` lines 800-815.
+
 ## Troubleshooting
 
-1. Inspect `metadata.json["patterns"]["panel_warnings"]` to catch panels that
-   exceeded the flattening distortion threshold. The seam generator will note
-   whether a panel should be subdivided.
+1. Inspect `metadata.json["patterns"]["panel_warnings"]` and
+   `metadata.json["patterns"]["panel_issue_summaries"]` to catch panels that
+   exceeded budgets or require review/splitting.
 2. Review `metadata.json["patterns"]["measurement_loops"]` to ensure the loop
    coordinates align with the intended fit adjustments.
 3. When switching backends, regenerate the `patterns/` directory to keep the

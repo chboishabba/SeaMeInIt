@@ -11,6 +11,7 @@ from .panel_model import PanelBudgets
 SEVERITY_BY_CODE: dict[str, str] = {
     "CURVATURE_EXCEEDED": "error",
     "MISSING_BUDGET": "error",
+    "SEAM_MISMATCH": "error",
     "TURNING_BUDGET_EXCEEDED": "warning",
     "MIN_FEATURE_VIOLATION": "warning",
     "FEATURE_SUPPRESSED": "info",
@@ -265,6 +266,83 @@ def fit_spline_boundary(
                 return list(points_xy), False
 
     return resampled, True
+
+
+def split_boundary(
+    boundary_xy: list[tuple[float, float]],
+    issues: list[PanelIssue],
+    *,
+    strategy: str = "single_cut",
+    avoid_ranges: list[tuple[int, int]] | None = None,
+    prefer_seam_safe: bool = True,
+    seam_midpoint_index: int | None = None,
+) -> list[list[tuple[float, float]]]:
+    if strategy != "single_cut":
+        raise ValueError(f"Unknown split strategy '{strategy}'.")
+    if len(boundary_xy) < 4:
+        return [list(boundary_xy)]
+
+    split_issue = next((issue for issue in issues if issue.code == "SUGGEST_SPLIT"), None)
+    if split_issue is None or split_issue.index is None:
+        return [list(boundary_xy)]
+
+    points = list(boundary_xy)
+    if len(points) >= 2 and points[0] == points[-1]:
+        points = points[:-1]
+    count = len(points)
+    if count < 4:
+        return [list(boundary_xy)]
+
+    cut_a = int(split_issue.index) % count
+    if seam_midpoint_index is not None:
+        cut_a = int(seam_midpoint_index) % count
+    if prefer_seam_safe and avoid_ranges:
+        def _in_range(idx: int, start: int, end: int) -> bool:
+            if start <= end:
+                return start <= idx <= end
+            return idx >= start or idx <= end
+
+        def _is_allowed(idx: int) -> bool:
+            for start, end in avoid_ranges:
+                if _in_range(idx, start % count, end % count):
+                    return False
+            return True
+
+        def _both_allowed(idx: int) -> bool:
+            other = (idx + count // 2) % count
+            return _is_allowed(idx) and _is_allowed(other)
+
+        if not _both_allowed(cut_a):
+            for offset in range(1, count):
+                forward = (cut_a + offset) % count
+                backward = (cut_a - offset) % count
+                if _both_allowed(forward):
+                    cut_a = forward
+                    break
+                if _both_allowed(backward):
+                    cut_a = backward
+                    break
+    cut_b = (cut_a + count // 2) % count
+    if cut_a == cut_b:
+        return [list(boundary_xy)]
+
+    if cut_a < cut_b:
+        loop_a = points[cut_a : cut_b + 1]
+        loop_b = points[cut_b:] + points[: cut_a + 1]
+    else:
+        loop_a = points[cut_a:] + points[: cut_b + 1]
+        loop_b = points[cut_b : cut_a + 1]
+
+    def _close_loop(loop: list[tuple[float, float]]) -> list[tuple[float, float]]:
+        if loop and loop[0] != loop[-1]:
+            loop.append(loop[0])
+        return loop
+
+    loop_a = _close_loop(loop_a)
+    loop_b = _close_loop(loop_b)
+    if len(loop_a) < 4 or len(loop_b) < 4:
+        return [list(boundary_xy)]
+    return [loop_a, loop_b]
 
 
 def detect_turning_budget(
@@ -591,6 +669,7 @@ __all__ = [
     "SEVERITY_BY_CODE",
     "panel_issue_to_mapping",
     "regularize_boundary",
+    "split_boundary",
     "severity_for_code",
     "suggest_split_issue",
     "summarize_panel_issues",

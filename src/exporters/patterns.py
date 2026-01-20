@@ -13,6 +13,7 @@ from suit.panel_boundary_regularization import (
     PanelIssue,
     panel_issue_to_mapping,
     regularize_boundary,
+    split_boundary,
     summarize_panel_issues,
 )
 from suit.panel_model import PanelBudgets
@@ -682,12 +683,25 @@ class SimplePlaneProjectionBackend(CADBackend):
 
             seam_outline, issues = _regularize_panel_outline(seam_outline, budgets)
 
-            allowance = float(seam_lookup.get(panel.name, {}).get("seam_allowance", seam_allowance))
+            seam_meta = seam_lookup.get(panel.name, {})
+            allowance = float(seam_meta.get("seam_allowance", seam_allowance))
             metadata = {
                 "original_vertex_count": len(panel.vertices),
                 "seam_allowance": allowance,
                 "backend": "simple",
             }
+            seam_partner = seam_meta.get("seam_partner")
+            if seam_partner is not None:
+                metadata["seam_partner"] = str(seam_partner)
+            seam_tolerance = seam_meta.get("seam_length_tolerance")
+            if seam_tolerance is not None:
+                metadata["seam_length_tolerance"] = float(seam_tolerance)
+            seam_avoid_ranges = seam_meta.get("seam_avoid_ranges")
+            if seam_avoid_ranges is not None:
+                metadata["seam_avoid_ranges"] = list(seam_avoid_ranges)
+            seam_midpoint_index = seam_meta.get("seam_midpoint_index")
+            if seam_midpoint_index is not None:
+                metadata["seam_midpoint_index"] = int(seam_midpoint_index)
             if issues:
                 metadata["warnings"] = [issue.code for issue in issues]
                 metadata["issues"] = [panel_issue_to_mapping(issue) for issue in issues]
@@ -747,12 +761,25 @@ class LSCMUnwrapBackend(CADBackend):
         flattened: list[Panel2D] = []
         seam_lookup = seams or {}
         for panel in panels:
-            allowance = float(seam_lookup.get(panel.name, {}).get("seam_allowance", seam_allowance))
+            seam_meta = seam_lookup.get(panel.name, {})
+            allowance = float(seam_meta.get("seam_allowance", seam_allowance))
             metadata = {
                 "original_vertex_count": len(panel.vertices),
                 "seam_allowance": allowance,
                 "backend": "lscm",
             }
+            seam_partner = seam_meta.get("seam_partner")
+            if seam_partner is not None:
+                metadata["seam_partner"] = str(seam_partner)
+            seam_tolerance = seam_meta.get("seam_length_tolerance")
+            if seam_tolerance is not None:
+                metadata["seam_length_tolerance"] = float(seam_tolerance)
+            seam_avoid_ranges = seam_meta.get("seam_avoid_ranges")
+            if seam_avoid_ranges is not None:
+                metadata["seam_avoid_ranges"] = list(seam_avoid_ranges)
+            seam_midpoint_index = seam_meta.get("seam_midpoint_index")
+            if seam_midpoint_index is not None:
+                metadata["seam_midpoint_index"] = int(seam_midpoint_index)
             try:
                 seam_outline = self._unwrap_panel(panel, scale=scale)
             except Exception:
@@ -842,11 +869,13 @@ class PatternExporter:
         scale: float = 1.0,
         seam_allowance: float = 0.01,
         budgets: PanelBudgets | None = None,
+        pdf_page_size: str = "a4",
     ) -> None:
         self.backend = self._resolve_backend(backend)
         self.scale = float(scale)
         self.seam_allowance = float(seam_allowance)
         self.budgets = budgets
+        self.pdf_page_size = _normalize_pdf_page_size(pdf_page_size)
         self.last_metadata: dict[str, Any] | None = None
 
     @staticmethod
@@ -871,6 +900,7 @@ class PatternExporter:
         formats: Iterable[str] = ("pdf", "svg", "dxf"),
         metadata: Mapping[str, Any] | None = None,
         annotate_level: str = "summary",
+        auto_split: bool = False,
     ) -> dict[str, Path]:
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
@@ -883,12 +913,22 @@ class PatternExporter:
             seam_allowance=self.seam_allowance,
             budgets=self.budgets,
         )
+        _reconcile_seams(flattened)
+        if auto_split:
+            flattened = _apply_auto_split(flattened)
 
         combined_metadata = {
             "scale": self.scale,
             "seam_allowance": self.seam_allowance,
             "panel_count": len(flattened),
+            "pdf_page_size": self.pdf_page_size,
         }
+        if auto_split:
+            combined_metadata["auto_split"] = {
+                "enabled": True,
+                "count": len(flattened),
+                "strategy": "single_cut",
+            }
         panel_warnings: dict[str, list[str]] = {}
         panel_issues: dict[str, list[dict[str, object]]] = {}
         panel_issue_summaries: dict[str, dict[str, object]] = {}
@@ -910,9 +950,8 @@ class PatternExporter:
             combined_metadata["panel_issue_summaries"] = panel_issue_summaries
         if metadata:
             combined_metadata.update(metadata)
-        self.last_metadata = dict(combined_metadata)
-
         created: dict[str, Path] = {}
+        pdf_page_count: int | None = None
         for fmt in formats:
             normalized = fmt.lower()
             path = output_path / f"undersuit_pattern.{normalized}"
@@ -921,11 +960,19 @@ class PatternExporter:
             elif normalized == "dxf":
                 _write_dxf(path, flattened, combined_metadata)
             elif normalized == "pdf":
-                _write_pdf(path, flattened, combined_metadata)
+                pdf_page_count = _write_pdf(
+                    path,
+                    flattened,
+                    combined_metadata,
+                    page_size=self.pdf_page_size,
+                )
             else:  # pragma: no cover - defensive for unsupported formats
                 msg = f"Unsupported pattern export format: {fmt}"
                 raise ValueError(msg)
             created[normalized] = path
+        if pdf_page_count is not None:
+            combined_metadata["pdf_page_count"] = int(pdf_page_count)
+        self.last_metadata = dict(combined_metadata)
         return created
 
 
@@ -984,6 +1031,115 @@ def _regularize_panel_outline(
     )
     cleaned = _cleanup_panel_outline(boundary)
     return cleaned, issues
+
+
+def _issue_from_mapping(mapping: Mapping[str, Any]) -> PanelIssue:
+    return PanelIssue.from_code(
+        str(mapping.get("code", "")),
+        index=mapping.get("index"),
+        value=mapping.get("value"),
+        limit=mapping.get("limit"),
+        message=mapping.get("message"),
+    )
+
+
+def _apply_auto_split(panels: Sequence[Panel2D]) -> list[Panel2D]:
+    split_panels: list[Panel2D] = []
+    for panel in panels:
+        issues_meta = panel.metadata.get("issues", [])
+        if not issues_meta:
+            split_panels.append(panel)
+            continue
+        issues = [_issue_from_mapping(issue) for issue in issues_meta]
+        avoid_ranges = panel.metadata.get("seam_avoid_ranges")
+        ranges: list[tuple[int, int]] | None = None
+        if isinstance(avoid_ranges, list):
+            parsed: list[tuple[int, int]] = []
+            for item in avoid_ranges:
+                if isinstance(item, Sequence) and len(item) >= 2:
+                    parsed.append((int(item[0]), int(item[1])))
+            if parsed:
+                ranges = parsed
+        seam_midpoint_index = panel.metadata.get("seam_midpoint_index")
+        midpoint = int(seam_midpoint_index) if seam_midpoint_index is not None else None
+        boundaries = split_boundary(
+            panel.seam_outline,
+            issues,
+            avoid_ranges=ranges,
+            seam_midpoint_index=midpoint,
+        )
+        if len(boundaries) == 1:
+            split_panels.append(panel)
+            continue
+        for idx, boundary in enumerate(boundaries):
+            metadata = dict(panel.metadata)
+            metadata["split_from"] = panel.name
+            metadata["split_index"] = idx
+            split_panels.append(
+                Panel2D(
+                    name=f"{panel.name}__split{idx}",
+                    outline=list(boundary),
+                    seam_outline=list(boundary),
+                    seam_allowance=panel.seam_allowance,
+                    metadata=metadata,
+                    grainlines=list(panel.grainlines),
+                    notches=list(panel.notches),
+                    folds=list(panel.folds),
+                    label=panel.label,
+                )
+            )
+    return split_panels
+
+
+def _append_panel_issue(panel: Panel2D, issue: PanelIssue) -> None:
+    metadata = panel.metadata
+    issues = list(metadata.get("issues", []))
+    issues.append(panel_issue_to_mapping(issue))
+    metadata["issues"] = issues
+    warnings = list(metadata.get("warnings", []))
+    if issue.code not in warnings:
+        warnings.append(issue.code)
+    metadata["warnings"] = warnings
+    summary = summarize_panel_issues([_issue_from_mapping(item) for item in issues])
+    metadata["issue_summary"] = {
+        "sewable": summary.sewable,
+        "action": summary.action,
+    }
+
+
+def _reconcile_seams(panels: Sequence[Panel2D]) -> None:
+    panel_lookup = {panel.name: panel for panel in panels}
+    lengths = {panel.name: _outline_length(panel.seam_outline) for panel in panels}
+    seen: set[tuple[str, str]] = set()
+    for panel in panels:
+        partner = panel.metadata.get("seam_partner")
+        if not isinstance(partner, str):
+            continue
+        if partner not in panel_lookup:
+            continue
+        key = tuple(sorted((panel.name, partner)))
+        if key in seen:
+            continue
+        seen.add(key)
+        tolerance = float(panel.metadata.get("seam_length_tolerance", 0.02))
+        if tolerance <= 0:
+            continue
+        length_a = lengths.get(panel.name, 0.0)
+        length_b = lengths.get(partner, 0.0)
+        if length_a <= 1e-9 or length_b <= 1e-9:
+            continue
+        diff = abs(length_a - length_b) / max(length_a, length_b)
+        if diff <= tolerance:
+            continue
+        message = f"Seam length mismatch vs {partner}: {diff:.3f} > {tolerance:.3f}"
+        issue = PanelIssue.from_code(
+            "SEAM_MISMATCH",
+            value=diff,
+            limit=tolerance,
+            message=message,
+        )
+        _append_panel_issue(panel, issue)
+        _append_panel_issue(panel_lookup[partner], issue)
 
 
 def _dedupe_consecutive(points: Sequence[tuple[float, float]]) -> list[tuple[float, float]]:
@@ -1465,14 +1621,24 @@ def _escape_pdf_text(value: str) -> str:
     return value.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
 
-def _write_pdf(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any]) -> None:
+def _write_pdf(
+    path: Path,
+    panels: Sequence[Panel2D],
+    metadata: Mapping[str, Any],
+    *,
+    page_size: str,
+) -> int:
     min_x, min_y, max_x, max_y = _panel_bounds(panels)
     points_per_meter = 72.0 / 0.0254
     margin = 36.0
     drawing_width = (max_x - min_x) * points_per_meter
     drawing_height = (max_y - min_y) * points_per_meter
-    width = max(200.0, drawing_width + margin * 2)
-    height = max(200.0, drawing_height + margin * 2)
+    total_width = max(200.0, drawing_width + margin * 2)
+    total_height = max(200.0, drawing_height + margin * 2)
+    page_width, page_height = _pdf_page_size_points(page_size)
+    pages_x = max(1, math.ceil(total_width / page_width))
+    pages_y = max(1, math.ceil(total_height / page_height))
+    page_count = int(pages_x * pages_y)
 
     def to_pdf(point: tuple[float, float]) -> tuple[float, float]:
         return (
@@ -1631,6 +1797,8 @@ def _write_pdf(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any
         "SMII Pattern Export",
         f"Scale: {metadata['scale']}",
         f"Seam allowance: {metadata['seam_allowance']}",
+        f"PDF page size: {page_size.upper()}",
+        f"PDF pages: {page_count}",
         f"Panels: {metadata['panel_count']}",
     ]
 
@@ -1650,7 +1818,7 @@ def _write_pdf(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any
             info_lines.append(f"{panel.name} cut: unavailable")
 
     text_ops: list[str] = ["0 0 0 rg", "BT", "/F1 12 Tf"]
-    text_y = height - margin
+    text_y = page_height - margin
     for line in info_lines:
         escaped = _escape_pdf_text(line)
         text_ops.append(f"1 0 0 1 {margin:.2f} {text_y:.2f} Tm")
@@ -1658,23 +1826,50 @@ def _write_pdf(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any
         text_y -= 14.0
     text_ops.append("ET")
 
-    content_parts = drawing_ops + text_ops + label_ops
-    content_stream = "\n".join(content_parts).encode("utf-8")
-
     objects: list[bytes] = []
     catalog = b"<< /Type /Catalog /Pages 2 0 R >>"
-    pages = b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>"
-    page = (
-        f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {width:.2f} {height:.2f}] "
-        "/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>".encode("utf-8")
+
+    page_ids = [3 + idx * 2 for idx in range(page_count)]
+    pages = (
+        f"<< /Type /Pages /Kids [{' '.join(f'{pid} 0 R' for pid in page_ids)}] "
+        f"/Count {page_count} >>".encode("utf-8")
     )
+    objects.extend([catalog, pages])
+
+    font_id = 3 + page_count * 2
+    for page_index in range(page_count):
+        col = page_index % pages_x
+        row = page_index // pages_x
+        offset_x = col * page_width
+        offset_y = row * page_height
+
+        content_parts = [
+            "q",
+            f"0 0 {page_width:.2f} {page_height:.2f} re W n",
+            f"1 0 0 1 {-offset_x:.2f} {-offset_y:.2f} cm",
+        ]
+        content_parts.extend(drawing_ops)
+        content_parts.extend(label_ops)
+        if page_index == 0:
+            content_parts.extend(text_ops)
+        content_parts.append("Q")
+        content_stream = "\n".join(content_parts).encode("utf-8")
+
+        page_id = 3 + page_index * 2
+        contents_id = page_id + 1
+        page = (
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {page_width:.2f} {page_height:.2f}] "
+            f"/Resources << /Font << /F1 {font_id} 0 R >> >> /Contents {contents_id} 0 R >>"
+        ).encode("utf-8")
+        contents = (
+            f"<< /Length {len(content_stream)} >>\nstream\n".encode("utf-8")
+            + content_stream
+            + b"\nendstream"
+        )
+        objects.extend([page, contents])
+
     font = b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"
-    contents = (
-        f"<< /Length {len(content_stream)} >>\nstream\n".encode("utf-8")
-        + content_stream
-        + b"\nendstream"
-    )
-    objects.extend([catalog, pages, page, font, contents])
+    objects.append(font)
 
     buffer = bytearray()
     buffer.extend(b"%PDF-1.4\n")
@@ -1696,6 +1891,32 @@ def _write_pdf(path: Path, panels: Sequence[Panel2D], metadata: Mapping[str, Any
         f"trailer\n<< /Size {count} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF".encode("utf-8")
     )
     path.write_bytes(buffer)
+    return page_count
+
+
+def _normalize_pdf_page_size(page_size: str) -> str:
+    normalized = str(page_size).strip().lower()
+    if normalized not in _PDF_PAGE_SIZES:
+        supported = ", ".join(sorted(_PDF_PAGE_SIZES))
+        raise ValueError(f"Unknown PDF page size '{page_size}'. Supported: {supported}.")
+    return normalized
+
+
+def _pdf_page_size_points(page_size: str) -> tuple[float, float]:
+    normalized = _normalize_pdf_page_size(page_size)
+    width, height, unit = _PDF_PAGE_SIZES[normalized]
+    if unit == "mm":
+        factor = 72.0 / 25.4
+    else:
+        factor = 72.0
+    return width * factor, height * factor
+
+
+_PDF_PAGE_SIZES: dict[str, tuple[float, float, str]] = {
+    "a4": (210.0, 297.0, "mm"),
+    "a0": (841.0, 1189.0, "mm"),
+    "letter": (8.5, 11.0, "in"),
+}
 
 
 __all__ = [

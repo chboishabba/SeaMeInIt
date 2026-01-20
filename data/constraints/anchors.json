@@ -1,0 +1,10 @@
+{
+  "landmarks": {
+    "neck_base": null,
+    "sternum": null,
+    "spine_mid": null,
+    "left_shoulder": null,
+    "right_shoulder": null
+  },
+  "notes": "Anchor landmarks should be vertex ids; null placeholders indicate missing assignments."
+}

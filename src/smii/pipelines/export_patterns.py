@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from exporters.patterns import PatternExporter
+from suit.seam_metadata import normalize_seam_metadata
 
 
 def _load_json(path: Path) -> Mapping[str, Any]:
@@ -47,6 +48,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Default seam allowance applied to panels (meters).",
     )
     parser.add_argument(
+        "--pdf-page-size",
+        choices=("a4", "letter", "a0"),
+        default="a4",
+        help="PDF page size used for tiling (default: a4).",
+    )
+    parser.add_argument(
         "--label",
         type=str,
         help="Optional identifier stored inside exported metadata.",
@@ -66,12 +73,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     mesh_payload = _load_json(args.mesh)
-    seams_payload = _load_json(args.seams)
+    seams_payload = normalize_seam_metadata(_load_json(args.seams))
 
     exporter = PatternExporter(
         backend=args.backend,
         scale=args.scale,
         seam_allowance=args.seam_allowance,
+        pdf_page_size=args.pdf_page_size,
     )
     metadata: dict[str, Any] = {}
     if args.label:

@@ -13,6 +13,11 @@ Near-term steps:
 2. Enforce sewability constraints pre-flattening (split panels when thresholds are exceeded).
 3. Add deterministic boundary regularization (resample, clamp curvature/turning, suppress tiny features, spline fit, reconcile seams).
 
+Current status:
+- Boundary regularization stages R1–R4b + R6-lite are implemented and emit structured issues with severities and split suggestions.
+- Auto-split is opt-in (`--auto-split`) and currently uses a single-cut strategy.
+- Remaining work: seam reconciliation and panel-specific split strategies.
+
 Perfect — these examples tell me **exactly** what final form you want:
 
 ✔️ **Clean vector-style outlines**

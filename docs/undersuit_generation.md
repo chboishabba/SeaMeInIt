@@ -26,6 +26,7 @@ python -m smii.pipelines.generate_undersuit \
   --comfort-thickness 0.001 \
   --ease-percent 0.04 \
   --pattern-backend lscm \
+  --pdf-page-size a4 \
   --material neoprene
 ```
 
@@ -54,6 +55,9 @@ Layer toggles and thicknesses are configured via CLI switches or the
 - `--pattern-backend lscm`: unwrap panels with libigl’s Least Squares Conformal
   Maps solver (defaults to a simple projection fallback).
 - `--material neoprene`: select the material profile used for panel budgets.
+- `--auto-split`: split panels when `SUGGEST_SPLIT` is emitted during
+  regularization (off by default).
+- `--pdf-page-size a4`: tile PDF pattern output using the selected page size.
 
 👉 Refer to [Flattened Panel Export](./pattern_flattening.md) for a detailed walk
 through of the new seam-driven panel generation, the `PatternExporter` CLI, and
@@ -112,13 +116,13 @@ Flattening should only proceed once panels meet sewability thresholds. If not,
 the panel must be subdivided.
 
 Boundary regularization is a deterministic stage that produces export-ready
-outlines. The current target stages are:
+outlines. The current implementation covers:
 
 1. Resample boundary at uniform arc length.
-2. Clamp curvature and total turning.
-3. Suppress features below minimum size.
-4. Fit spline/Bezier curves for vector output.
-5. Reconcile seam pair lengths and notches.
+2. Clamp curvature and total turning (issues emitted when exceeded).
+3. Detect and suppress features below minimum size.
+4. Emit split suggestions when violations persist.
+5. Fit spline curves when no split is suggested (R6-lite).
 
 ### Budget-driven regularization sketch
 
@@ -139,12 +143,18 @@ This sketch follows `CONTEXT.md` lines 2622-2833 and makes explicit how
 Failure semantics must be explicit: boundary regularization **must not** fix
 budget violations silently and should return structured issues (e.g.
 `CURVATURE_EXCEEDED`, `TURNING_BUDGET_EXCEEDED`, `MIN_FEATURE_VIOLATION`,
-`SEAM_MISMATCH`).
+`FEATURE_SUPPRESSED`, `SUGGEST_SPLIT`).
 
-R1-R2 are implemented in `src/suit/panel_boundary_regularization.py` and are
-invoked during pattern export using the active material budgets.
+R1-R6-lite are implemented in `src/suit/panel_boundary_regularization.py` and
+are invoked during pattern export using the active material budgets.
 Regularization issues are surfaced under `patterns.panel_validation` as
-`regularization_issues` for traceability.
+`regularization_issues` (codes), `regularization_issue_details` (structured
+entries), and `regularization_status` (severity summary) for traceability.
+Each panel also includes a `gate` decision (status plus blocking/advisory
+codes) that aggregates budget validation and regularization issues into an
+explicit accept/warn/reject outcome, following `CONTEXT.md` lines 2889-2951.
+Use `--auto-split` in the undersuit CLI to split panels on `SUGGEST_SPLIT`.
+Auto-split guidance aligns with `CONTEXT.md` lines 4555-4675.
 
 Neoprene-tuned defaults live in `src/suit/panel_defaults.py` as
 `NEOPRENE_DEFAULT_BUDGETS` and are grounded in `CONTEXT.md` lines 1561-1597.

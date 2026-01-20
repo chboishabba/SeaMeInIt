@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Iterable, Mapping, MutableMapping, Sequence
+from typing import Any, Iterable, Mapping, MutableMapping, Sequence
 
 import numpy as np
 
@@ -56,7 +56,7 @@ class SeamGraph:
 
     panels: tuple[SeamPanel, ...]
     measurement_loops: tuple[MeasurementLoop, ...]
-    seam_metadata: Mapping[str, Mapping[str, float]]
+    seam_metadata: Mapping[str, Mapping[str, Any]]
 
     def to_payload(self) -> dict[str, object]:
         """Serialise panels into the payload expected by :mod:`PatternExporter`."""
@@ -207,7 +207,7 @@ class SeamGenerator:
         lateral_coords = vertices_arr @ lateral
 
         panels: list[SeamPanel] = []
-        seam_lookup: dict[str, Mapping[str, float]] = {}
+        seam_lookup: dict[str, Mapping[str, Any]] = {}
         size_scale = _measurement_scale(measurements)
 
         for lower, upper in _pairwise(loops):
@@ -264,7 +264,7 @@ class SeamGenerator:
                 clean = _validate_indices(indices)
                 if not clean:
                     continue
-                coordinate = float((vertices[clean] @ axis).mean())
+                coordinate = float((vertices[np.asarray(clean, dtype=int)] @ axis).mean())
                 loops.append(
                     MeasurementLoop(
                         name=str(name),
@@ -483,4 +483,3 @@ def _average_edge_length(vertices: np.ndarray, faces: np.ndarray) -> float:
         for a, b in edges
     ]
     return float(np.mean(lengths))
-

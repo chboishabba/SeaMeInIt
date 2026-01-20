@@ -32,9 +32,11 @@ from .panel_defaults import (
 )
 from .panel_adapter import PanelPayloadSource, panel_to_payload
 from .panel_validation import (
+    PanelGateResult,
     ValidationIssue,
     ValidationResult,
     combine_results,
+    gate_panel_validation,
     validate_panel_budgets,
     validate_panel_curvature,
 )
@@ -80,9 +82,11 @@ __all__ = [
     "SuitMaterial",
     "panel_budgets_for",
     "PanelPayloadSource",
+    "PanelGateResult",
     "ValidationIssue",
     "ValidationResult",
     "combine_results",
+    "gate_panel_validation",
     "Panel",
     "PanelBoundary2D",
     "PanelBoundary3D",

@@ -1,0 +1,23 @@
+{
+  "default": {
+    "max_primary_panels": 8,
+    "max_secondary_panels": 6,
+    "max_total_panels": 14,
+    "max_seam_length": 2400.0,
+    "min_seam_length": 80.0,
+    "max_panel_perimeter": 1200.0
+  },
+  "garment_overrides": {
+    "undersuit": {
+      "max_total_panels": 12,
+      "max_seam_length": 2100.0,
+      "min_seam_length": 60.0
+    },
+    "outer_shell": {
+      "max_primary_panels": 10,
+      "max_total_panels": 16,
+      "max_seam_length": 2600.0
+    }
+  },
+  "notes": "Panel limits include realistic seam lengths and counts with per-garment overrides; nulls removed to encourage explicit values."
+}

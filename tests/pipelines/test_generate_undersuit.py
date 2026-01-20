@@ -25,8 +25,8 @@ def _write_json(path: Path, payload: dict) -> None:
 
 def _build_cylinder_body() -> tuple[list[list[float]], list[list[int]]]:
     segments = 12
-    levels = [0.0, 0.28, 0.56, 0.82]
-    radii = [0.22, 0.28, 0.25, 0.2]
+    levels = [0.0, 0.11, 0.22, 0.33, 0.44, 0.55, 0.66, 0.77, 0.88]
+    radii = [0.22 - 0.02 * (idx / (len(levels) - 1)) for idx in range(len(levels))]
     vertices: list[list[float]] = []
     for z, radius in zip(levels, radii):
         for segment in range(segments):
@@ -46,6 +46,16 @@ def _build_cylinder_body() -> tuple[list[list[float]], list[list[int]]]:
             d = upper + next_segment
             faces.append([a, b, c])
             faces.append([b, d, c])
+    bottom_center = len(vertices)
+    vertices.append([0.0, 0.0, levels[0]])
+    top_center = len(vertices)
+    vertices.append([0.0, 0.0, levels[-1]])
+    bottom_ring = 0
+    top_ring = (len(levels) - 1) * segments
+    for segment in range(segments):
+        next_segment = (segment + 1) % segments
+        faces.append([bottom_center, bottom_ring + next_segment, bottom_ring + segment])
+        faces.append([top_center, top_ring + segment, top_ring + next_segment])
     return vertices, faces
 
 
@@ -74,6 +84,7 @@ def test_cli_exports_pattern_files(tmp_path: Path) -> None:
             str(output_dir),
             "--joint-map",
             str(joint_map_path),
+            "--auto-split",
         ]
     )
 
@@ -96,3 +107,4 @@ def test_cli_exports_pattern_files(tmp_path: Path) -> None:
         assert Path(path).exists()
     assert "measurement_loops" in pattern_meta
     assert "seams" in pattern_meta
+    assert pattern_meta["auto_split"]["enabled"] is True
