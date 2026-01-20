@@ -1,0 +1,21 @@
+{
+  "fields": ["shear"],
+  "edges": [[0, 1], [1, 2], [2, 3]],
+  "samples": [
+    {
+      "pose_id": "pose_a",
+      "coeffs": { "shear": [0.1, 0.2, 0.0, 0.1] },
+      "observations": { "blocker": 0.0 }
+    },
+    {
+      "pose_id": "pose_b",
+      "coeffs": { "shear": [0.8, 0.1, 0.0, 0.2] },
+      "observations": { "blocker": 0.0 }
+    },
+    {
+      "pose_id": "pose_c",
+      "coeffs": { "shear": [0.9, 0.9, 0.9, 0.9] },
+      "observations": { "blocker": 1.0 }
+    }
+  ]
+}

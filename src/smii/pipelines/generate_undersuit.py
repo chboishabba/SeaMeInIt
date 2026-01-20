@@ -7,7 +7,7 @@ import json
 import os
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 import numpy as np
 
@@ -33,6 +33,9 @@ from suit.seam_generator import SeamGenerator
 from suit.seam_metadata import normalize_seam_metadata
 from suit.thermal_zones import DEFAULT_THERMAL_ZONE_SPEC
 from smii.meshing import load_body_record
+
+if TYPE_CHECKING:  # pragma: no cover
+    from smii.rom.seam_costs import SeamCostField
 
 OUTPUT_ROOT = Path("outputs/suits")
 COOLING_OUTPUT_ROOT = Path("outputs/modules/cooling")
@@ -356,6 +359,7 @@ def generate_undersuit(
     pattern_backend: str = "simple",
     auto_split: bool = False,
     pdf_page_size: str = "a4",
+    seam_cost_field: "SeamCostField | None" = None,
 ) -> None:
     """Run the undersuit generation pipeline and persist all artefacts."""
 
@@ -390,6 +394,10 @@ def generate_undersuit(
         axis_map,
         measurements=measurement_values or None,
     )
+    if seam_cost_field is not None:
+        from smii.rom.seam_costs import annotate_seam_graph_with_costs
+
+        seam_graph = annotate_seam_graph_with_costs(seam_cost_field, seam_graph)
 
     target_dir = _ensure_output_dir(output_dir, body_path)
 
@@ -423,6 +431,8 @@ def generate_undersuit(
         }
         for layer in result.layers()
     }
+    if seam_graph.seam_costs:
+        metadata["seam_costs"] = {name: dict(values) for name, values in seam_graph.seam_costs.items()}
     if embed_cooling:
         _embed_cooling_manifest(
             body_path=body_path,
@@ -514,6 +524,9 @@ def generate_undersuit(
         "panel_count": len(seam_graph.panels),
         "material": material.value,
         "panel_validation": panel_validation,
+        "seam_costs": {name: dict(values) for name, values in seam_graph.seam_costs.items()}
+        if seam_graph.seam_costs
+        else {},
         "measurement_loops": {
             loop.name: {
                 "axis_coordinate": loop.axis_coordinate,
@@ -718,6 +731,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="PDF page size used for tiling (default: a4).",
     )
     parser.add_argument(
+        "--seam-costs",
+        type=Path,
+        help="Optional NPZ produced by save_seam_cost_field to annotate seams with ROM costs.",
+    )
+    parser.add_argument(
         "--auto-split",
         action="store_true",
         help="Automatically split panels when SUGGEST_SPLIT is emitted.",
@@ -734,6 +752,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     options = _parse_options_from_args(args)
 
     joint_map = _load_joint_map(args.joint_map)
+    seam_cost_field = None
+    if args.seam_costs is not None:
+        from smii.rom.seam_costs import load_seam_cost_field
+
+        seam_cost_field = load_seam_cost_field(args.seam_costs)
 
     generate_undersuit(
         args.body,
@@ -749,6 +772,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         pattern_backend=args.pattern_backend,
         auto_split=args.auto_split,
         pdf_page_size=args.pdf_page_size,
+        seam_cost_field=seam_cost_field,
     )
 
     return 0

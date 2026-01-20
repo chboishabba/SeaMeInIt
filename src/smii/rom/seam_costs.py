@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Mapping, Sequence
+from pathlib import Path
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Mapping, MutableMapping, Sequence
 
 import numpy as np
 
 from .aggregation import FieldStats, RomAggregation
+
+if TYPE_CHECKING:  # pragma: no cover
+    from suit.seam_generator import SeamGraph
 
 CostArray = np.ndarray
 
@@ -87,5 +92,92 @@ def build_seam_cost_field(
         edge_costs=edge_costs,
         edges=tuple(edges),
         samples_used=stats.sample_count,
+        metadata=metadata,
+    )
+
+
+def annotate_seam_graph_with_costs(cost_field: SeamCostField, seam_graph: "SeamGraph") -> "SeamGraph":
+    """Attach seam-aware cost summaries to a generated seam graph."""
+
+    from suit.seam_generator import SeamGraph  # Local import to avoid heavy dependencies at module import time.
+
+    edge_lookup: Mapping[tuple[int, int], float] = cost_field.to_edge_weights()
+    normalized_lookup: dict[tuple[int, int], float] = {
+        tuple(sorted(edge)): value for edge, value in edge_lookup.items()
+    }
+
+    seam_costs: MutableMapping[str, Mapping[str, float]] = {}
+    for panel in seam_graph.panels:
+        seam_vertices = tuple(panel.seam_vertices)
+        vertex_costs = (
+            np.asarray(cost_field.vertex_costs, dtype=float)[np.asarray(seam_vertices, dtype=int)]
+            if seam_vertices
+            else np.asarray([], dtype=float)
+        )
+        vertex_mean = float(np.nanmean(vertex_costs)) if vertex_costs.size else float("nan")
+        vertex_max = float(np.nanmax(vertex_costs)) if vertex_costs.size else float("nan")
+
+        seam_vertex_set = {int(vertex) for vertex in seam_vertices}
+        edge_costs = [
+            value
+            for edge, value in normalized_lookup.items()
+            if edge[0] in seam_vertex_set and edge[1] in seam_vertex_set
+        ]
+        edge_mean = float(np.nanmean(edge_costs)) if edge_costs else float("nan")
+        edge_max = float(np.nanmax(edge_costs)) if edge_costs else float("nan")
+
+        seam_costs[panel.name] = MappingProxyType(
+            {
+                "vertex_cost_mean": vertex_mean,
+                "vertex_cost_max": vertex_max,
+                "edge_cost_mean": edge_mean,
+                "edge_cost_max": edge_max,
+                "samples_used": int(cost_field.samples_used),
+            }
+        )
+
+    return SeamGraph(
+        panels=seam_graph.panels,
+        measurement_loops=seam_graph.measurement_loops,
+        seam_metadata=seam_graph.seam_metadata,
+        seam_costs=MappingProxyType(dict(seam_costs)),
+    )
+
+
+def save_seam_cost_field(cost_field: SeamCostField, path: str | Path) -> None:
+    """Persist seam cost field arrays to a compressed NPZ."""
+
+    output = Path(path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(
+        output,
+        field=cost_field.field,
+        vertex_costs=cost_field.vertex_costs,
+        edge_costs=cost_field.edge_costs,
+        edges=np.asarray(cost_field.edges, dtype=int),
+        samples_used=int(cost_field.samples_used),
+        metadata=dict(cost_field.metadata),
+    )
+
+
+def load_seam_cost_field(path: str | Path) -> SeamCostField:
+    """Load a seam cost field from NPZ created by :func:`save_seam_cost_field`."""
+
+    cost_path = Path(path)
+    payload = np.load(cost_path, allow_pickle=True)
+    field = str(payload["field"])
+    vertex_costs = np.asarray(payload["vertex_costs"], dtype=float)
+    edge_costs = np.asarray(payload["edge_costs"], dtype=float)
+    edges_arr = np.asarray(payload["edges"], dtype=int)
+    edges = tuple(tuple(int(val) for val in row) for row in edges_arr.tolist())
+    samples_used = int(payload["samples_used"])
+    metadata_raw = payload.get("metadata", {})
+    metadata = dict(metadata_raw.item()) if hasattr(metadata_raw, "item") else dict(metadata_raw)
+    return SeamCostField(
+        field=field,
+        vertex_costs=vertex_costs,
+        edge_costs=edge_costs,
+        edges=edges,
+        samples_used=samples_used,
         metadata=metadata,
     )

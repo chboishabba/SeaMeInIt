@@ -22,7 +22,13 @@ from .aggregation import (
     VertexHotspot,
     aggregate_fields,
 )
-from .seam_costs import SeamCostField, build_seam_cost_field
+from .seam_costs import (
+    SeamCostField,
+    annotate_seam_graph_with_costs,
+    build_seam_cost_field,
+    load_seam_cost_field,
+    save_seam_cost_field,
+)
 
 __all__ = [
     "BasisMetadata",
@@ -49,5 +55,8 @@ __all__ = [
     "RomSample",
     "aggregate_fields",
     "SeamCostField",
+    "annotate_seam_graph_with_costs",
     "build_seam_cost_field",
+    "load_seam_cost_field",
+    "save_seam_cost_field",
 ]

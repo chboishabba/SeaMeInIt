@@ -57,6 +57,7 @@ class SeamGraph:
     panels: tuple[SeamPanel, ...]
     measurement_loops: tuple[MeasurementLoop, ...]
     seam_metadata: Mapping[str, Mapping[str, Any]]
+    seam_costs: Mapping[str, Mapping[str, float]] | None = None
 
     def to_payload(self) -> dict[str, object]:
         """Serialise panels into the payload expected by :mod:`PatternExporter`."""
