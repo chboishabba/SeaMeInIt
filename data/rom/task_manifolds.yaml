@@ -1,0 +1,115 @@
+version: 1
+
+globals:
+  seed: 123
+  units: deg
+  default_samples: 33
+  default_legality:
+    alpha: 1.0
+    radii_scale: 1.0
+
+tasks:
+  - id: arm_cross_body_r
+    level: L2
+    description: "Right arm reaches across torso; should trigger forearm/upperarm vs torso collisions."
+    latent:
+      dims: 1
+      params:
+        - name: t
+          range: [0.0, 1.0]
+          samples: 41
+          schedule: linspace
+    program:
+      joints:
+        - joint: shoulder_r
+          axis: x
+          expr: "lerp(0, 55, t)"
+        - joint: shoulder_r
+          axis: z
+          expr: "lerp(0, -35, t)"
+        - joint: elbow_r
+          axis: x
+          expr: "lerp(0, 70, t)"
+        - joint: spine2
+          axis: y
+          expr: "lerp(0, 20, t)"
+    metadata:
+      tags: ["upper_limb_vs_torso", "collision_expected"]
+      active_axes_mode: explicit
+      legality:
+        filter_illegal: false
+        legality_weight: 0.5
+      chain:
+        chain_amplification: 0.25
+
+  - id: sit_to_stand_proxy
+    level: L2
+    description: "Hip+knee+pelvis correlated motion; should light hips/pelvis/knees and induce thigh-torso proximity."
+    latent:
+      dims: 1
+      params:
+        - name: t
+          range: [0.0, 1.0]
+          samples: 51
+          schedule: linspace
+    program:
+      joints:
+        - joint: pelvis
+          axis: x
+          expr: "lerp(0, 25, t)"
+        - joint: hip_r
+          axis: x
+          expr: "lerp(0, 65, t)"
+        - joint: hip_l
+          axis: x
+          expr: "lerp(0, 65, t)"
+        - joint: knee_r
+          axis: x
+          expr: "lerp(0, 85, t)"
+        - joint: knee_l
+          axis: x
+          expr: "lerp(0, 85, t)"
+        - joint: spine1
+          axis: x
+          expr: "lerp(0, 15, t)"
+    metadata:
+      tags: ["lower_chain", "pelvis", "knees"]
+      legality:
+        filter_illegal: false
+        legality_weight: 0.5
+      chain:
+        chain_amplification: 0.25
+
+  - id: overhead_reach_sym
+    level: L2
+    description: "Both arms overhead with slight spine extension."
+    latent:
+      dims: 1
+      params:
+        - name: t
+          range: [0.0, 1.0]
+          samples: 41
+    program:
+      joints:
+        - joint: shoulder_r
+          axis: x
+          expr: "lerp(0, 85, t)"
+        - joint: shoulder_l
+          axis: x
+          expr: "lerp(0, 85, t)"
+        - joint: elbow_r
+          axis: x
+          expr: "lerp(0, 35, t)"
+        - joint: elbow_l
+          axis: x
+          expr: "lerp(0, 35, t)"
+        - joint: spine3
+          axis: x
+          expr: "lerp(0, -10, t)"
+    metadata:
+      tags: ["bilateral", "shoulders"]
+      legality:
+        filter_illegal: false
+        legality_weight: 0.25
+      chain:
+        chain_amplification: 0.25

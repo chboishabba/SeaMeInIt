@@ -1,0 +1,94 @@
+{
+  "solver": "mst",
+  "total_cost": 16.009999999999998,
+  "mdl_cost": 0.0,
+  "mdl_breakdown": {
+    "seam_count": 0.0,
+    "seam_length": 0.0,
+    "panel_count": 0.0,
+    "boundary_roughness": 0.0,
+    "symmetry_violation": 0.0
+  },
+  "warnings": [],
+  "panels": {
+    "panel": {
+      "edges": [
+        {
+          "edge": [
+            0,
+            1
+          ],
+          "rom_mean": 2.005,
+          "rom_max": 4.0,
+          "rom_grad": 0.0,
+          "curvature": 0.0,
+          "fabric": 0.0,
+          "total": 6.005
+        },
+        {
+          "edge": [
+            0,
+            2
+          ],
+          "rom_mean": 2.005,
+          "rom_max": 4.0,
+          "rom_grad": 0.0,
+          "curvature": 0.0,
+          "fabric": 0.0,
+          "total": 6.005
+        },
+        {
+          "edge": [
+            1,
+            5
+          ],
+          "rom_mean": 4.0,
+          "rom_max": 4.0,
+          "rom_grad": 0.0,
+          "curvature": 0.0,
+          "fabric": 0.0,
+          "total": 8.0
+        },
+        {
+          "edge": [
+            2,
+            3
+          ],
+          "rom_mean": 4.0,
+          "rom_max": 4.0,
+          "rom_grad": 0.0,
+          "curvature": 0.0,
+          "fabric": 0.0,
+          "total": 8.0
+        },
+        {
+          "edge": [
+            3,
+            4
+          ],
+          "rom_mean": 4.0,
+          "rom_max": 4.0,
+          "rom_grad": 0.0,
+          "curvature": 0.0,
+          "fabric": 0.0,
+          "total": 8.0
+        }
+      ],
+      "cost_breakdown": {
+        "edge_cost": 16.009999999999998,
+        "vertex_cost": 0.0,
+        "symmetry_penalty": 0.0,
+        "branch_penalty": 0.0
+      },
+      "warnings": [],
+      "vertex_costs": {
+        "mean": 3.3349999999999995,
+        "max": 4.0
+      },
+      "fabric": {
+        "fabric_id": null,
+        "grain_rotation_deg": 0.0
+      }
+    }
+  }
+}

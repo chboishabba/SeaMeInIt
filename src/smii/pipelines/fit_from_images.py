@@ -7,8 +7,6 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence, TYPE_CHECKING
 
-import warnings
-
 if TYPE_CHECKING:  # pragma: no cover - import cycle guard for typing only
     from pipelines.measurement_inference import GaussianMeasurementModel
     from .fit_from_measurements import FitResult, MeasurementModel
@@ -17,7 +15,13 @@ import math
 
 import numpy as np
 
+from smii.measurements.from_mesh import infer_measurements_from_mesh
+
 HEADER_PREFIX = "# measurement:"
+
+
+def _is_pgm_fixture(path: Path) -> bool:
+    return path.name.lower().endswith("pgm")
 
 # Mediapipe landmark indices used by the heuristic regressor.  Importing the
 # dependency at module import time would make the CLI fail on environments that
@@ -188,17 +192,35 @@ def _normalise_image_paths(image_paths: Iterable[Path]) -> tuple[Path, ...]:
     return paths
 
 
-def _infer_measurements_from_images(paths: Sequence[Path]) -> dict[str, float]:
-    try:
-        from pipelines.afflec_regression import regress_measurements_from_images
-    except ModuleNotFoundError:  # pragma: no cover - exercised in integration usage
-        warnings.warn(
-            "pipelines.afflec_regression is not available (and is not shipped here); using the Ben Afflec fixture metadata instead.",
-            RuntimeWarning,
-            stacklevel=2,
+def _measurement_fixture_paths(paths: Iterable[Path]) -> list[Path]:
+    """Select the Afflec measurement-annotated PGM fixtures from a mixed list."""
+
+    pgm_paths = [path for path in paths if _is_pgm_fixture(path)]
+    if not pgm_paths:
+        raise MeasurementExtractionError(
+            "No measurement-annotated PGM fixtures found; supply .pgm files or install pipelines.afflec_regression."
         )
-        return extract_measurements_from_afflec_images(paths)
-    return regress_measurements_from_images(paths)
+    return pgm_paths
+
+
+def _infer_measurements_from_images(paths: Sequence[Path], *, detector: str = "mediapipe") -> dict[str, float]:
+    pgm_paths = [path for path in paths if _is_pgm_fixture(path)]
+    rgb_paths = [path for path in paths if not _is_pgm_fixture(path)]
+
+    if rgb_paths:
+        regression = regress_smplx_from_images(
+            paths, refine_with_measurements=False, detector=detector
+        )
+        vertices, _ = create_body_mesh_from_regression(regression, use_measurement_refinement=False)
+        return infer_measurements_from_mesh(vertices)
+
+    pgm_paths = _measurement_fixture_paths(paths)
+    from smii.pipelines.fit_from_measurements import fit_smplx_from_measurements, create_body_mesh
+
+    base_measurements = extract_measurements_from_afflec_images(pgm_paths)
+    base_fit = fit_smplx_from_measurements(base_measurements)
+    vertices, _ = create_body_mesh(base_fit)
+    return infer_measurements_from_mesh(vertices)
 
 
 def fit_smplx_from_images(
@@ -209,11 +231,12 @@ def fit_smplx_from_images(
     models: Sequence["MeasurementModel"] | None = None,
     num_shape_coeffs: int | None = None,
     inference_model: "GaussianMeasurementModel | None" = None,
+    detector: str = "mediapipe",
 ) -> "FitResult":
     """Fit SMPL-X parameters by inferring measurements from annotated PGM images."""
 
     paths = _normalise_image_paths(image_paths)
-    measurements = _infer_measurements_from_images(paths)
+    measurements = _infer_measurements_from_images(paths, detector=detector)
 
     from smii.pipelines.fit_from_measurements import fit_smplx_from_measurements
 
@@ -431,6 +454,67 @@ def _pose_landmarks_from_mediapipe(image_path: Path) -> PoseLandmarks:
     return PoseLandmarks(image_path=image_path, points=points, confidence=confidence)
 
 
+def _pose_landmarks_from_bbox(image_path: Path) -> PoseLandmarks:
+    """Very lightweight heuristic landmark generator derived from the image silhouette.
+
+    This is a deterministic fallback that keeps Afflec photo ingestion fast in constrained
+    environments where mediapipe cannot execute. It scales the pixel bounding box to a
+    nominal human height so downstream measurement inference remains stable.
+    """
+
+    image = _load_image(image_path)
+    gray = np.mean(image, axis=2)
+    mask = gray < 250  # treat bright background as empty
+    if not np.any(mask):
+        mask = np.ones_like(gray, dtype=bool)
+
+    ys, xs = np.nonzero(mask)
+    x_min, x_max = int(np.min(xs)), int(np.max(xs))
+    y_min, y_max = int(np.min(ys)), int(np.max(ys))
+    width = max(x_max - x_min, 1)
+    height = max(y_max - y_min, 1)
+
+    # Scale pixels to an approximate metric frame to keep betas in a sane range.
+    target_height_m = 1.70
+    scale = target_height_m / float(height)
+
+    def pt(xf: float, yf: float, z: float = 0.0) -> np.ndarray:
+        return np.array(
+            [
+                (x_min + xf * width) * scale,
+                (y_min + yf * height) * scale,
+                z,
+            ],
+            dtype=float,
+        )
+
+    points = {
+        "nose": pt(0.5, 0.02),
+        "left_eye": pt(0.46, 0.05),
+        "right_eye": pt(0.54, 0.05),
+        "left_ear": pt(0.42, 0.08),
+        "right_ear": pt(0.58, 0.08),
+        "left_shoulder": pt(0.32, 0.18),
+        "right_shoulder": pt(0.68, 0.18),
+        "left_elbow": pt(0.28, 0.38),
+        "right_elbow": pt(0.72, 0.38),
+        "left_wrist": pt(0.26, 0.56),
+        "right_wrist": pt(0.74, 0.56),
+        "left_hip": pt(0.40, 0.62),
+        "right_hip": pt(0.60, 0.62),
+        "left_knee": pt(0.42, 0.80),
+        "right_knee": pt(0.58, 0.80),
+        "left_ankle": pt(0.44, 0.96),
+        "right_ankle": pt(0.56, 0.96),
+        "left_heel": pt(0.44, 0.98),
+        "right_heel": pt(0.56, 0.98),
+        "left_foot_index": pt(0.46, 1.00),
+        "right_foot_index": pt(0.54, 1.00),
+    }
+    confidence = float(0.25 + 0.75 * mask.mean())
+    return PoseLandmarks(image_path=image_path, points=points, confidence=confidence)
+
+
 def _compute_body_features(landmarks: PoseLandmarks) -> BodyFeatures:
     left_shoulder = landmarks.vector("left_shoulder")
     right_shoulder = landmarks.vector("right_shoulder")
@@ -638,9 +722,14 @@ def regress_smplx_from_images(
 
     frames: list[SMPLXRegressionFrame] = []
     for path in paths:
-        if detector != "mediapipe":
-            raise ValueError(f"Unsupported detector '{detector}'. Only 'mediapipe' is currently available.")
-        landmarks = _pose_landmarks_from_mediapipe(path)
+        if detector == "mediapipe":
+            landmarks = _pose_landmarks_from_mediapipe(path)
+        elif detector == "bbox":
+            landmarks = _pose_landmarks_from_bbox(path)
+        else:
+            raise ValueError(
+                f"Unsupported detector '{detector}'. Choose from 'mediapipe' or 'bbox'."
+            )
         frames.append(regress_smplx_from_landmarks(landmarks))
 
     result = aggregate_regression_frames(frames)

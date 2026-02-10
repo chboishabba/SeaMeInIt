@@ -1,0 +1,40 @@
+{
+  "frame": {
+    "axis_spans_xyz": [
+      1.6529060006141663,
+      1.7147930562496185,
+      0.3056100010871887
+    ],
+    "width_axis": 0,
+    "depth_axis": 2,
+    "vertical_axis": 1,
+    "width_sign": 1.0,
+    "depth_sign": 1.0,
+    "vertical_sign": 1.0,
+    "top_radius": 0.07603779844041905,
+    "bottom_radius": 0.14938573386321205
+  },
+  "camera": {
+    "front": {
+      "elev": 0.0,
+      "azim": -90.0
+    },
+    "back": {
+      "elev": 0.0,
+      "azim": 90.0
+    },
+    "front_3q": {
+      "elev": 0.0,
+      "azim": -120.0
+    },
+    "isometric": {
+      "elev": 18.0,
+      "azim": -60.0
+    }
+  },
+  "notes": [
+    "Canonical axes map to (x=width, y=depth, z=vertical).",
+    "front/back are opposite yaw views at zero pitch.",
+    "front_3q is a pure yaw from front (no pitch)."
+  ]
+}

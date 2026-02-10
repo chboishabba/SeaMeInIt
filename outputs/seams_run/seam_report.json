@@ -1,0 +1,191 @@
+{
+  "solver": "pda",
+  "total_cost": 25742002.1,
+  "mdl_cost": 2.1,
+  "mdl_breakdown": {
+    "seam_count": 0.0,
+    "seam_length": 0.0,
+    "panel_count": 2.0,
+    "boundary_roughness": 0.0,
+    "symmetry_violation": 0.1
+  },
+  "warnings": [],
+  "panels": {
+    "chest_circumference_to_neck_circumference_left": {
+      "edges": [],
+      "cost_breakdown": {
+        "edge_energy": 0.0,
+        "vertex_cost": 0.0,
+        "symmetry_penalty": 0.0,
+        "connectivity_penalty": 3154000.0,
+        "fabric_cost": 0.0
+      },
+      "warnings": [
+        "panel has no seam edges",
+        "panel is disconnected"
+      ],
+      "vertex_costs": {
+        "mean": 8.47802026289223e-05,
+        "max": 0.00023579235874713776
+      },
+      "fabric": {
+        "fabric_id": null,
+        "grain_rotation_deg": 0.0
+      }
+    },
+    "chest_circumference_to_neck_circumference_right": {
+      "edges": [],
+      "cost_breakdown": {
+        "edge_energy": 0.0,
+        "vertex_cost": 0.0,
+        "symmetry_penalty": 0.0,
+        "connectivity_penalty": 3154000.0,
+        "fabric_cost": 0.0
+      },
+      "warnings": [
+        "panel has no seam edges",
+        "panel is disconnected"
+      ],
+      "vertex_costs": {
+        "mean": 8.47802026289223e-05,
+        "max": 0.00023579235874713776
+      },
+      "fabric": {
+        "fabric_id": null,
+        "grain_rotation_deg": 0.0
+      }
+    },
+    "hip_circumference_to_waist_circumference_left": {
+      "edges": [],
+      "cost_breakdown": {
+        "edge_energy": 0.0,
+        "vertex_cost": 0.0,
+        "symmetry_penalty": 0.0,
+        "connectivity_penalty": 3239000.0,
+        "fabric_cost": 0.0
+      },
+      "warnings": [
+        "panel has no seam edges",
+        "panel is disconnected"
+      ],
+      "vertex_costs": {
+        "mean": 8.437104171617856e-05,
+        "max": 0.00023579235874713776
+      },
+      "fabric": {
+        "fabric_id": null,
+        "grain_rotation_deg": 0.0
+      }
+    },
+    "hip_circumference_to_waist_circumference_right": {
+      "edges": [],
+      "cost_breakdown": {
+        "edge_energy": 0.0,
+        "vertex_cost": 0.0,
+        "symmetry_penalty": 0.0,
+        "connectivity_penalty": 3239000.0,
+        "fabric_cost": 0.0
+      },
+      "warnings": [
+        "panel has no seam edges",
+        "panel is disconnected"
+      ],
+      "vertex_costs": {
+        "mean": 8.437104171617856e-05,
+        "max": 0.00023579235874713776
+      },
+      "fabric": {
+        "fabric_id": null,
+        "grain_rotation_deg": 0.0
+      }
+    },
+    "thigh_circumference_to_hip_circumference_left": {
+      "edges": [],
+      "cost_breakdown": {
+        "edge_energy": 0.0,
+        "vertex_cost": 0.0,
+        "symmetry_penalty": 0.0,
+        "connectivity_penalty": 3239000.0,
+        "fabric_cost": 0.0
+      },
+      "warnings": [
+        "panel has no seam edges",
+        "panel is disconnected"
+      ],
+      "vertex_costs": {
+        "mean": 8.437104171617856e-05,
+        "max": 0.00023579235874713776
+      },
+      "fabric": {
+        "fabric_id": null,
+        "grain_rotation_deg": 0.0
+      }
+    },
+    "thigh_circumference_to_hip_circumference_right": {
+      "edges": [],
+      "cost_breakdown": {
+        "edge_energy": 0.0,
+        "vertex_cost": 0.0,
+        "symmetry_penalty": 0.0,
+        "connectivity_penalty": 3239000.0,
+        "fabric_cost": 0.0
+      },
+      "warnings": [
+        "panel has no seam edges",
+        "panel is disconnected"
+      ],
+      "vertex_costs": {
+        "mean": 8.437104171617856e-05,
+        "max": 0.00023579235874713776
+      },
+      "fabric": {
+        "fabric_id": null,
+        "grain_rotation_deg": 0.0
+      }
+    },
+    "waist_circumference_to_chest_circumference_left": {
+      "edges": [],
+      "cost_breakdown": {
+        "edge_energy": 0.0,
+        "vertex_cost": 0.0,
+        "symmetry_penalty": 0.0,
+        "connectivity_penalty": 3239000.0,
+        "fabric_cost": 0.0
+      },
+      "warnings": [
+        "panel has no seam edges",
+        "panel is disconnected"
+      ],
+      "vertex_costs": {
+        "mean": 8.437104171617856e-05,
+        "max": 0.00023579235874713776
+      },
+      "fabric": {
+        "fabric_id": null,
+        "grain_rotation_deg": 0.0
+      }
+    },
+    "waist_circumference_to_chest_circumference_right": {
+      "edges": [],
+      "cost_breakdown": {
+        "edge_energy": 0.0,
+        "vertex_cost": 0.0,
+        "symmetry_penalty": 0.0,
+        "connectivity_penalty": 3239000.0,
+        "fabric_cost": 0.0
+      },
+      "warnings": [
+        "panel has no seam edges",
+        "panel is disconnected"
+      ],
+      "vertex_costs": {
+        "mean": 8.437104171617856e-05,
+        "max": 0.00023579235874713776
+      },
+      "fabric": {
+        "fabric_id": null,
+        "grain_rotation_deg": 0.0
+      }
+    }
+  }
+}

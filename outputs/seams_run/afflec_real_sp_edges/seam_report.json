@@ -1,0 +1,397 @@
+{
+  "solver": "shortest_path",
+  "total_cost": Infinity,
+  "mdl_cost": 7.003822869044314,
+  "mdl_breakdown": {
+    "seam_count": 5.0,
+    "seam_length": 0.0037027535356081685,
+    "panel_count": 2.0,
+    "boundary_roughness": 0.00012011550870643228,
+    "symmetry_violation": 0.0
+  },
+  "warnings": [],
+  "panels": {
+    "chest_circumference_to_neck_circumference_left": {
+      "edges": [
+        {
+          "edge": [
+            14,
+            9013
+          ],
+          "rom_mean": 0.21557901131190393,
+          "rom_max": 0.10790886062472278,
+          "rom_grad": 0.0004774198750832903,
+          "curvature": 0.0,
+          "fabric": 0.0,
+          "total": 0.32396529181170997
+        },
+        {
+          "edge": [
+            9013,
+            9048
+          ],
+          "rom_mean": 0.21836030065376774,
+          "rom_max": 0.11045144002904496,
+          "rom_grad": 0.005085158808644352,
+          "curvature": 0.0,
+          "fabric": 0.0,
+          "total": 0.33389689949145707
+        },
+        {
+          "edge": [
+            9046,
+            9048
+          ],
+          "rom_mean": 0.22393263564727134,
+          "rom_max": 0.1134811956182264,
+          "rom_grad": 0.00605951117836287,
+          "curvature": 0.0,
+          "fabric": 0.0,
+          "total": 0.34347334244386063
+        },
+        {
+          "edge": [
+            9032,
+            9046
+          ],
+          "rom_mean": 0.2286275595877953,
+          "rom_max": 0.1151463639695689,
+          "rom_grad": 0.0033303367026850106,
+          "curvature": 0.0,
+          "fabric": 0.0,
+          "total": 0.3471042602600492
+        },
+        {
+          "edge": [
+            9030,
+            9032
+          ],
+          "rom_mean": 0.23001048702985744,
+          "rom_max": 0.1151463639695689,
+          "rom_grad": 0.000564481818560697,
+          "curvature": 0.0,
+          "fabric": 0.0,
+          "total": 0.345721332817987
+        },
+        {
+          "edge": [
+            9030,
+            9045
+          ],
+          "rom_mean": 0.22916808897018698,
+          "rom_max": 0.11486412306028855,
+          "rom_grad": 0.001120314300780273,
+          "curvature": 0.0,
+          "fabric": 0.0,
+          "total": 0.3451525263312558
+        },
+        {
+          "edge": [
+            9042,
+            9045
+          ],
+          "rom_mean": 0.2281470943613439,
+          "rom_max": 0.11430396590989841,
+          "rom_grad": 0.000921674916905868,
+          "curvature": 0.0,
+          "fabric": 0.0,
+          "total": 0.34337273518814815
+        },
+        {
+          "edge": [
+            9040,
+            9042
+          ],
+          "rom_mean": 0.2272030355913806,
+          "rom_max": 0.11384312845144548,
+          "rom_grad": 0.0009664426230207024,
+          "curvature": 0.0,
+          "fabric": 0.0,
+          "total": 0.34201260666584676
+        },
+        {
+          "edge": [
+            9036,
+            9040
+          ],
+          "rom_mean": 0.22660444855375905,
+          "rom_max": 0.11335990713993513,
+          "rom_grad": 0.00023073145222238245,
+          "curvature": 0.0,
+          "fabric": 0.0,
+          "total": 0.3401950871459166
+        },
+        {
+          "edge": [
+            9036,
+            9432
+          ],
+          "rom_mean": 0.22616020342736304,
+          "rom_max": 0.11324454141382394,
+          "rom_grad": 0.0006577588005697022,
+          "curvature": 0.0,
+          "fabric": 0.0,
+          "total": 0.3400625036417567
+        }
+      ],
+      "cost_breakdown": {
+        "edge_cost": 0.04960624655169568,
+        "vertex_cost": 0.0
+      },
+      "warnings": [],
+      "vertex_costs": {
+        "mean": 0.2315591311189691,
+        "max": 0.48267080597302275
+      },
+      "fabric": {
+        "fabric_id": null,
+        "grain_rotation_deg": 0.0
+      }
+    },
+    "chest_circumference_to_neck_circumference_right": {
+      "edges": [
+        {
+          "edge": [
+            14,
+            9013
+          ],
+          "rom_mean": 0.21557901131190393,
+          "rom_max": 0.10790886062472278,
+          "rom_grad": 0.0004774198750832903,
+          "curvature": 0.0,
+          "fabric": 0.0,
+          "total": 0.32396529181170997
+        },
+        {
+          "edge": [
+            9013,
+            9048
+          ],
+          "rom_mean": 0.21836030065376774,
+          "rom_max": 0.11045144002904496,
+          "rom_grad": 0.005085158808644352,
+          "curvature": 0.0,
+          "fabric": 0.0,
+          "total": 0.33389689949145707
+        },
+        {
+          "edge": [
+            9046,
+            9048
+          ],
+          "rom_mean": 0.22393263564727134,
+          "rom_max": 0.1134811956182264,
+          "rom_grad": 0.00605951117836287,
+          "curvature": 0.0,
+          "fabric": 0.0,
+          "total": 0.34347334244386063
+        },
+        {
+          "edge": [
+            9032,
+            9046
+          ],
+          "rom_mean": 0.2286275595877953,
+          "rom_max": 0.1151463639695689,
+          "rom_grad": 0.0033303367026850106,
+          "curvature": 0.0,
+          "fabric": 0.0,
+          "total": 0.3471042602600492
+        },
+        {
+          "edge": [
+            9030,
+            9032
+          ],
+          "rom_mean": 0.23001048702985744,
+          "rom_max": 0.1151463639695689,
+          "rom_grad": 0.000564481818560697,
+          "curvature": 0.0,
+          "fabric": 0.0,
+          "total": 0.345721332817987
+        },
+        {
+          "edge": [
+            9030,
+            9045
+          ],
+          "rom_mean": 0.22916808897018698,
+          "rom_max": 0.11486412306028855,
+          "rom_grad": 0.001120314300780273,
+          "curvature": 0.0,
+          "fabric": 0.0,
+          "total": 0.3451525263312558
+        },
+        {
+          "edge": [
+            9042,
+            9045
+          ],
+          "rom_mean": 0.2281470943613439,
+          "rom_max": 0.11430396590989841,
+          "rom_grad": 0.000921674916905868,
+          "curvature": 0.0,
+          "fabric": 0.0,
+          "total": 0.34337273518814815
+        },
+        {
+          "edge": [
+            9040,
+            9042
+          ],
+          "rom_mean": 0.2272030355913806,
+          "rom_max": 0.11384312845144548,
+          "rom_grad": 0.0009664426230207024,
+          "curvature": 0.0,
+          "fabric": 0.0,
+          "total": 0.34201260666584676
+        },
+        {
+          "edge": [
+            9036,
+            9040
+          ],
+          "rom_mean": 0.22660444855375905,
+          "rom_max": 0.11335990713993513,
+          "rom_grad": 0.00023073145222238245,
+          "curvature": 0.0,
+          "fabric": 0.0,
+          "total": 0.3401950871459166
+        },
+        {
+          "edge": [
+            9036,
+            9432
+          ],
+          "rom_mean": 0.22616020342736304,
+          "rom_max": 0.11324454141382394,
+          "rom_grad": 0.0006577588005697022,
+          "curvature": 0.0,
+          "fabric": 0.0,
+          "total": 0.3400625036417567
+        }
+      ],
+      "cost_breakdown": {
+        "edge_cost": 0.04960624655169568,
+        "vertex_cost": 0.0
+      },
+      "warnings": [],
+      "vertex_costs": {
+        "mean": 0.2315591311189691,
+        "max": 0.48267080597302275
+      },
+      "fabric": {
+        "fabric_id": null,
+        "grain_rotation_deg": 0.0
+      }
+    },
+    "hip_circumference_to_waist_circumference_left": {
+      "edges": [],
+      "cost_breakdown": {
+        "edge_cost": Infinity,
+        "vertex_cost": 0.0
+      },
+      "warnings": [
+        "no path between anchors"
+      ],
+      "vertex_costs": {
+        "mean": 0.34603498765201324,
+        "max": 0.4332882522790453
+      },
+      "fabric": {
+        "fabric_id": null,
+        "grain_rotation_deg": 0.0
+      }
+    },
+    "hip_circumference_to_waist_circumference_right": {
+      "edges": [],
+      "cost_breakdown": {
+        "edge_cost": Infinity,
+        "vertex_cost": 0.0
+      },
+      "warnings": [
+        "no path between anchors"
+      ],
+      "vertex_costs": {
+        "mean": 0.34603498765201324,
+        "max": 0.4332882522790453
+      },
+      "fabric": {
+        "fabric_id": null,
+        "grain_rotation_deg": 0.0
+      }
+    },
+    "thigh_circumference_to_hip_circumference_left": {
+      "edges": [],
+      "cost_breakdown": {
+        "edge_cost": Infinity,
+        "vertex_cost": 0.0
+      },
+      "warnings": [
+        "no path between anchors"
+      ],
+      "vertex_costs": {
+        "mean": 0.32254950387183046,
+        "max": 0.35582505827835686
+      },
+      "fabric": {
+        "fabric_id": null,
+        "grain_rotation_deg": 0.0
+      }
+    },
+    "thigh_circumference_to_hip_circumference_right": {
+      "edges": [],
+      "cost_breakdown": {
+        "edge_cost": Infinity,
+        "vertex_cost": 0.0
+      },
+      "warnings": [
+        "no path between anchors"
+      ],
+      "vertex_costs": {
+        "mean": 0.32254950387183046,
+        "max": 0.35582505827835686
+      },
+      "fabric": {
+        "fabric_id": null,
+        "grain_rotation_deg": 0.0
+      }
+    },
+    "waist_circumference_to_chest_circumference_left": {
+      "edges": [],
+      "cost_breakdown": {
+        "edge_cost": Infinity,
+        "vertex_cost": 0.0
+      },
+      "warnings": [
+        "no path between anchors"
+      ],
+      "vertex_costs": {
+        "mean": 0.2969056519197699,
+        "max": 0.5243209261356697
+      },
+      "fabric": {
+        "fabric_id": null,
+        "grain_rotation_deg": 0.0
+      }
+    },
+    "waist_circumference_to_chest_circumference_right": {
+      "edges": [],
+      "cost_breakdown": {
+        "edge_cost": Infinity,
+        "vertex_cost": 0.0
+      },
+      "warnings": [
+        "no path between anchors"
+      ],
+      "vertex_costs": {
+        "mean": 0.2969056519197699,
+        "max": 0.5243209261356697
+      },
+      "fabric": {
+        "fabric_id": null,
+        "grain_rotation_deg": 0.0
+      }
+    }
+  }
+}

@@ -1,0 +1,78 @@
+version: 1
+task_id: reach_overhead_v1
+description: >
+  Overhead reach + cross-body + return; emphasizes shoulder flexion/abduction.
+
+mixture:
+  - name: keyposes
+    weight: 0.35
+    source:
+      kind: json_keyposes
+      path: data/rom/afflec_keyposes.json
+    sampling:
+      mode: discrete
+      normalize_within_source: true
+
+  - name: sweeps
+    weight: 0.65
+    source:
+      kind: procedural_sweep
+      skeleton: smplx
+      sweeps:
+        - sweep_id: shoulder_flex_abduct
+          weight: 0.60
+          joints:
+            left_shoulder:
+              dofs:
+                flexion:
+                  range: [0.0, 1.35]
+                  steps: 9
+                  schedule: cosine
+                abduction:
+                  range: [0.0, 1.10]
+                  steps: 7
+                  schedule: cosine
+            right_shoulder:
+              dofs:
+                flexion: { range: [0.0, 1.05], steps: 7, schedule: cosine }
+                abduction: { range: [0.0, 0.85], steps: 5, schedule: cosine }
+          couplings:
+            - type: linear
+              a: left_shoulder.flexion
+              b: left_shoulder.abduction
+              slope: 0.35
+              clamp: true
+          fixed:
+            pelvis: { yaw: 0.0, pitch: 0.0, roll: 0.0 }
+            spine: { flexion: 0.15 }
+
+        - sweep_id: cross_body_reach
+          weight: 0.40
+          joints:
+            left_shoulder:
+              dofs:
+                flexion: { range: [0.4, 1.2], steps: 7, schedule: uniform }
+                rotation: { range: [-0.7, 0.7], steps: 9, schedule: uniform }
+            spine:
+              dofs:
+                yaw: { range: [-0.45, 0.45], steps: 7, schedule: cosine }
+
+    gating:
+      manifest: data/constraints/coupling_manifest.json
+      policy:
+        on_fail: drop
+        downweight_factor: 0.2
+
+aggregation:
+  statistic: mean
+  temperature: 1.0
+  per_sweep_normalize: true
+
+spatial_emphasis:
+  regions:
+    - name: axilla
+      weight: 1.5
+      source: constraints:forbidden_vertices/axilla
+    - name: shoulder_cap
+      weight: 1.2
+      source: constraints:anchors/shoulder_cap

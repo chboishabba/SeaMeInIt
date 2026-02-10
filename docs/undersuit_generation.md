@@ -30,6 +30,63 @@ python -m smii.pipelines.generate_undersuit \
   --material neoprene
 ```
 
+### ROM seam-cost inputs (afflec demo)
+
+The undersuit CLI can annotate seams with ROM-driven cost fields. The real
+sampler payload for the afflec body is not stored in the repo; place it at
+`outputs/rom/afflec_sampler.json` (ignored by git). It must contain coeff
+vectors sized to the afflec mesh basis (9,438 vertices; use the coeff length `K`
+from this sampler when building the basis).
+
+Regenerate seam costs aligned to the afflec body:
+
+```bash
+# Build basis on afflec body with K components from your sampler
+PYTHONPATH=src python scripts/generate_canonical_basis.py \
+  --vertices outputs/afflec_demo/afflec_body.npz \
+  --components <K> \
+  --harmonics 5 \
+  --output outputs/rom/canonical_afflec_basis.npz
+
+# Aggregate sampler into seam cost field sized to afflec mesh
+PYTHONPATH=src python examples/rom_aggregate_from_samples.py \
+  --samples outputs/rom/afflec_sampler.json \
+  --basis outputs/rom/canonical_afflec_basis.npz \
+  --field shear \
+  --save-costs outputs/rom/seam_costs_afflec.npz
+
+# Use the derived seam costs when generating the undersuit
+PYTHONPATH=src python -m smii.pipelines.generate_undersuit \
+  outputs/afflec_demo/afflec_body.npz \
+  --seam-costs outputs/rom/seam_costs_afflec.npz \
+  --output outputs/undersuit_demo
+```
+
+If the sampler ships with a gate manifest, add `--gate-manifest` to the ROM
+aggregation command. Update `--field` if your sampler exports a different
+coefficient key.
+
+#### Synthetic sampler (plumbing-only)
+
+When no real ROM sampler is available, generate a plumbing-only payload that
+respects basis dimensions using the helper script:
+
+```bash
+PYTHONPATH=src python scripts/generate_synthetic_rom_sampler.py \
+  --body outputs/afflec_demo/afflec_body.npz \
+  --components 32 \
+  --samples 8 \
+  --out outputs/rom/afflec_sampler.json
+```
+
+The synthetic sampler is deterministic, keeps coeff length aligned to the body
+basis, and is marked `meta.synthetic=true` so outputs are clearly labeled. Swap
+in real sampler data when available; no code changes are required.
+
+> Note: `generate_canonical_basis.py` with the default `--harmonics 3` emits
+> 23 features. For component counts above 23 (e.g., `K=32`), pass `--harmonics 5`
+> so the basis can span the requested width.
+
 This command writes the following artefacts:
 
 - `base_layer.npz`: watertight outer skin of the bodysuit.

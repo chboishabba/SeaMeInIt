@@ -1,0 +1,5 @@
+seam_count: 0.5
+seam_length: 0.1
+panel_count: 0.25
+boundary_roughness: 0.1
+symmetry_violation: 0.2

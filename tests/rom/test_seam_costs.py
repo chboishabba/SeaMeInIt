@@ -1,10 +1,11 @@
 import numpy as np
+import warnings
 
-from suit.seam_generator import MeasurementLoop, SeamGenerator
+from suit.seam_generator import MeasurementLoop, SeamGenerator, SeamGraph, SeamPanel
 
 from smii.rom.aggregation import RomSample, aggregate_fields
 from smii.rom.basis import KernelBasis, KernelProjector
-from smii.rom.seam_costs import annotate_seam_graph_with_costs, build_seam_cost_field
+from smii.rom.seam_costs import SeamCostField, annotate_seam_graph_with_costs, build_seam_cost_field
 
 
 def test_build_seam_cost_field_maps_edge_weights():
@@ -149,3 +150,55 @@ def test_annotate_seam_graph_with_costs_maps_real_seams():
     assert costs["edge_cost_max"] >= costs["edge_cost_mean"] >= 0.0
     assert costs["samples_used"] == 1
     assert annotated.seam_metadata == seam_graph.seam_metadata
+
+
+def test_annotate_seam_graph_zero_fills_empty_panels():
+    cost_field = SeamCostField(
+        field="phi",
+        vertex_costs=np.array([1.0, 2.0], dtype=float),
+        edge_costs=np.zeros(0, dtype=float),
+        edges=tuple(),
+        samples_used=1,
+        metadata={},
+    )
+    panel_empty = SeamPanel(
+        name="empty",
+        anchor_loops=("a", "b"),
+        side="front",
+        vertices=np.zeros((0, 3), dtype=float),
+        faces=np.zeros((0, 3), dtype=int),
+        global_indices=tuple(),
+        seam_vertices=tuple(),
+        loop_vertex_indices=tuple(),
+        metadata={},
+    )
+    panel_full = SeamPanel(
+        name="full",
+        anchor_loops=("a", "b"),
+        side="front",
+        vertices=np.zeros((2, 3), dtype=float),
+        faces=np.zeros((0, 3), dtype=int),
+        global_indices=(0, 1),
+        seam_vertices=(0, 1),
+        loop_vertex_indices=tuple(),
+        metadata={},
+    )
+    seam_graph = SeamGraph(
+        panels=(panel_empty, panel_full),
+        measurement_loops=tuple(),
+        seam_metadata={},
+        seam_costs=None,
+    )
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        annotated = annotate_seam_graph_with_costs(cost_field, seam_graph)
+
+    assert annotated.seam_costs["empty"]["vertex_cost_mean"] == 0.0
+    assert annotated.seam_costs["empty"]["edge_cost_mean"] == 0.0
+    assert annotated.seam_costs["full"]["vertex_cost_mean"] > 0.0
+    assert annotated.seam_costs["empty"]["empty_vertices"] is True
+    assert annotated.seam_costs["full"]["empty_vertices"] is False
+    assert annotated.seam_costs["empty"]["vertex_count"] == 0
+    assert annotated.seam_costs["full"]["vertex_count"] == 2
+    assert any("without mapped vertices" in str(w.message) for w in caught)

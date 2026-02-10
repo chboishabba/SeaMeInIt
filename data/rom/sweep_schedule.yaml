@@ -1,0 +1,108 @@
+meta:
+  pose_layout: smplx_body_v1
+  units: degrees
+  seed: 13
+  mirror_sides: true
+
+l0:
+  # Single-DOF sweeps; other joints held at neutral.
+  joints:
+    - id: shoulder
+      sides: [left, right]
+      axes:
+        - name: flexion
+          range_deg: [-20, 170]
+        - name: abduction
+          range_deg: [-30, 160]
+        - name: rotation
+          range_deg: [-60, 90]
+      steps: 7
+    - id: elbow
+      sides: [left, right]
+      axes:
+        - name: flexion
+          range_deg: [-5, 150]
+      steps: 5
+    - id: hip
+      sides: [left, right]
+      axes:
+        - name: flexion
+          range_deg: [-20, 130]
+        - name: abduction
+          range_deg: [-45, 45]
+        - name: rotation
+          range_deg: [-60, 60]
+      steps: 7
+    - id: knee
+      sides: [left, right]
+      axes:
+        - name: flexion
+          range_deg: [-5, 150]
+      steps: 5
+    - id: spine
+      axes:
+        - name: bend
+          range_deg: [-30, 30]
+        - name: twist
+          range_deg: [-45, 45]
+      steps: 7
+    - id: neck
+      axes:
+        - name: pitch
+          range_deg: [-30, 30]
+        - name: yaw
+          range_deg: [-45, 45]
+      steps: 5
+
+l1:
+  # Targeted joint pairs (no full combinatorics).
+  grid_steps: 5
+  pairs:
+    - id: shoulder_elbow
+      sides: [left, right]
+      joints: [[shoulder, flexion], [elbow, flexion]]
+    - id: shoulder_rotation_elbow
+      sides: [left, right]
+      joints: [[shoulder, rotation], [elbow, flexion]]
+    - id: shoulder_spine_twist
+      sides: [left, right]
+      joints: [[shoulder, flexion], [spine, twist]]
+    - id: hip_knee
+      sides: [left, right]
+      joints: [[hip, flexion], [knee, flexion]]
+    - id: hip_rotation_knee
+      sides: [left, right]
+      joints: [[hip, rotation], [knee, flexion]]
+    - id: hip_spine_bend
+      sides: [left, right]
+      joints: [[hip, flexion], [spine, bend]]
+    - id: spine_bend_twist
+      joints: [[spine, bend], [spine, twist]]
+
+l2:
+  # Task manifolds (controllers/segments), not grids.
+  tasks:
+    - id: neutral_breathing
+      controller: neutral_breathing
+      samples: 24
+    - id: overhead_reach
+      controller: reach_overhead
+      samples: 32
+    - id: forward_reach
+      controller: reach_forward
+      samples: 24
+    - id: squat_step
+      controller: squat_step
+      samples: 24
+    - id: twist_reach
+      controller: twist_reach
+      samples: 24
+    - id: gait_proxy
+      controller: gait_proxy
+      samples: 48
+
+l3:
+  # Adaptive refinement budget; sampled where residuals are highest.
+  rounds: 3
+  samples_per_round: 256
+  residual_selector: top_residual_pairs

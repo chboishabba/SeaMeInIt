@@ -1,0 +1,17 @@
+version: 1
+fabric_id: woven_2way
+description: Woven 2-way fabric with limited stretch; no bias allowed.
+
+compliance:
+  s_parallel: 0.35
+  s_perp: 0.08
+  s_shear: 0.15
+
+mdl_modifiers:
+  seam_length: 1.1
+  seam_count: 1.0
+  panel_count: 1.05
+
+constraints:
+  max_grain_rotation_per_panel_deg: 15
+  allow_bias: false

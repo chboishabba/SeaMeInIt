@@ -99,6 +99,7 @@ def _init_accumulators(count: int, field_names: Sequence[str]) -> MutableMapping
             "sumsq": np.zeros(count, dtype=float),
             "max": np.full(count, -np.inf, dtype=float),
             "count": np.zeros(1, dtype=int),
+            "weight": np.zeros(1, dtype=float),
         }
     return accumulators
 
@@ -107,6 +108,7 @@ def _finalize_stats(accumulators: Mapping[str, dict[str, np.ndarray]]) -> Mappin
     finalized: MutableMapping[str, FieldStats] = {}
     for name, acc in accumulators.items():
         present_count = int(acc["count"][0])
+        weight_sum = float(acc.get("weight", np.zeros(1, dtype=float))[0])
         if present_count == 0:
             shape = acc["sum"].shape
             nan_field = np.full(shape, np.nan, dtype=float)
@@ -117,8 +119,9 @@ def _finalize_stats(accumulators: Mapping[str, dict[str, np.ndarray]]) -> Mappin
                 sample_count=present_count,
             )
             continue
-        mean = acc["sum"] / present_count
-        variance = np.maximum(acc["sumsq"] / present_count - mean**2, 0.0)
+        denom = weight_sum if weight_sum > 0.0 else float(present_count)
+        mean = acc["sum"] / denom
+        variance = np.maximum(acc["sumsq"] / denom - mean**2, 0.0)
         finalized[name] = FieldStats(
             mean=mean,
             maximum=acc["max"],
@@ -181,6 +184,7 @@ def aggregate_fields(
     edges: Sequence[tuple[int, int]] | None = None,
     gate: RomGate | None = None,
     diagnostics_top_k: int = 5,
+    sample_weights: Mapping[str, float] | Sequence[float] | None = None,
 ) -> RomAggregation:
     """Aggregate per-vertex and per-edge statistics for ROM samples.
 
@@ -197,6 +201,8 @@ def aggregate_fields(
             edge-wise magnitudes are aggregated alongside vertices.
         gate: Optional PDA gate to accept or reject samples.
         diagnostics_top_k: Number of hotspots to surface per field.
+        sample_weights: Optional weights applied per sample (mapping by pose_id or sequence
+            aligned to iteration order). Missing entries default to 1.0.
     """
 
     iterator = list(samples)
@@ -219,6 +225,7 @@ def aggregate_fields(
             "sumsq": np.zeros(projector.vertex_count, dtype=float),
             "max": np.full(projector.vertex_count, -np.inf, dtype=float),
             "count": np.zeros(1, dtype=int),
+            "weight": np.zeros(1, dtype=float),
         }
         if edges:
             assert edge_array is not None
@@ -227,6 +234,7 @@ def aggregate_fields(
                 "sumsq": np.zeros(edge_count, dtype=float),
                 "max": np.full(edge_count, -np.inf, dtype=float),
                 "count": np.zeros(1, dtype=int),
+                "weight": np.zeros(1, dtype=float),
             }
 
     total_samples = len(iterator)
@@ -234,7 +242,7 @@ def aggregate_fields(
     rejection_reasons: Counter[str] = Counter()
     rejection_details: dict[str, GateReason] = {}
 
-    for sample in iterator:
+    for idx, sample in enumerate(iterator):
         if gate is not None:
             decision = gate.evaluate(sample.observations or {})
             if not decision.accepted:
@@ -242,6 +250,15 @@ def aggregate_fields(
                     rejection_reasons.update([reason.id])
                     rejection_details.setdefault(reason.id, reason)
                 continue
+
+        weight = 1.0
+        if sample_weights is not None:
+            if isinstance(sample_weights, Mapping):
+                weight = float(sample_weights.get(sample.pose_id, 1.0))
+            else:
+                if idx < len(sample_weights):
+                    weight = float(sample_weights[idx])
+        weight = max(weight, 0.0)
 
         missing_required = [field for field in required_fields if field not in sample.coeffs]
         if missing_required:
@@ -257,19 +274,21 @@ def aggregate_fields(
             ensure_field(field_name)
             field_values = projector.project(coeffs)
             acc = vertex_acc[field_name]
-            acc["sum"] += field_values
-            acc["sumsq"] += field_values**2
+            acc["sum"] += weight * field_values
+            acc["sumsq"] += weight * (field_values**2)
             acc["max"] = np.maximum(acc["max"], field_values)
             acc["count"][0] += 1
+            acc["weight"][0] += weight
 
             if edges:
                 assert edge_array is not None
                 edge_values = np.abs(field_values[edge_array[:, 0]] - field_values[edge_array[:, 1]])
                 edge_store = edge_acc[field_name]
-                edge_store["sum"] += edge_values
-                edge_store["sumsq"] += edge_values**2
+                edge_store["sum"] += weight * edge_values
+                edge_store["sumsq"] += weight * (edge_values**2)
                 edge_store["max"] = np.maximum(edge_store["max"], edge_values)
                 edge_store["count"][0] += 1
+                edge_store["weight"][0] += weight
 
         accepted_samples += 1
 

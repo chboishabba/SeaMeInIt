@@ -9,6 +9,7 @@ from typing import Iterable, Sequence
 
 import json
 import numpy as np
+import shutil
 
 from smii.meshing import repair_mesh_with_pymeshfix
 
@@ -130,7 +131,12 @@ def _default_afflec_images() -> list[Path]:
     """Return the bundled Ben Afflec fixture captures used for smoke tests."""
 
     fixture_dir = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "afflec"
-    return sorted(fixture_dir.glob("*.pgm"))
+    return sorted(
+        path
+        for path in fixture_dir.iterdir()
+        if path.is_file()
+        and path.suffix.lower() in _SUPPORTED_IMAGE_SUFFIXES
+    )
 
 
 def _expand_image_inputs(paths: Iterable[Path]) -> list[Path]:
@@ -143,11 +149,13 @@ def _expand_image_inputs(paths: Iterable[Path]) -> list[Path]:
             files = [
                 item
                 for item in sorted(path.rglob("*"))
-                if item.is_file() and item.suffix.lower() in _SUPPORTED_IMAGE_SUFFIXES
+                if item.is_file()
+                and item.suffix.lower() in _SUPPORTED_IMAGE_SUFFIXES
             ]
             expanded.extend(files)
         else:
-            expanded.append(path)
+            if path.suffix.lower() in _SUPPORTED_IMAGE_SUFFIXES:
+                expanded.append(path)
     seen: set[Path] = set()
     unique: list[Path] = []
     for path in expanded:
@@ -174,6 +182,9 @@ def run_afflec_fixture_demo(
     output_dir: Path | None = None,
     model_assets: Path | None = None,
     model_backend: str = "smplx",
+    force: bool = False,
+    clean_output: bool = False,
+    detector: str = "bbox",
 ) -> Path:
     """Fit SMPL family parameters from the tongue-in-cheek Ben Afflec fixtures."""
 
@@ -194,22 +205,45 @@ def run_afflec_fixture_demo(
     import trimesh
 
     image_paths = list(images or _default_afflec_images())
+    # Expand directories to file lists to avoid silent no-ops
+    if images is not None:
+        image_paths = _expand_image_inputs(image_paths)
     if not image_paths:
         raise FileNotFoundError(
             "No Afflec fixture images were found. Provide --images to supply custom data."
         )
 
-    print("Regressing SMPL-X parameters from the Ben Afflec fixtures...")
-    result = fit_smplx_from_images(image_paths)
     target_dir = output_dir or Path("outputs/afflec_demo")
+    if clean_output and target_dir.exists():
+        print(f"Cleaning output directory {target_dir} ...")
+        shutil.rmtree(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
+
+    print("Using Afflec images:")
+    for path in image_paths:
+        print(f"  - {path}")
+    print(f"Detector: {detector}")
+
+    params_path = target_dir / "afflec_smplx_params.json"
+    mesh_path = target_dir / "afflec_body.npz"
+    if params_path.exists() or mesh_path.exists():
+        print(
+            "Existing Afflec artifacts detected in the output directory. "
+            "Pass --force to discard them or --clean-output to start fresh."
+        )
+        if force and target_dir.exists():
+            print(f"--force supplied; deleting existing contents in {target_dir}")
+            shutil.rmtree(target_dir)
+            target_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"Writing new artifacts to {target_dir}")
+    print("Regressing SMPL-X parameters from the Ben Afflec fixtures...")
+    result = fit_smplx_from_images(image_paths, detector=detector)
 
     output_path = target_dir / "afflec_measurement_fit.json"
     save_fit(result, output_path)
     print(f"Saved fitted parameters to {output_path}")
 
-    mesh_path = target_dir / "afflec_body.npz"
-    params_path = target_dir / "afflec_smplx_params.json"
     asset_root = Path(model_assets) if model_assets is not None else Path("assets") / model_backend
     try:
         mesh_output = create_body_mesh(
@@ -388,6 +422,22 @@ def build_cli(argv: Sequence[str] | None = None) -> int:
             "Override the asset directory. Defaults to assets/<model-backend> and must contain a manifest.json."
         ),
     )
+    afflec.add_argument(
+        "--force",
+        action="store_true",
+        help="Discard any existing Afflec outputs in the target directory before running.",
+    )
+    afflec.add_argument(
+        "--clean-output",
+        action="store_true",
+        help="Remove the output directory entirely before running (safer than overwriting).",
+    )
+    afflec.add_argument(
+        "--detector",
+        choices=("bbox", "mediapipe"),
+        default="bbox",
+        help="Landmark detector to use. 'bbox' is fast/embedded; 'mediapipe' requires the vision extra.",
+    )
 
     fit_from_images = subparsers.add_parser(
         "fit-from-images",
@@ -429,7 +479,7 @@ def build_cli(argv: Sequence[str] | None = None) -> int:
     )
     fit_from_images.add_argument(
         "--detector",
-        choices=("mediapipe",),
+        choices=("mediapipe", "bbox"),
         default="mediapipe",
         help="Keypoint detector used for landmark extraction.",
     )
@@ -457,6 +507,9 @@ def build_cli(argv: Sequence[str] | None = None) -> int:
             output_dir=args.output,
             model_backend=args.model_backend,
             model_assets=args.assets_root,
+            force=args.force,
+            clean_output=args.clean_output,
+            detector=args.detector,
         )
         return 0
 
@@ -475,3 +528,7 @@ def build_cli(argv: Sequence[str] | None = None) -> int:
 
     parser.error(f"Unknown command: {args.command}")
     return 0
+
+
+if __name__ == "__main__":  # pragma: no cover - CLI entrypoint
+    raise SystemExit(build_cli())

@@ -1351,3 +1351,1332 @@ This now fully unifies:
 * Undersuit / UV / pattern reality
 * and the long-term adaptive suit platform vision
 
+Below is a **formal, explicit** treatment of what you asked for:
+
+1. ROM as an operator ( \mathcal R : \Theta \to \mathbb R^K )
+2. A clean mapping to **SMPL-X Jacobians**
+3. Seam cost as a **contraction of a ROM supertensor**
+
+I’ll keep it tight but fully specified.
+
+---
+
+## 1) ROM as an explicit operator ( \mathcal R : \Theta \to \mathbb R^K )
+
+### Pose space and body map (SMPL-X chart)
+
+Let
+
+* ( \Theta \subset \mathbb R^{J} ) be the pose parameter space (joint angles etc.),
+* ( \beta ) the (fixed) shape parameters for a given body,
+* ( \psi ) other nuisance params (expression etc., fixed/ignored).
+
+SMPL-X provides a differentiable map
+[
+\Phi_\beta : \Theta \to \mathbb R^{3V},\qquad
+\theta \mapsto x(\theta)=\mathrm{vec}(V(\theta)) .
+]
+
+(Here (x(\theta)) is the stacked vertex vector of length (3V).)
+
+### Canonical field space
+
+Pick a per-vertex *field* of interest (shear proxy, tension proxy, pressure proxy):
+[
+f:\mathbb R^{3V}\to \mathbb R^{V},\qquad x \mapsto u
+]
+where (u\in\mathbb R^V) is a scalar field on vertices.
+
+Examples of (f) (you can swap later):
+
+* displacement magnitude relative to neutral,
+* local stretch proxy from skinning Jacobians,
+* curvature-change proxy, etc.
+
+### Basis compression
+
+Let (B\in\mathbb R^{V\times K}) be your orthonormal canonical basis on the mesh (as in your repo).
+Define the coefficient projection operator
+[
+\Pi_B(u)=B^\top u\in\mathbb R^K.
+]
+
+### ROM operator definition
+
+Define the ROM operator:
+[
+\boxed{
+\mathcal R(\theta)
+;:=;
+B^\top, f!\big(\Phi_\beta(\theta)\big)
+;\in;
+\mathbb R^{K}
+}
+]
+So the sampler is literally computing ( \theta \mapsto \mathcal R(\theta)).
+
+### ROM measure and “compressed ROM object”
+
+If you want ROM as “the total permissible motion” rather than a pointwise map, endow (\Theta_{\rm adm}\subseteq\Theta) with a measure (\mu) (task-weighted, uniform, etc.):
+
+* Mean ROM coefficient:
+  [
+  \bar c
+  =
+  \int_{\Theta_{\rm adm}}\mathcal R(\theta),d\mu(\theta)
+  \in\mathbb R^K
+  ]
+* Second moment / covariance:
+  [
+  \Sigma_c
+  =
+  \int (\mathcal R(\theta)-\bar c)(\mathcal R(\theta)-\bar c)^\top,d\mu(\theta)
+  \in\mathbb R^{K\times K}
+  ]
+
+That covariance is already a compressed “codependency” object in coefficient space.
+
+---
+
+## 2) Mapping (\mathcal R) to SMPL-X Jacobians cleanly
+
+Differentiate (\mathcal R(\theta)=B^\top f(x(\theta))) where (x(\theta)=\Phi_\beta(\theta)).
+
+By chain rule:
+[
+D_\theta \mathcal R(\theta)
+===========================
+
+B^\top , D_x f(x(\theta)) , D_\theta x(\theta).
+]
+
+SMPL-X gives (or you can compute) the Jacobian:
+[
+J_{\rm SMPLX}(\theta)
+:=
+D_\theta x(\theta)
+\in\mathbb R^{3V\times J}.
+]
+
+So:
+[
+\boxed{
+D_\theta \mathcal R(\theta)
+===========================
+
+B^\top , D_x f(x(\theta)) , J_{\rm SMPLX}(\theta)
+\in \mathbb R^{K\times J}
+}
+]
+
+### Choosing a field (f) that makes (D_x f) explicit
+
+To make this *operational*, pick (f) with a tractable derivative.
+
+A simple but real choice (used often as a first proxy):
+
+* Define neutral vertices (x_0=\Phi_\beta(\theta_0)) at neutral pose.
+* Let (d(\theta)=x(\theta)-x_0\in\mathbb R^{3V}).
+* Define per-vertex displacement magnitude:
+  [
+  u_i(\theta)=|d_i(\theta)|_2
+  \quad\text{where }d_i\in\mathbb R^3 \text{ is vertex }i\text{’s displacement}.
+  ]
+
+Then (f(x)=u) with
+[
+\frac{\partial u_i}{\partial d_i}
+=================================
+
+\frac{d_i^\top}{|d_i|_2+\varepsilon}
+\in\mathbb R^{1\times 3}.
+]
+
+Stacked:
+[
+D_x f(x(\theta))
+;\approx;
+\mathrm{blkdiag}!\left(
+\frac{d_1^\top}{|d_1|+\varepsilon},
+\ldots,
+\frac{d_V^\top}{|d_V|+\varepsilon}
+\right)
+\in\mathbb R^{V\times 3V}.
+]
+
+Plugging in:
+[
+D_\theta \mathcal R(\theta)
+===========================
+
+B^\top \Big[\mathrm{blkdiag}\big(\frac{d_i^\top}{|d_i|+\varepsilon}\big)\Big],J_{\rm SMPLX}(\theta).
+]
+
+That is a *clean* Jacobian-level ROM sensitivity map:
+
+* columns: which joints drive ROM coefficients,
+* rows: which compressed modes respond.
+
+### If you want “strain-like” rather than displacement-like
+
+Let (G(x)) produce per-vertex deformation gradient proxies (from skinning weights or local edge Jacobians). Then (f(x)=g(G(x))) and the same chain rule applies:
+[
+D_\theta \mathcal R = B^\top D_x f , J_{\rm SMPLX}.
+]
+The only change is the explicit form of (D_x f).
+
+---
+
+## 3) Seam cost as a contraction of the ROM supertensor
+
+You want the statement: seam cost is literally a contraction of the ROM “total codependency tree” supertensor.
+
+Here’s the precise way to say it.
+
+### ROM supertensor (joint-coupling form)
+
+Define a per-vertex, per-joint **local sensitivity tensor**:
+[
+S_{v j}(\theta)
+:=
+\left|\frac{\partial u_v(\theta)}{\partial \theta_j}\right|
+]
+where (u(\theta)=f(x(\theta))\in\mathbb R^V).
+
+This is a vertex×joint object at pose (\theta).
+
+Now define the **ROM supertensor** as the integrated joint-coupling (second-order) object:
+[
+\boxed{
+\mathcal T_{v j k}
+:=
+\int_{\Theta_{\rm adm}}
+S_{v j}(\theta),S_{v k}(\theta),d\mu(\theta)
+}
+]
+This is:
+
+* vertex (v),
+* joint (j),
+* joint (k).
+
+Interpretation:
+
+* diagonal (j=k): how much joint (j) alone drives vertex (v) across ROM,
+* off-diagonal (j\neq k): codependency / co-activation at (v).
+
+That matches your “codependency tree” notion in a mathematically concrete form.
+
+### Seam cost is a contraction
+
+A seam cost field needs a scalar per vertex (or per edge). We get it by contracting (\mathcal T) with a joint-weight matrix (W\in\mathbb R^{J\times J}) (task weighting, anatomical importance, discomfort weighting, etc.):
+
+[
+\boxed{
+c_v
+===
+
+\sum_{j,k} W_{jk},\mathcal T_{v j k}
+}
+]
+
+That is a contraction over the joint indices.
+
+In tensor notation:
+[
+c = \mathcal T : W
+\quad\text{(double contraction)}
+]
+
+If you want edge costs:
+[
+c_{(a,b)} = |c_a - c_b| + \lambda \max(c_a,c_b)
+]
+(or any of your earlier cost combinations).
+
+### How this ties to your basis compression
+
+You can also form the coefficient-space analogue:
+
+Define coefficient sensitivities:
+[
+\frac{\partial \mathcal R_k}{\partial \theta_j}
+\in\mathbb R^{K\times J}.
+]
+
+Then a coefficient-space ROM supertensor is:
+[
+\tilde{\mathcal T}_{k j \ell}
+=============================
+
+\int
+\left|\frac{\partial \mathcal R_k}{\partial \theta_j}\right|
+\left|\frac{\partial \mathcal R_\ell}{\partial \theta_j}\right|
+d\mu(\theta)
+]
+and vertex-space (\mathcal T) is recovered (approximately) by lifting with (B):
+[
+\mathcal T_{vjk}
+\approx
+\sum_{a,b} B_{va}B_{vb},\tilde{\mathcal T}_{a j b}
+]
+(you’re “uncompressing” the contracted object back to vertices.)
+
+This is the precise mathematical meaning of “supertensor compression.”
+
+---
+
+## How this matches your current pipeline (and why it’s consistent)
+
+* Your repo’s **sampler JSON** is sampling (\mathcal R(\theta)) (or proxies of it).
+* Your aggregation step is approximating integrals over (\Theta_{\rm adm}) (Monte Carlo / quadrature).
+* Your seam cost NPZ is a scalar field (c_v), which in the “full formalism” is a contraction (\mathcal T:W), but in the current scaffolding is a simpler functional of aggregated vertex fields. That’s fine: the contraction view tells you what to evolve toward.
+
+---
+
+## Minimal upgrade path (no rewrites)
+
+If you want the sampler_real to be formally faithful without building a full simulator:
+
+1. Use SMPL-X (J_{\rm SMPLX}) (or approximate it with finite differences in (\theta)).
+2. Choose a simple (f) (displacement magnitude or edge-length strain proxy).
+3. Compute (S_{vj}) and integrate to (\mathcal T_{vjk}) approximately.
+4. Contract with a chosen (W) to produce seam cost (c_v).
+
+That is “real ROM” in your definition, not just plumbing.
+
+---
+
+If you want, I can write the exact pseudocode for:
+
+* finite-difference (J_{\rm SMPLX}) approximation using only (\Phi_\beta) calls, and
+* computing (\mathcal T_{vjk}) without ever materializing the full (V\times J\times J) tensor (streaming contraction to (c_v) directly).
+
+
+Below is a concrete, implementation-ready plan for:
+
+1. **Finite-difference** approximation of the SMPL-X pose Jacobian
+   [
+   J_{\text{SMPLX}}(\theta)=\frac{\partial x(\theta)}{\partial \theta}\in\mathbb R^{3V\times J}
+   ]
+   using only calls to (\Phi_\beta(\theta)).
+
+2. Computing the ROM “codependency” contraction
+   [
+   c_v=\sum_{j,k}W_{jk},T_{vjk}
+   ]
+   **without ever materializing** (T\in\mathbb R^{V\times J\times J}), i.e. streaming directly to (c\in\mathbb R^V).
+
+I’ll write it so you can drop it into `sampler_real.py` (or a separate `rom_fd.py`) later.
+
+---
+
+# 1) Finite-difference (J_{\text{SMPLX}}) using only (\Phi_\beta) calls
+
+## Objects
+
+* (\Phi_\beta(\theta)) returns vertices (V(\theta)\in\mathbb R^{V\times 3})
+* Flatten (x(\theta)=\mathrm{vec}(V(\theta))\in\mathbb R^{3V})
+
+Let pose dimension be (J). For SMPL-X, you may represent pose as:
+
+* axis-angle per joint (3 params each) → still “pose vector” length (J)
+* or a reduced joint-angle parameterization
+
+Either way, we treat (\theta\in\mathbb R^J).
+
+---
+
+## Central difference per coordinate (stable default)
+
+For small step (h_j) (can be joint-specific):
+
+[
+\frac{\partial x}{\partial \theta_j}(\theta)
+\approx
+\frac{x(\theta+h_j e_j)-x(\theta-h_j e_j)}{2h_j}
+]
+
+### Practical step sizes
+
+* If (\theta_j) in **radians**: (h_j\sim 10^{-4}) to (10^{-3})
+* If in **degrees**: convert to radians internally; still use rad step.
+
+Use joint-specific (h_j) if scales differ, otherwise constant (h).
+
+---
+
+## Pseudocode: Jacobian-vector products instead of full Jacobian
+
+You almost never need the full (3V\times J) matrix. For streaming ROM you need either:
+
+* columns (per j) multiplied by a diagonal block operator, or
+* a *scalar field* derived from per-vertex displacement.
+
+So compute per-j *vertex displacement derivatives* directly:
+
+### Define:
+
+(V^\pm_j = \Phi_\beta(\theta\pm h e_j)), shape (V\times 3)
+
+Then the derivative of vertex positions wrt coordinate (j):
+
+[
+\dot V_j(\theta)=\frac{V^+_j - V^-_j}{2h}\in\mathbb R^{V\times 3}
+]
+
+This (\dot V_j) is the “Jacobian column”, but already reshaped per vertex.
+
+---
+
+## From (\dot V_j) to a scalar sensitivity field (S_{v j})
+
+Pick a scalar field (u(\theta)\in\mathbb R^V). Two options:
+
+### Option A (very simple): displacement magnitude from neutral
+
+Let neutral pose (\theta_0), vertices (V_0=\Phi_\beta(\theta_0)).
+Define displacement at pose (\theta):
+[
+d_v(\theta)=V_v(\theta)-V_{0,v}\in\mathbb R^3,\quad
+u_v(\theta)=|d_v(\theta)|.
+]
+
+Then
+[
+\frac{\partial u_v}{\partial \theta_j}
+======================================
+
+\frac{d_v(\theta)^\top}{|d_v(\theta)|+\varepsilon};\dot V_{v j}(\theta)
+]
+where (\dot V_{v j}\in\mathbb R^3) is the derivative of vertex (v)’s position wrt (\theta_j).
+
+So define the per-vertex per-j scalar sensitivity:
+[
+S_{v j}(\theta) = \left|\frac{d_v^\top}{|d_v|+\varepsilon};\dot V_{v j}\right|.
+]
+
+This uses only:
+
+* (V(\theta))
+* (V_0)
+* (\dot V_j(\theta)) from finite differences.
+
+### Option B (slightly richer): edge-length strain proxy
+
+For each edge (e=(a,b)):
+[
+\ell_e(\theta)=|V_a(\theta)-V_b(\theta)|
+]
+and define per-vertex strain by averaging incident edges. This is more work but still pure (\Phi) calls.
+
+For Sprint R, Option A is usually enough to be “real” and motion-derived.
+
+---
+
+# 2) Streaming contraction to (c_v) without building (T_{vjk})
+
+You defined:
+[
+T_{vjk}=\int S_{vj}(\theta),S_{vk}(\theta),d\mu(\theta)
+]
+and seam cost:
+[
+c_v = \sum_{j,k} W_{jk}T_{vjk}.
+]
+
+Combine these:
+
+[
+c_v
+===
+
+\int \left( \sum_{j,k} W_{jk} S_{vj}(\theta) S_{vk}(\theta)\right) d\mu(\theta)
+]
+
+Let (s_v(\theta)\in\mathbb R^J) be the vector with entries (S_{vj}(\theta)).
+
+Then:
+[
+\sum_{j,k} W_{jk} S_{vj}S_{vk}
+==============================
+
+s_v(\theta)^\top W, s_v(\theta)
+]
+
+So the streaming objective is:
+
+[
+\boxed{
+c_v
+===
+
+\int s_v(\theta)^\top W, s_v(\theta); d\mu(\theta)
+}
+]
+
+That means you only need, for each pose sample:
+
+* compute (s_v\in\mathbb R^J) per vertex
+* compute quadratic form (s_v^\top W s_v)
+* accumulate into (c_v)
+
+No (V\times J\times J) tensor needed.
+
+---
+
+## Key trick: compute (s_v^\top W s_v) without storing (s_v) for all vertices at once
+
+### If (W) is diagonal (common first choice)
+
+If (W=\mathrm{diag}(w)), then:
+[
+s_v^\top W s_v = \sum_j w_j,S_{vj}^2
+]
+Streaming is trivial.
+
+### If (W) is low-rank
+
+If (W = \sum_{r=1}^R \lambda_r q_r q_r^\top), then:
+[
+s_v^\top W s_v = \sum_r \lambda_r (q_r^\top s_v)^2
+]
+You can stream with tiny memory.
+
+### If (W) is full but small J
+
+You can still stream per vertex by computing:
+
+* (t_v = W s_v) then (s_v\cdot t_v)
+  But (s_v) itself is length (J); storing it for all vertices would be (V\times J) which is manageable for moderate sizes (9438×~70 is fine), but you asked explicitly to avoid that too. So we stream **over j**.
+
+---
+
+## Streaming algorithm over joint coordinates j,k (general W)
+
+For each pose sample (\theta):
+
+Initialize per-vertex accumulator for this pose:
+[
+q_v \leftarrow 0
+]
+
+Then, for each joint coordinate (j), compute (S_{vj}) and update:
+
+* Maintain a running vector of already-seen (S_{v1..j}) contributions through (W)
+
+### Efficient symmetric update (no s_v storage)
+
+Since
+[
+s^\top W s = \sum_j\sum_k W_{jk} S_j S_k
+]
+you can accumulate on the fly:
+
+For each (j):
+
+1. compute (S_{vj}) for all vertices (v) (vector length (V))
+2. update:
+   [
+   q \mathrel{+}= W_{jj} S_j^2
+   ]
+3. for each (k<j):
+   [
+   q \mathrel{+}= 2 W_{jk} S_j S_k
+   ]
+
+To do step 3 without storing all previous (S_k), you need a cache. Two options:
+
+* **Diagonal W**: no cache.
+* **Banded/sparse W**: cache only neighbors.
+* **Low-rank W**: better approach above.
+
+So the right engineering choice is: **make W diagonal or low-rank for Sprint R.** That still matches your “weighted joint importance and coupling” intent, because you can encode coupling in low-rank.
+
+---
+
+# Recommended Sprint-R choice: low-rank or diagonal W
+
+## Diagonal W (simplest, already meaningful)
+
+Define weights per joint coordinate:
+
+* emphasize shoulder, hip, knee, etc.
+* or task-specific weighting
+
+Then per pose sample:
+[
+q_v(\theta) = \sum_j w_j S_{vj}(\theta)^2
+]
+and stream:
+[
+c_v \mathrel{+}= q_v(\theta) \cdot \Delta \mu
+]
+
+This is already a contraction of the supertensor (with (W) diagonal).
+
+## Low-rank W (captures coupling without huge memory)
+
+Let (W = Q^\top \Lambda Q) where (Q\in\mathbb R^{R\times J}).
+Then
+[
+q_v(\theta)=\sum_{r=1}^R \lambda_r (q_r^\top s_v(\theta))^2
+]
+You stream by keeping (R) running dot-products per vertex:
+
+* For each joint j, add (q_{rj} S_{vj}) into running sums (a_{v r})
+* After all j, add (\sum_r \lambda_r a_{v r}^2) into cost.
+
+Memory: (V\times R), with (R) like 4–16.
+
+---
+
+# End-to-end pseudocode: FD + streaming cost (diagonal W)
+
+This is the most implementable first pass.
+
+```python
+def phi(beta, theta):  # returns (V,3)
+    ...
+
+def rom_cost_stream(
+    beta,
+    theta_samples,          # iterable of theta
+    mu_weights,             # same length as theta_samples, sums to 1 (or step size)
+    theta0,                 # neutral pose
+    W_diag,                 # (J,) weights
+    h=1e-3,
+    eps=1e-8,
+):
+    V0 = phi(beta, theta0)                 # (V,3)
+    V = V0.shape[0]
+    J = len(theta0)
+
+    c = np.zeros((V,), dtype=np.float64)
+
+    for theta, w_mu in zip(theta_samples, mu_weights):
+        Vt = phi(beta, theta)              # (V,3)
+        d = Vt - V0                        # (V,3)
+        denom = np.linalg.norm(d, axis=1) + eps   # (V,)
+
+        # Accumulate q_v = sum_j w_j * S_{vj}^2
+        q = np.zeros((V,), dtype=np.float64)
+
+        for j in range(J):
+            theta_p = theta.copy(); theta_p[j] += h
+            theta_m = theta.copy(); theta_m[j] -= h
+
+            Vp = phi(beta, theta_p)
+            Vm = phi(beta, theta_m)
+
+            dV = (Vp - Vm) / (2*h)         # (V,3) = dV/dtheta_j
+
+            # S_vj = | (d_v/||d_v||) dot dV_v |
+            # safe when denom small: use eps
+            proj = np.sum((d / denom[:,None]) * dV, axis=1)  # (V,)
+            S = np.abs(proj)
+
+            q += W_diag[j] * (S*S)
+
+        c += w_mu * q
+
+    return c  # (V,)
+```
+
+This computes (c_v) as the streamed contraction with diagonal (W).
+
+---
+
+# End-to-end pseudocode: FD + streaming cost (low-rank W)
+
+Let (Q\in\mathbb R^{R\times J}), (\lambda\in\mathbb R^R).
+
+```python
+def rom_cost_stream_lowrank(beta, theta_samples, mu_weights, theta0, Q, lam, h=1e-3, eps=1e-8):
+    V0 = phi(beta, theta0)        # (V,3)
+    V = V0.shape[0]
+    J = Q.shape[1]
+    R = Q.shape[0]
+    c = np.zeros((V,), dtype=np.float64)
+
+    for theta, w_mu in zip(theta_samples, mu_weights):
+        Vt = phi(beta, theta)
+        d = Vt - V0
+        denom = np.linalg.norm(d, axis=1) + eps
+
+        a = np.zeros((V,R), dtype=np.float64)  # running dot-products q_r^T s_v
+
+        for j in range(J):
+            Vp = phi(beta, bump(theta, j, +h))
+            Vm = phi(beta, bump(theta, j, -h))
+            dV = (Vp - Vm)/(2*h)
+
+            proj = np.sum((d/denom[:,None])*dV, axis=1)
+            S = np.abs(proj)  # (V,)
+
+            # accumulate a[:,r] += Q[r,j] * S
+            a += S[:,None] * Q[:,j][None,:]   # broadcasting (V,1)*(1,R)
+
+        q = np.sum(lam[None,:] * (a*a), axis=1)  # (V,)
+        c += w_mu * q
+
+    return c
+```
+
+This gives you coupling-rich contraction with **no V×J×J** tensor and no V×J storage beyond a single S vector at a time.
+
+---
+
+# How this plugs into your existing basis pipeline
+
+Once you have (c_v\in\mathbb R^V), you can either:
+
+* store it directly as seam costs (your NPZ format), **or**
+* project it into the canonical basis to get coefficients:
+  [
+  \hat c = B^\top c \in \mathbb R^K
+  ]
+  (if you want “ROM coefficient objects” rather than vertex costs)
+
+But for seam costs, the natural thing is to save (c_v) on vertices and derive edge weights.
+
+---
+
+# Practical notes (what will bite you)
+
+1. **(\Phi) call count**: central FD is (2J) calls per pose sample + 1 for Vt.
+   If J is 60 and you sample 50 poses, that’s ~6,050 (\Phi) calls.
+   To reduce: use **SPSA** (2 calls total) or blockwise FD. If you want that, say so.
+
+2. **Neutral pose denom**: if (d_v\approx 0) for some vertices, denom stabilizer matters.
+
+3. **Pose parameterization**: if (\theta) uses axis-angle blocks, bumping one scalar is well-defined, but interpretability of “joint coordinate” changes. It’s fine for Sprint R; later you can bump joint rotation magnitude or use exponential map perturbations.
+
+---
+
+If you want, I can also give:
+
+* an SPSA-based Jacobian sensitivity estimator (2 Φ calls per pose regardless of J),
+* or a block-diagonal joint grouping for fewer FD calls while preserving meaning.
+
+
+You can treat “kernel/PDA-MDL” as the *missing layer* between:
+
+* **raw ROM costs** (a field on vertices/edges), and
+* **a concrete seam set** (a discrete, constrained object).
+
+Right now S1 is doing **“optimize a weighted graph cost”**. Kernel/PDA-MDL turns that into **“choose the simplest seam explanation that still fits ROM + fabric + anatomy, with uncertainty and gates.”**
+
+Here’s the clean mapping.
+
+---
+
+## 1) What the seam object is in the formalism
+
+Let the body surface be a mesh (M=(V,E,F)). A seam plan is a structured object:
+
+[
+S ;=; (C,; \Pi,; \sigma)
+]
+
+* (C \subseteq E): selected cut edges (the “seam set”)
+* (\Pi): induced panel partition (faces grouped into topological disks)
+* (\sigma): assignments/labels (fabric grain directions, seam types, allowances, etc.)
+
+This is the “hypothesis” the system outputs.
+
+---
+
+## 2) Kernelization: turn everything into comparable fields/operators
+
+You already have ROM producing a seam cost field (c_v) (and/or (c_e)). Kernelization means: don’t optimize on a single raw field; optimize on **a multiscale bundle**:
+
+[
+\mathcal K = {k^{(0)},k^{(1)},\dots,k^{(L)}}
+]
+
+Each (k^{(\ell)}) is a derived field/operator over the mesh (vertex/edge/face), e.g.:
+
+* (k^{(0)}): raw ROM cost (c_v)
+* (k^{(1)}): smoothed/low-freq ROM (diffusion kernel / Laplacian smoothing)
+* (k^{(2)}): gradient magnitude (|\nabla c|) (avoid cutting across steep gradients)
+* (k^{(3)}): curvature/developability proxy (flattening difficulty)
+* (k^{(4)}): fabric anisotropy mismatch field (grain alignment penalty)
+* (k^{(5)}): forbidden/anchor masks (hard constraints)
+
+Formally, each kernel component is produced by an operator:
+
+[
+k^{(\ell)} = \mathcal O^{(\ell)}[ \text{ROM}, \text{geometry}, \text{fabric}, \text{constraints} ].
+]
+
+**Key idea:** seams should run through “valleys” of the *multi-kernel* landscape, not just the raw ROM map.
+
+---
+
+## 3) MDL: seam optimization as model selection (not just minimization)
+
+MDL splits objective into two parts:
+
+[
+\boxed{
+\min_{S} ;; \underbrace{L(S)}*{\text{description length / complexity}}
+;+;
+\underbrace{L(\mathcal D \mid S)}*{\text{misfit to data (ROM+fabric+geom)}}
+}
+]
+
+### (L(\mathcal D \mid S)): “how bad is this seam plan given ROM etc.”
+
+This is what you’re already doing as costs:
+
+[
+L(\mathcal D \mid S)
+====================
+
+\sum_{e\in C} \Big(
+\lambda_0,\bar c_e^{\text{ROM}}
++
+\lambda_1,\bar k^{(2)}_e
++
+\lambda_2,\bar k^{(3)}_e
++
+\lambda_3,\bar k^{(4)}_e
+\Big)
+]
+
+(plus hard constraint checks from (k^{(5)}).)
+
+### (L(S)): “how complicated is the seam plan”
+
+This is the piece graph solvers don’t naturally enforce.
+
+A good MDL prior penalizes:
+
+* seam *count* (number of cut components)
+* seam *length*
+* panel *count*
+* panel *irregularity* (e.g., fractal boundary / jaggedness)
+* deviation from symmetry templates
+
+Example:
+
+[
+L(S) =
+\alpha_0 |C|
++\alpha_1 \text{length}(C)
++\alpha_2 |\Pi|
++\alpha_3 \text{boundary_roughness}(C)
++\alpha_4 \text{symmetry_violation}(S)
+]
+
+**This is exactly how you “apply MDL” to seams**: you’re selecting the simplest seam explanation that fits the ROM kernel fields.
+
+---
+
+## 4) PDA: a decision automaton for discrete search under uncertainty + gates
+
+A seam solver isn’t a single solve; it’s an **iterative decision process**:
+
+* propose seams
+* evaluate kernel fields + MDL
+* enforce constraints
+* refine or backtrack
+
+That’s a PDA (Probabilistic Decision Automaton) framing:
+
+### PDA state
+
+[
+x_t = (S_t,; \text{panel stats},; \text{cost breakdown},; \text{violations},; \text{uncertainty})
+]
+
+### PDA actions
+
+* add/remove a seam segment
+* reroute a seam path along a corridor
+* split a panel
+* merge panels
+* change seam type/allowance
+
+### PDA transition
+
+Deterministic + stochastic components (if you include sampling/annealing):
+
+[
+x_{t+1} = f(x_t, a_t; \mathcal K) + \eta_t
+]
+
+### PDA acceptance / gating
+
+Your “admissibility” lives here:
+
+* hard constraints must hold
+* MDL must improve (or improve after temperature schedule)
+* uncertainty monitors can block “commit”
+
+So the PDA gives you **safe, staged optimization**: you can run cheap local steps, but only “commit” when gates pass (very aligned with how you run Phase-gates elsewhere).
+
+---
+
+## 5) Where your “kernel tower” slots in (M5–M9 style)
+
+A practical alignment (no metaphysics, just roles):
+
+* **M5 (observation):** ROM + geometry + fabric raw fields on mesh
+* **M6 (bitensor / coupling):** cross-field couplings like ( \nabla c ), symmetry pair interactions, joint-pair weights, “don’t cut across gradient ridges” (these are *pairwise / relational*)
+* **M7 (policy):** seam move operators (actions) and constraint projections
+* **M8 (witness / meta):** monitors: mapping error, empty panels, instability under ROM resampling, MDL overfit checks
+* **M9 (closure):** “commit seam plan” with full provenance + reproducibility
+
+In other words: **kernel fields live low**, **PDA lives mid**, **MDL + witness gates decide closure.**
+
+---
+
+## 6) Concrete “how to implement” (small, surgical)
+
+### A) Add an MDL prior term to the solver objective
+
+In your seam solver, score a candidate (S) as:
+
+```python
+score = data_cost(S, kernels) + mdl_prior(S)
+```
+
+Where `mdl_prior` includes seam length, seam count, panel count, boundary roughness.
+
+### B) Add multi-kernel edge costs
+
+Instead of one edge cost, build:
+
+```python
+edge_cost = λ0 * rom_cost + λ1 * grad_cost + λ2 * curvature_cost + λ3 * fabric_cost
+```
+
+Each is a kernel-derived edge scalar.
+
+### C) Wrap the solver in a PDA loop
+
+Run:
+
+* initialization (cheap)
+* improve (local moves)
+* validate (constraints + witness checks)
+* commit (only if stable)
+
+Stability check example:
+
+* rerun ROM cost on a slightly perturbed pose sweep; if seam choice flips wildly, reject/continue search.
+
+### D) Use mapping error as a witness gate
+
+You already record max/mean mapping distance. Use it:
+
+* if `max_distance > threshold`: either block commit or increase penalties near high mapping distortion.
+
+---
+
+## 7) The payoff
+
+Applying kernel/PDA-MDL gives you three things your current solver doesn’t:
+
+1. **Model selection**: avoids “over-seaming” and jagged seams automatically
+2. **Safety/gating**: don’t commit plans that are unstable under small ROM changes
+3. **Composability**: you can add new kernels (pressure, temperature, abrasion, composite layup) without rewriting the solver
+
+---
+
+If you want the next concrete step: I can propose the exact `mdl_prior(S)` terms + weights to start with (and how to learn/tune them), and a minimal PDA loop (3–5 move types) that sits on top of your MST baseline.
+
+
+Great — here’s a **tight, executable “proceed” package** that turns what we just agreed into **code your team can implement immediately**, without reopening design questions.
+
+I’ll do three things, in order:
+
+1. **Lock the formal mapping** (kernel → PDA → MDL) into concrete APIs
+2. **Give you an implementation plan with files, functions, and tests**
+3. **Define Sprint S1 → S2 handoff criteria** so you know when to stop
+
+No metaphors, no re-explaining ROM — just build instructions.
+
+---
+
+# 1. Lock the formal mapping (no more ambiguity)
+
+## 1.1 Seam optimization as MDL objective
+
+You are now solving:
+
+[
+\boxed{
+\min_{S}
+;
+\underbrace{\sum_{e\in S}\langle \mathcal K(e), \lambda\rangle}*{\text{data misfit}}
+;+;
+\underbrace{L*{\text{mdl}}(S)}_{\text{complexity prior}}
+}
+]
+
+Where:
+
+* ( \mathcal K(e) \in \mathbb R^m ) = **kernel vector on edge**
+* ( \lambda \in \mathbb R^m ) = fixed weights (config)
+* ( L_{\text{mdl}} ) penalizes seam complexity
+
+This is *not optional*. Every solver variant must optimize **this exact form**.
+
+---
+
+## 1.2 Kernel vector (edge-local, extensible)
+
+Define once, use everywhere:
+
+```python
+@dataclass(frozen=True)
+class EdgeKernel:
+    rom_mean: float
+    rom_max: float
+    rom_grad: float
+    curvature: float
+    fabric_misalignment: float
+```
+
+Scalar edge cost is **never stored directly** — always derived via dot product:
+
+```python
+def edge_energy(k: EdgeKernel, weights: KernelWeights) -> float:
+    return (
+        weights.rom_mean * k.rom_mean +
+        weights.rom_max * k.rom_max +
+        weights.rom_grad * k.rom_grad +
+        weights.curvature * k.curvature +
+        weights.fabric * k.fabric_misalignment
+    )
+```
+
+This is the **kernel layer**. ROM just fills fields.
+
+---
+
+## 1.3 MDL prior (seam complexity)
+
+Define **once**, explicitly:
+
+```python
+@dataclass(frozen=True)
+class MDLPrior:
+    seam_count: float
+    seam_length: float
+    panel_count: float
+    boundary_roughness: float
+    symmetry_violation: float
+```
+
+And compute:
+
+```python
+def mdl_cost(solution: SeamSolution, prior: MDLPrior) -> float:
+    return (
+        prior.seam_count * solution.num_seams +
+        prior.seam_length * solution.total_length +
+        prior.panel_count * solution.num_panels +
+        prior.boundary_roughness * solution.roughness +
+        prior.symmetry_violation * solution.symmetry_penalty
+    )
+```
+
+No solver bypasses this.
+If it does → bug.
+
+---
+
+## 1.4 PDA loop (decision controller)
+
+Every seam solver now runs **inside this loop**:
+
+```python
+state = initial_solution()
+
+while not state.closed:
+    proposal = propose_move(state)
+    evaluated = evaluate(proposal, kernels, mdl)
+    gated = apply_constraints(evaluated)
+
+    if accept(gated, state):
+        state = gated
+
+return state
+```
+
+This is your **PDA**:
+
+* proposals = actions
+* acceptance = MDL + gates
+* closure = witness stability
+
+---
+
+# 2. What to implement next (exactly)
+
+You already have:
+
+* ROM seam costs ✔
+* mapping policies ✔
+* baseline MST solver ✔
+
+Now do **only** the following.
+
+---
+
+## 2.1 New package (create this)
+
+```
+src/smii/seams/
+├── kernels.py        # build EdgeKernel
+├── mdl.py            # MDL priors + cost
+├── pda.py            # decision loop
+├── moves.py          # local seam edits
+├── solver_pda.py     # orchestrates everything
+```
+
+Do **not** modify `solver.py` yet — keep MST as baseline.
+
+---
+
+## 2.2 Kernel construction (Sprint task 1)
+
+**File:** `kernels.py`
+
+Inputs:
+
+* seam graph
+* ROM SeamCostField
+* geometry (vertex positions, curvature)
+* fabric metadata (grain dir)
+
+Output:
+
+```python
+Dict[EdgeID, EdgeKernel]
+```
+
+Required kernels (minimum):
+
+* `rom_mean`
+* `rom_max`
+* `rom_grad` (difference across edge)
+* `curvature` (mean of incident faces)
+
+Tests:
+
+* kernel values finite
+* forbidden edges never produced
+
+---
+
+## 2.3 MDL prior (Sprint task 2)
+
+**File:** `mdl.py`
+
+Compute:
+
+* seam count
+* total seam length
+* panel count (from partition)
+* boundary roughness (edge zig-zag metric)
+* symmetry penalty (difference between L/R seams)
+
+Tests:
+
+* adding a seam increases MDL
+* symmetric seams reduce penalty
+
+---
+
+## 2.4 PDA moves (Sprint task 3)
+
+**File:** `moves.py`
+
+Implement **only these 4**:
+
+1. `reroute_edge(edge_id)`
+2. `shorten_seam(component_id)`
+3. `split_panel(panel_id)`
+4. `merge_panels(panel_a, panel_b)`
+
+Each move must:
+
+* be local
+* preserve manifold topology
+* declare affected edges only
+
+Tests:
+
+* move preserves validity
+* cost recomputation is localized
+
+---
+
+## 2.5 PDA controller (Sprint task 4)
+
+**File:** `solver_pda.py`
+
+This wraps everything:
+
+```python
+def solve_seams_pda(
+    seam_graph,
+    kernels,
+    weights,
+    mdl_prior,
+    constraints,
+    budget: int,
+) -> SeamSolution:
+```
+
+Acceptance rule (deterministic v1):
+
+```python
+accept if Δ(data_cost + mdl_cost) < 0
+```
+
+Witness gate:
+
+* rerun cost with ±5% kernel noise
+* reject if seam topology flips
+
+Tests:
+
+* converges in ≤ budget
+* stable under perturbation
+
+---
+
+# 3. Sprint S1 close-out criteria (hard)
+
+You are **done with Sprint S1** when:
+
+1. PDA solver produces **lower MDL + data cost** than MST baseline
+2. Seams move *away* from ROM hotspots, not just minimize length
+3. Rerunning ROM aggregation with small perturbations:
+
+   * seam topology stays invariant
+4. Output includes:
+
+   * seam list
+   * kernel breakdown
+   * MDL breakdown
+   * stability report
+
+If any of these fail → do **not** proceed to S2.
+
+---
+
+# 4. What Sprint S2 will be (preview only)
+
+Once this lands cleanly:
+
+* S2 = **fabric regime optimization**
+* same PDA
+* same MDL
+* kernels change (strain × fabric tensor)
+* seams become *decision-conditioned* on material
+
+But **do not start S2** until S1 closes.
+
+---
+
+## Final instruction to the team
+
+> “Implement kernel → MDL → PDA seam optimization exactly as specified.
+> No learning. No heuristics. No shortcuts.
+> MST stays as baseline reference only.”
+
+If you want, next I can:
+
+* write the exact `EdgeKernel` builders from your current mesh structs
+* draft the first PDA move in code
+* or help tune the initial MDL weights so it doesn’t over-penalize seams on day one.
+
+Just say which one.
+
+---
+
+# Sprint R — ROM Formalisation, Scheduling & Completeness (Latest)
+
+**Intent**: Turn ROM from an implicit side effect of the sampler into an explicit, schedulable, auditable operator with levels, artifacts, and stop criteria — without changing seam solvers or fabric logic.
+
+## ROM Levels (L0–L3)
+
+- **L0 — Per-joint marginal ROM**: single-DOF envelopes with all other joints neutral. Store per-joint min/max + per-vertex extrema. Compatible with `sampler_real`, schedule still required.
+- **L1 — Pairwise coupled ROM**: curated joint pairs only, sampled on small grids. No `J×J` tensor materialization; still projected to ROM coefficients.
+- **L2 — Task-conditioned ROM**: task profiles from procedural controllers (MoCap augments later). Store weighted samples per task.
+- **L3 — Adaptive completeness**: ROM is complete when envelopes, seam cost ranks, and MDL mass stop changing. Emit a certificate instead of more samples.
+
+## Minimal Practical Sweep Schedule (no combinatorial explosion)
+
+**L0**: ~100–150 poses. Example schedule in `data/rom/sweep_schedule.yaml`:
+
+```yaml
+level: L0
+joints:
+  shoulder:
+    axes: [flexion, abduction, rotation]
+    steps: 7
+  elbow:
+    axes: [flexion]
+    steps: 5
+  hip:
+    axes: [flexion, abduction, rotation]
+    steps: 7
+```
+
+**L1**: curated pairs only, ~75–100 poses:
+
+```yaml
+level: L1
+pairs:
+  - [shoulder, elbow]
+  - [hip, knee]
+  - [spine_twist, shoulder]
+steps: 5
+```
+
+**L2**: procedural controllers (trajectories, not grids):
+
+```yaml
+level: L2
+tasks:
+  overhead_reach:
+    controller: reach
+    samples: 25
+  squat:
+    controller: squat
+    samples: 20
+  twist_reach:
+    controller: twist_reach
+    samples: 20
+```
+
+## Bootstrapping higher-order ROM (procedural → MoCap)
+
+- **Phase A (this sprint)**: run L0/L1/L2, emit `rom_samples_L0.json`, `rom_samples_L1.json`, `rom_samples_L2.json`, aggregate to seam costs + diagnostics.
+- **Phase B (next sprint)**: MoCap augments density only (project to SMPL-X, reject illegal poses, use remaining as density evidence).
+
+## Completeness Metrics (stop conditions)
+
+- **Envelope convergence**: 99% of vertices change below ε.
+- **Seam cost rank stability**: Spearman correlation > 0.98.
+- **MDL mass saturation**: incremental MDL contribution trends to zero.
+
+## Deliverables & Artifacts
+
+- Code: `smii/rom/pose_schedule.py`, `smii/rom/completeness.py`, `sampler_real --schedule`.
+- Data: `data/rom/sweep_schedule.yaml`, `data/rom/task_profiles/*.yaml`.
+- Outputs: `outputs/rom/rom_samples_L0.json`, `rom_samples_L1.json`, `rom_samples_L2.json`, `outputs/rom/rom_L3_certificate.json`.
+
+## Explicitly out of scope (Sprint R)
+
+- No ML/learned priors.
+- No full MoCap ingestion.
+- No fabric or seam solver changes.

@@ -1,0 +1,5 @@
+rom_mean: 1.0
+rom_max: 0.5
+rom_grad: 1.0
+curvature: 0.2
+fabric: 0.5

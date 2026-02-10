@@ -1,0 +1,50 @@
+{
+  "meta": {
+    "units": "radians",
+    "joint_layout": "smplx_body_v1",
+    "notes": "Deterministic afflec ROM pose sweep for FD seam-cost sampling."
+  },
+  "neutral": {
+    "global_orient": [0.0, 0.0, 0.0]
+  },
+  "poses": [
+    {
+      "id": "neutral"
+    },
+    {
+      "id": "arms_up",
+      "weight": 1.0,
+      "body_pose": {
+        "left_shoulder": [0.85, 0.0, 0.0],
+        "right_shoulder": [-0.85, 0.0, 0.0]
+      },
+      "notes": "Symmetric shoulder flexion"
+    },
+    {
+      "id": "hips_knees",
+      "weight": 1.0,
+      "body_pose": {
+        "left_hip": [0.35, 0.0, 0.0],
+        "right_hip": [-0.35, 0.0, 0.0],
+        "left_knee": [0.70, 0.0, 0.0],
+        "right_knee": [0.70, 0.0, 0.0]
+      },
+      "notes": "Moderate hip and knee flexion"
+    },
+    {
+      "id": "twist_reach",
+      "weight": 1.0,
+      "global_orient": [0.0, 0.15, 0.0],
+      "body_pose": {
+        "spine1": [0.0, 0.0, 0.20],
+        "spine2": [0.0, 0.0, 0.25],
+        "spine3": [0.0, 0.0, 0.25],
+        "left_shoulder": [0.45, 0.0, 0.25],
+        "right_shoulder": [-0.45, 0.0, -0.25],
+        "left_elbow": [0.35, 0.0, 0.0],
+        "right_elbow": [0.35, 0.0, 0.0]
+      },
+      "notes": "Axial twist with reaching elbows"
+    }
+  ]
+}
