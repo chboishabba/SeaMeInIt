@@ -4,6 +4,7 @@ import pytest
 from smii.rom.constraints import ConstraintRegistry, ConstraintSet
 from smii.rom.seam_costs import SeamCostField
 from smii.seams.edge_costs import build_edge_costs
+from smii.seams.kernels import EdgeKernel, KernelWeights
 from smii.seams.solver import solve_seams
 from suit.seam_generator import SeamGraph, SeamPanel
 
@@ -130,3 +131,48 @@ def test_solve_seams_applies_symmetry_penalty():
     panel_solution = solution.panel_solutions["panel"]
     assert panel_solution.cost_breakdown["symmetry_penalty"] == pytest.approx(0.5)
     assert panel_solution.cost > panel_solution.cost_breakdown["edge_cost"]
+
+
+def test_solve_seams_can_use_kernel_edge_costs() -> None:
+    vertices = np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0],
+            [3.0, 0.0, 0.0],
+        ],
+        dtype=float,
+    )
+    seam_graph = _panel(vertices, seam_vertices=(0, 1, 2, 3))
+    edges = ((0, 1), (1, 2), (2, 3), (0, 3))
+    cost_field = SeamCostField(
+        field="phi",
+        vertex_costs=np.ones(len(vertices), dtype=float),
+        edge_costs=np.zeros(len(edges), dtype=float),
+        edges=edges,
+        samples_used=1,
+        metadata={},
+    )
+
+    baseline = solve_seams(seam_graph, cost_field, vertex_weight=0.0)
+    baseline_edges = baseline.panel_solutions["panel"].edges
+    assert (0, 3) in baseline_edges
+
+    kernels = {
+        (0, 1): EdgeKernel(rom_mean=0.0, rom_max=0.0, rom_grad=0.0, curvature=0.0, fabric_misalignment=0.0),
+        (1, 2): EdgeKernel(rom_mean=0.0, rom_max=0.0, rom_grad=0.0, curvature=0.0, fabric_misalignment=0.0),
+        (2, 3): EdgeKernel(rom_mean=0.0, rom_max=0.0, rom_grad=0.0, curvature=0.0, fabric_misalignment=0.0),
+        (0, 3): EdgeKernel(rom_mean=0.0, rom_max=0.0, rom_grad=0.0, curvature=0.0, fabric_misalignment=10.0),
+    }
+    weights = KernelWeights(rom_mean=0.0, rom_max=0.0, rom_grad=0.0, curvature=0.0, fabric=1.0)
+    solution = solve_seams(
+        seam_graph,
+        cost_field,
+        kernels=kernels,
+        kernel_weights=weights,
+        vertex_weight=0.0,
+    )
+
+    panel_solution = solution.panel_solutions["panel"]
+    assert panel_solution.edges == ((0, 1), (1, 2), (2, 3))
+    assert solution.metadata["edge_mode"] == "kernel"

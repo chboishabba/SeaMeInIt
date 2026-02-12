@@ -64,7 +64,11 @@ PYTHONPATH=src python -m smii.pipelines.generate_undersuit \
 
 If the sampler ships with a gate manifest, add `--gate-manifest` to the ROM
 aggregation command. Update `--field` if your sampler exports a different
-coefficient key.
+coefficient key. The default coupling manifest derives `seam_tear_risk` from
+shear/pressure hotspots and hard seam invalidations (forbidden hits or
+self-intersections), then blocks high-risk samples. It also tracks
+`seam_tear_risk_dynamic` as a fatigue-style accumulated risk across the ROM
+stream and blocks when sustained stress exceeds threshold.
 
 #### Synthetic sampler (plumbing-only)
 

@@ -241,10 +241,15 @@ def aggregate_fields(
     accepted_samples = 0
     rejection_reasons: Counter[str] = Counter()
     rejection_details: dict[str, GateReason] = {}
+    gate_runtime_state = gate.new_runtime_state() if gate is not None else None
 
     for idx, sample in enumerate(iterator):
         if gate is not None:
-            decision = gate.evaluate(sample.observations or {})
+            observed = gate.prepare_observations(
+                sample.observations or {},
+                runtime_state=gate_runtime_state,
+            )
+            decision = gate.evaluate(observed)
             if not decision.accepted:
                 for reason in decision.reasons:
                     rejection_reasons.update([reason.id])

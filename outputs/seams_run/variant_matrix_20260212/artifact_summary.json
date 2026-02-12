@@ -1,0 +1,56 @@
+[
+  {
+    "run": "mst_knit_4way_light_grain100",
+    "solver": "mst",
+    "total_cost": 13290.20715036016,
+    "warnings": 8,
+    "overlay": "outputs/seams_run/variant_matrix_20260212/mst_knit_4way_light_grain100/overlay_front_3q.png",
+    "gif": "outputs/seams_run/variant_matrix_20260212/mst_knit_4way_light_grain100/overlay_orbit.gif",
+    "webm": "outputs/seams_run/variant_matrix_20260212/mst_knit_4way_light_grain100/overlay_orbit.webm"
+  },
+  {
+    "run": "mst_woven_2way_grain100",
+    "solver": "mst",
+    "total_cost": 11338.313882901137,
+    "warnings": 8,
+    "overlay": "outputs/seams_run/variant_matrix_20260212/mst_woven_2way_grain100/overlay_front_3q.png",
+    "gif": "outputs/seams_run/variant_matrix_20260212/mst_woven_2way_grain100/overlay_orbit.gif",
+    "webm": "outputs/seams_run/variant_matrix_20260212/mst_woven_2way_grain100/overlay_orbit.webm"
+  },
+  {
+    "run": "pda_knit_4way_light_grain100",
+    "solver": "pda",
+    "total_cost": 154918.66424937226,
+    "warnings": 0,
+    "overlay": "outputs/seams_run/variant_matrix_20260212/pda_knit_4way_light_grain100/overlay_front_3q.png",
+    "gif": "outputs/seams_run/variant_matrix_20260212/pda_knit_4way_light_grain100/overlay_orbit.gif",
+    "webm": "outputs/seams_run/variant_matrix_20260212/pda_knit_4way_light_grain100/overlay_orbit.webm"
+  },
+  {
+    "run": "pda_woven_2way_grain100",
+    "solver": "pda",
+    "total_cost": 152966.77211549392,
+    "warnings": 0,
+    "overlay": "outputs/seams_run/variant_matrix_20260212/pda_woven_2way_grain100/overlay_front_3q.png",
+    "gif": "outputs/seams_run/variant_matrix_20260212/pda_woven_2way_grain100/overlay_orbit.gif",
+    "webm": "outputs/seams_run/variant_matrix_20260212/pda_woven_2way_grain100/overlay_orbit.webm"
+  },
+  {
+    "run": "shortest_path_knit_4way_light_grain100",
+    "solver": "shortest_path",
+    "total_cost": Infinity,
+    "warnings": 0,
+    "overlay": "outputs/seams_run/variant_matrix_20260212/shortest_path_knit_4way_light_grain100/overlay_front_3q.png",
+    "gif": "outputs/seams_run/variant_matrix_20260212/shortest_path_knit_4way_light_grain100/overlay_orbit.gif",
+    "webm": "outputs/seams_run/variant_matrix_20260212/shortest_path_knit_4way_light_grain100/overlay_orbit.webm"
+  },
+  {
+    "run": "shortest_path_woven_2way_grain100",
+    "solver": "shortest_path",
+    "total_cost": Infinity,
+    "warnings": 0,
+    "overlay": "outputs/seams_run/variant_matrix_20260212/shortest_path_woven_2way_grain100/overlay_front_3q.png",
+    "gif": "outputs/seams_run/variant_matrix_20260212/shortest_path_woven_2way_grain100/overlay_orbit.gif",
+    "webm": "outputs/seams_run/variant_matrix_20260212/shortest_path_woven_2way_grain100/overlay_orbit.webm"
+  }
+]

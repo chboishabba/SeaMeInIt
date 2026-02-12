@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from .panel_model import PanelBudgets
@@ -268,6 +269,108 @@ def fit_spline_boundary(
     return resampled, True
 
 
+def _is_wrapped_index_in_range(idx: int, start: int, end: int) -> bool:
+    if start <= end:
+        return start <= idx <= end
+    return idx >= start or idx <= end
+
+
+def _allowed_index_checker(
+    count: int,
+    avoid_ranges: list[tuple[int, int]] | None,
+) -> Callable[[int], bool]:
+    normalized: list[tuple[int, int]] = []
+    for start, end in avoid_ranges or []:
+        normalized.append((start % count, end % count))
+
+    if not normalized:
+        return lambda _: True
+
+    def _is_allowed(idx: int) -> bool:
+        wrapped = idx % count
+        for start, end in normalized:
+            if _is_wrapped_index_in_range(wrapped, start, end):
+                return False
+        return True
+
+    return _is_allowed
+
+
+def _choose_seam_safe_index(
+    preferred_index: int,
+    count: int,
+    *,
+    is_allowed: Callable[[int], bool],
+) -> int:
+    cut_a = preferred_index % count
+
+    def _both_allowed(idx: int) -> bool:
+        other = (idx + count // 2) % count
+        return bool(is_allowed(idx) and is_allowed(other))
+
+    if _both_allowed(cut_a):
+        return cut_a
+
+    for offset in range(1, count):
+        forward = (cut_a + offset) % count
+        backward = (cut_a - offset) % count
+        if _both_allowed(forward):
+            return forward
+        if _both_allowed(backward):
+            return backward
+    return cut_a
+
+
+def _split_open_loop(
+    points: list[tuple[float, float]],
+    source_indices: list[int],
+    cut_a: int,
+) -> tuple[
+    tuple[list[tuple[float, float]], list[int]],
+    tuple[list[tuple[float, float]], list[int]],
+] | None:
+    if len(points) != len(source_indices):
+        raise ValueError("points/source_indices length mismatch.")
+    count = len(points)
+    if count < 4:
+        return None
+
+    cut_a %= count
+    cut_b = (cut_a + count // 2) % count
+    if cut_a == cut_b:
+        return None
+
+    if cut_a < cut_b:
+        loop_a = points[cut_a : cut_b + 1]
+        indices_a = source_indices[cut_a : cut_b + 1]
+        loop_b = points[cut_b:] + points[: cut_a + 1]
+        indices_b = source_indices[cut_b:] + source_indices[: cut_a + 1]
+    else:
+        loop_a = points[cut_a:] + points[: cut_b + 1]
+        indices_a = source_indices[cut_a:] + source_indices[: cut_b + 1]
+        loop_b = points[cut_b : cut_a + 1]
+        indices_b = source_indices[cut_b : cut_a + 1]
+
+    if len(loop_a) < 3 or len(loop_b) < 3:
+        return None
+
+    return (loop_a, indices_a), (loop_b, indices_b)
+
+
+def _close_loop(points: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    closed = list(points)
+    if closed and closed[0] != closed[-1]:
+        closed.append(closed[0])
+    return closed
+
+
+def _close_index_loop(indices: list[int]) -> list[int]:
+    closed = list(indices)
+    if closed and closed[0] != closed[-1]:
+        closed.append(closed[0])
+    return closed
+
+
 def split_boundary(
     boundary_xy: list[tuple[float, float]],
     issues: list[PanelIssue],
@@ -276,73 +379,106 @@ def split_boundary(
     avoid_ranges: list[tuple[int, int]] | None = None,
     prefer_seam_safe: bool = True,
     seam_midpoint_index: int | None = None,
-) -> list[list[tuple[float, float]]]:
-    if strategy != "single_cut":
+    return_index_maps: bool = False,
+) -> list[list[tuple[float, float]]] | tuple[list[list[tuple[float, float]]], list[list[int]]]:
+    allowed_strategies = {"single_cut", "seam_aware", "multi_cut"}
+    if strategy not in allowed_strategies:
         raise ValueError(f"Unknown split strategy '{strategy}'.")
-    if len(boundary_xy) < 4:
-        return [list(boundary_xy)]
 
-    split_issue = next((issue for issue in issues if issue.code == "SUGGEST_SPLIT"), None)
-    if split_issue is None or split_issue.index is None:
-        return [list(boundary_xy)]
+    def _default_index_maps() -> list[list[int]]:
+        indices_source = list(boundary_xy)
+        is_closed = len(indices_source) >= 2 and indices_source[0] == indices_source[-1]
+        if is_closed:
+            indices_source = indices_source[:-1]
+        index_map = list(range(len(indices_source)))
+        if is_closed and index_map:
+            index_map = _close_index_loop(index_map)
+        return [index_map]
+
+    def _default_result():
+        boundaries = [list(boundary_xy)]
+        if return_index_maps:
+            return boundaries, _default_index_maps()
+        return boundaries
+
+    if len(boundary_xy) < 4:
+        return _default_result()
+
+    split_indices = [
+        int(issue.index)
+        for issue in issues
+        if issue.code == "SUGGEST_SPLIT" and issue.index is not None
+    ]
+    if seam_midpoint_index is not None:
+        split_indices = [int(seam_midpoint_index)] + split_indices
+    if not split_indices:
+        return _default_result()
 
     points = list(boundary_xy)
     if len(points) >= 2 and points[0] == points[-1]:
         points = points[:-1]
     count = len(points)
     if count < 4:
-        return [list(boundary_xy)]
+        return _default_result()
 
-    cut_a = int(split_issue.index) % count
-    if seam_midpoint_index is not None:
-        cut_a = int(seam_midpoint_index) % count
-    if prefer_seam_safe and avoid_ranges:
-        def _in_range(idx: int, start: int, end: int) -> bool:
-            if start <= end:
-                return start <= idx <= end
-            return idx >= start or idx <= end
+    base_is_allowed = _allowed_index_checker(count, avoid_ranges)
 
-        def _is_allowed(idx: int) -> bool:
-            for start, end in avoid_ranges:
-                if _in_range(idx, start % count, end % count):
-                    return False
-            return True
-
-        def _both_allowed(idx: int) -> bool:
-            other = (idx + count // 2) % count
-            return _is_allowed(idx) and _is_allowed(other)
-
-        if not _both_allowed(cut_a):
-            for offset in range(1, count):
-                forward = (cut_a + offset) % count
-                backward = (cut_a - offset) % count
-                if _both_allowed(forward):
-                    cut_a = forward
-                    break
-                if _both_allowed(backward):
-                    cut_a = backward
-                    break
-    cut_b = (cut_a + count // 2) % count
-    if cut_a == cut_b:
-        return [list(boundary_xy)]
-
-    if cut_a < cut_b:
-        loop_a = points[cut_a : cut_b + 1]
-        loop_b = points[cut_b:] + points[: cut_a + 1]
+    if strategy == "multi_cut":
+        candidate_indices = split_indices
     else:
-        loop_a = points[cut_a:] + points[: cut_b + 1]
-        loop_b = points[cut_b : cut_a + 1]
+        candidate_indices = split_indices[:1]
 
-    def _close_loop(loop: list[tuple[float, float]]) -> list[tuple[float, float]]:
-        if loop and loop[0] != loop[-1]:
-            loop.append(loop[0])
-        return loop
+    loops: list[tuple[list[tuple[float, float]], list[int]]] = [(points, list(range(count)))]
+    did_split = False
 
-    loop_a = _close_loop(loop_a)
-    loop_b = _close_loop(loop_b)
-    if len(loop_a) < 4 or len(loop_b) < 4:
-        return [list(boundary_xy)]
-    return [loop_a, loop_b]
+    for candidate in candidate_indices:
+        target_loop_idx: int | None = None
+        target_local_idx: int | None = None
+        wrapped_candidate = int(candidate) % count
+        for loop_idx, (loop_points, loop_source_indices) in enumerate(loops):
+            if wrapped_candidate not in loop_source_indices:
+                continue
+            local_idx = loop_source_indices.index(wrapped_candidate)
+            target_loop_idx = loop_idx
+            target_local_idx = local_idx
+            break
+        if target_loop_idx is None or target_local_idx is None:
+            continue
+
+        loop_points, loop_source_indices = loops[target_loop_idx]
+        if len(loop_points) < 4:
+            continue
+
+        def local_is_allowed(idx: int) -> bool:
+            source_idx = loop_source_indices[idx % len(loop_source_indices)]
+            return base_is_allowed(source_idx)
+
+        cut_idx = int(target_local_idx)
+        if prefer_seam_safe and avoid_ranges:
+            cut_idx = _choose_seam_safe_index(
+                cut_idx,
+                len(loop_points),
+                is_allowed=local_is_allowed,
+            )
+
+        split_result = _split_open_loop(loop_points, loop_source_indices, cut_idx)
+        if split_result is None:
+            continue
+
+        did_split = True
+        child_a, child_b = split_result
+        loops[target_loop_idx : target_loop_idx + 1] = [child_a, child_b]
+
+    if not did_split:
+        return _default_result()
+
+    boundaries = [_close_loop(loop_points) for loop_points, _ in loops]
+    index_maps = [_close_index_loop(indices) for _, indices in loops]
+    if any(len(boundary) < 4 for boundary in boundaries):
+        return _default_result()
+    if return_index_maps:
+        return boundaries, index_maps
+    return boundaries
 
 
 def detect_turning_budget(

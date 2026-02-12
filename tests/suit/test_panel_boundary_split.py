@@ -92,3 +92,67 @@ def test_split_boundary_avoids_seam_partner_edges() -> None:
         if point in original:
             cut_indices.append(original.index(point))
     assert all(idx not in {1, 2} for idx in cut_indices)
+
+
+def test_split_boundary_supports_multi_cut_strategy() -> None:
+    boundary = [
+        (0.0, 0.0),
+        (2.0, 0.0),
+        (3.0, 1.0),
+        (3.0, 2.0),
+        (2.0, 3.0),
+        (0.0, 3.0),
+        (-1.0, 2.0),
+        (-1.0, 1.0),
+        (0.0, 0.0),
+    ]
+    issues = [
+        PanelIssue.from_code("SUGGEST_SPLIT", index=0),
+        PanelIssue.from_code("SUGGEST_SPLIT", index=2),
+    ]
+
+    splits = split_boundary(boundary, issues, strategy="multi_cut")
+
+    assert len(splits) == 3
+    for loop in splits:
+        assert loop[0] == loop[-1]
+        assert len(loop) >= 4
+
+
+def test_split_boundary_seam_aware_strategy_respects_avoid_ranges() -> None:
+    boundary = [
+        (0.0, 0.0),
+        (1.0, 0.0),
+        (1.0, 1.0),
+        (0.0, 1.0),
+        (-1.0, 1.0),
+        (-1.0, 0.0),
+        (0.0, 0.0),
+    ]
+    issues = [PanelIssue.from_code("SUGGEST_SPLIT", index=1)]
+    avoid_ranges = [(1, 2)]
+
+    splits = split_boundary(boundary, issues, strategy="seam_aware", avoid_ranges=avoid_ranges)
+
+    original = boundary[:-1]
+    cut_indices = []
+    for loop in splits:
+        if not loop:
+            continue
+        point = loop[0]
+        if point in original:
+            cut_indices.append(original.index(point))
+    assert all(idx not in {1, 2} for idx in cut_indices)
+
+
+def test_split_boundary_can_return_index_maps() -> None:
+    boundary = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0), (0.0, 0.0)]
+    issues = [PanelIssue.from_code("SUGGEST_SPLIT", index=0)]
+
+    boundaries, index_maps = split_boundary(boundary, issues, return_index_maps=True)
+
+    assert len(boundaries) == 2
+    assert len(index_maps) == 2
+    for boundary_loop, index_loop in zip(boundaries, index_maps):
+        assert len(boundary_loop) == len(index_loop)
+        assert index_loop[0] == index_loop[-1]

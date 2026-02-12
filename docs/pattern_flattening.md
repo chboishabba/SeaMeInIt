@@ -127,7 +127,9 @@ with `panel-outline` drawn from the seam outline and explicit `seam-outline` and
 - Regularization issues are exported as `metadata["panel_issues"]` with severity
   and per-issue fields, plus `metadata["panel_issue_summaries"]` for rollups.
 - When auto-splitting is enabled, `metadata["auto_split"]` records the split
-  strategy and resulting panel count.
+  strategy (single/seam-aware/multi-cut, or mixed) and resulting panel count.
+- Per-panel seam metadata can set `split_strategy` (`single_cut`,
+  `seam_aware`, `multi_cut`) to override adaptive auto-split behavior.
 - Seam length mismatches emit `SEAM_MISMATCH` issues when `seam_partner` metadata
   is present.
 Auto-split guidance follows `CONTEXT.md` lines 4555-4675 for pipeline gating.

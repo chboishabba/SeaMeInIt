@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import heapq
 from dataclasses import dataclass
 from typing import Iterable, Mapping, MutableMapping, Sequence
 
@@ -64,37 +65,104 @@ def _build_adjacency(edges: Iterable[tuple[int, int]], costs: Mapping[tuple[int,
     return adj
 
 
-def _stoer_wagner(adj: MutableMapping[int, MutableMapping[int, float]]) -> tuple[float, set[int]]:
-    vertices = list(adj.keys())
-    best_cut = set()
-    best_weight = float("inf")
-    while len(vertices) > 1:
-        used = {vertices[0]}
-        weights = {v: 0.0 for v in vertices}
-        prev = vertices[0]
-        order = [prev]
-        for _ in range(len(vertices) - 1):
-            for v in vertices:
-                if v not in used:
-                    weights[v] += adj[prev].get(v, 0.0)
-            next_vertex = max((v for v in vertices if v not in used), key=lambda v: weights[v])
-            used.add(next_vertex)
-            order.append(next_vertex)
-            prev = next_vertex
-        s, t = order[-2], order[-1]
-        cut_weight = sum(adj[t].get(v, 0.0) for v in adj[t] if v in used)
-        if cut_weight < best_weight:
-            best_weight = cut_weight
-            best_cut = set(order[:-1])
-        for v in adj[t]:
-            if v != s:
-                adj[s][v] = adj[s].get(v, 0.0) + adj[t][v]
-                adj[v][s] = adj[v].get(s, 0.0) + adj[t][v]
-        vertices.remove(t)
-        adj.pop(t, None)
-        for v in adj.values():
-            v.pop(t, None)
-    return best_weight, best_cut
+def _multi_source_dijkstra(
+    adjacency: Mapping[int, Mapping[int, float]],
+    sources: Sequence[int],
+) -> Mapping[int, float]:
+    dist: dict[int, float] = {}
+    heap: list[tuple[float, int]] = []
+    for source in sources:
+        if source in adjacency:
+            dist[int(source)] = 0.0
+            heap.append((0.0, int(source)))
+    heapq.heapify(heap)
+
+    while heap:
+        current_dist, node = heapq.heappop(heap)
+        if current_dist > dist.get(node, float("inf")):
+            continue
+        for neighbor, weight in adjacency.get(node, {}).items():
+            candidate = current_dist + max(float(weight), 1e-6)
+            if candidate < dist.get(neighbor, float("inf")):
+                dist[neighbor] = candidate
+                heapq.heappush(heap, (candidate, neighbor))
+    return dist
+
+
+def _fallback_split_by_geometry(
+    vertices: np.ndarray,
+    nodes: Sequence[int],
+    sources: Sequence[int],
+    sinks: Sequence[int],
+) -> set[int]:
+    if not nodes:
+        return set()
+    source_nodes = [int(v) for v in sources if int(v) < len(vertices)]
+    sink_nodes = [int(v) for v in sinks if int(v) < len(vertices)]
+    if source_nodes and sink_nodes:
+        source_center = np.mean(vertices[np.asarray(source_nodes, dtype=int)], axis=0)
+        sink_center = np.mean(vertices[np.asarray(sink_nodes, dtype=int)], axis=0)
+        axis = np.asarray(sink_center - source_center, dtype=float)
+        axis_norm = float(np.linalg.norm(axis))
+        if axis_norm > 1e-8:
+            axis /= axis_norm
+            midpoint = (source_center + sink_center) * 0.5
+            split = {
+                int(node)
+                for node in nodes
+                if float(np.dot(vertices[int(node)] - midpoint, axis)) <= 0.0
+            }
+            if split and len(split) < len(nodes):
+                return split
+
+    ordered = sorted(int(node) for node in nodes)
+    half = max(1, len(ordered) // 2)
+    return set(ordered[:half])
+
+
+def _partition_cut(
+    panel_edges: Sequence[tuple[int, int]],
+    edge_costs: Mapping[tuple[int, int], float],
+    vertices: np.ndarray,
+    partition: Partition,
+) -> tuple[list[tuple[int, int]], float, str | None]:
+    adjacency = _build_adjacency(panel_edges, edge_costs)
+    if not adjacency:
+        return [], 0.0, "no edges available"
+
+    nodes = sorted(adjacency.keys())
+    sources = tuple(int(v) for v in partition.sources if int(v) in adjacency)
+    sinks = tuple(int(v) for v in partition.sinks if int(v) in adjacency)
+    if not sources or not sinks:
+        source_side = _fallback_split_by_geometry(vertices, nodes, partition.sources, partition.sinks)
+        warning = "partition anchors missing from graph; used geometric split"
+    else:
+        dist_source = _multi_source_dijkstra(adjacency, sources)
+        dist_sink = _multi_source_dijkstra(adjacency, sinks)
+        source_side = {
+            int(node)
+            for node in nodes
+            if dist_source.get(int(node), float("inf")) <= dist_sink.get(int(node), float("inf"))
+        }
+        warning = None
+        if not source_side or len(source_side) == len(nodes):
+            source_side = _fallback_split_by_geometry(vertices, nodes, sources, sinks)
+            warning = "distance partition collapsed; used geometric split"
+
+    cut_edges: list[tuple[int, int]] = []
+    cut_weight = 0.0
+    for a, b in panel_edges:
+        a_side = int(a) in source_side
+        b_side = int(b) in source_side
+        if a_side == b_side:
+            continue
+        edge = (min(int(a), int(b)), max(int(a), int(b)))
+        cut_edges.append(edge)
+        cut_weight += float(edge_costs.get(edge, edge_costs.get((edge[1], edge[0]), 0.0)))
+
+    if not cut_edges:
+        warning = warning or "cut produced no crossing edges"
+    return sorted(set(cut_edges)), cut_weight, warning
 
 
 def solve_seams_mincut(
@@ -119,6 +187,7 @@ def solve_seams_mincut(
     warnings: list[str] = []
 
     for panel in seam_graph.panels:
+        panel_warnings: list[str] = []
         if not panel.seam_vertices:
             solution = PanelSolution(
                 panel=panel.name,
@@ -154,8 +223,7 @@ def solve_seams_mincut(
                 if not (constraints.is_vertex_forbidden(edge[0]) or constraints.is_vertex_forbidden(edge[1]))
             ]
 
-        adj = _build_adjacency(panel_edges, edge_costs)
-        if not adj:
+        if not panel_edges:
             panel_solution = PanelSolution(
                 panel=panel.name,
                 edges=tuple(),
@@ -168,12 +236,9 @@ def solve_seams_mincut(
             warnings.extend(panel_solution.warnings)
             continue
 
-        cut_weight, cut_set = _stoer_wagner(adj)
-        cut_edges = [
-            (min(a, b), max(a, b))
-            for (a, b) in panel_edges
-            if (a in cut_set and b not in cut_set) or (b in cut_set and a not in cut_set)
-        ]
+        cut_edges, cut_weight, cut_warning = _partition_cut(panel_edges, edge_costs, vertices, partition)
+        if cut_warning:
+            panel_warnings.append(cut_warning)
         vertex_cost_term = float(np.nansum(np.asarray(cost_field.vertex_costs, dtype=float)[list(panel.seam_vertices)]))
         vertex_cost_term *= float(vertex_weight)
 
@@ -183,9 +248,10 @@ def solve_seams_mincut(
             vertices=tuple(panel.seam_vertices),
             cost=float(cut_weight) + vertex_cost_term,
             cost_breakdown={"edge_cost": float(cut_weight), "vertex_cost": vertex_cost_term},
-            warnings=tuple(),
+            warnings=tuple(panel_warnings),
         )
         panel_solutions[panel.name] = panel_solution
+        warnings.extend(panel_solution.warnings)
 
     seam_solution = SeamSolution(
         solver="mincut",

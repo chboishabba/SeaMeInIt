@@ -9,7 +9,9 @@
       "forbidden_vertices": "rom.forbidden_vertex_hits",
       "edge_self_intersection": "rom.edge_self_intersections",
       "shear_hotspot": "agg.max_shear",
-      "pressure_hotspot": "agg.max_pressure"
+      "pressure_hotspot": "agg.max_pressure",
+      "seam_tear_risk": "agg.seam_tear_risk",
+      "seam_tear_risk_dynamic": "agg.seam_tear_risk_dynamic"
     }
   },
   "rules": [
@@ -40,6 +42,20 @@
       "threshold": 0.5,
       "block": false,
       "severity": "warn"
+    },
+    {
+      "id": "seam_tear_risk",
+      "description": "Estimated seam/fabric tear risk is above allowable threshold.",
+      "threshold": 0.7,
+      "block": true,
+      "severity": "error"
+    },
+    {
+      "id": "seam_tear_risk_dynamic",
+      "description": "Accumulated tear/fatigue risk is above allowable threshold.",
+      "threshold": 0.8,
+      "block": true,
+      "severity": "error"
     }
   ],
   "notes": "Object map keys align aggregator diagnostics with PDA gates; rules capture seam/ROM couplings used for gating and logging."

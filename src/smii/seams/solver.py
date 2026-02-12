@@ -11,6 +11,7 @@ from smii.rom.constraints import ConstraintRegistry
 from smii.rom.seam_costs import SeamCostField
 
 from .edge_costs import EdgeAggregationMode, EdgeCostResult, build_edge_costs
+from .kernels import EdgeKernel, KernelWeights, edge_energy
 
 try:  # Optional import to avoid heavy deps at module import time
     from suit.seam_generator import SeamGraph
@@ -98,6 +99,8 @@ def solve_seams(
     cost_field: SeamCostField,
     *,
     constraints: ConstraintRegistry | None = None,
+    kernels: Mapping[tuple[int, int], EdgeKernel] | None = None,
+    kernel_weights: KernelWeights | None = None,
     edge_costs: EdgeCostResult | None = None,
     edge_mode: EdgeAggregationMode = "mean",
     vertices: np.ndarray | None = None,
@@ -111,6 +114,8 @@ def solve_seams(
 
     This baseline solver builds a minimal-cost spanning structure across each panel's
     seam vertices, enforcing hard forbidden-vertex constraints and optional symmetry penalties.
+    When ``kernels`` are provided, edge costs are derived from ``edge_energy`` (including
+    fabric terms) instead of ROM vertex aggregation.
     """
 
     if SeamGraph is None:
@@ -118,8 +123,22 @@ def solve_seams(
     if solver not in ("mst", "minimum_spanning"):
         raise ValueError(f"Solver '{solver}' is not implemented. Use 'mst'.")
 
-    edge_costs = edge_costs or build_edge_costs(cost_field, seam_graph, vertices=vertices, mode=edge_mode)
-    edge_lookup = edge_costs.as_mapping()
+    edge_mode_used: str = str(edge_mode)
+    if kernels is not None:
+        weights = kernel_weights or KernelWeights()
+        edge_lookup = {
+            (min(int(edge[0]), int(edge[1])), max(int(edge[0]), int(edge[1]))): edge_energy(kernel, weights)
+            for edge, kernel in kernels.items()
+        }
+        edge_mode_used = "kernel"
+    else:
+        edge_costs = edge_costs or build_edge_costs(
+            cost_field,
+            seam_graph,
+            vertices=vertices,
+            mode=edge_mode,
+        )
+        edge_lookup = edge_costs.as_mapping()
 
     panel_solutions: MutableMapping[str, PanelSolution] = {}
     warnings_accum: list[str] = []
@@ -205,7 +224,7 @@ def solve_seams(
 
     total = sum(solution.cost for solution in panel_solutions.values())
     metadata = {
-        "edge_mode": edge_mode,
+        "edge_mode": edge_mode_used,
         "vertex_weight": float(vertex_weight),
         "edge_weight": float(edge_weight),
         "symmetry_penalty": float(symmetry_penalty),

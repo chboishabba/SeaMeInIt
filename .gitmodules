@@ -1,0 +1,6 @@
+[submodule "GarmentCode"]
+	path = GarmentCode
+	url = https://github.com/maria-korosteleva/GarmentCode.git
+[submodule "Garment-Pattern-Estimation"]
+	path = Garment-Pattern-Estimation
+	url = https://github.com/maria-korosteleva/Garment-Pattern-Estimation.git

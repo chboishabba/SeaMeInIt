@@ -19,6 +19,7 @@ from smii.rom.constraints import ConstraintRegistry, load_constraints
 from smii.rom.flex_heatmap import accumulate_flex_stats, nearest_joint_vertices, project_flex_to_vertices
 from smii.rom.seam_costs import load_seam_cost_field
 from smii.seams.diagnostics import build_diagnostics_report, render_overlay, save_report
+from smii.seams.fabric_kernels import FabricProfile, load_fabrics_from_dir
 from smii.seams.kernels import KernelWeights, build_edge_kernels
 from smii.seams.mdl import MDLPrior
 from smii.seams.pda import solve_seams_pda
@@ -72,6 +73,21 @@ def _mdl_from_path(path: Path | None) -> MDLPrior:
     )
 
 
+def _resolve_fabric_profile(
+    fabric_catalog: Mapping[str, FabricProfile] | None,
+    fabric_id: str | None,
+) -> FabricProfile | None:
+    if not fabric_catalog:
+        return None
+    if fabric_id:
+        profile = fabric_catalog.get(str(fabric_id))
+        if profile is None:
+            available = ", ".join(sorted(fabric_catalog.keys()))
+            raise KeyError(f"Unknown fabric '{fabric_id}'. Available: {available}")
+        return profile
+    return next(iter(fabric_catalog.values()))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run ROM-driven seam solvers with diagnostics.")
     parser.add_argument("--body", type=Path, required=True, help="NPZ containing vertices (N,3) and faces (M,3).")
@@ -94,6 +110,18 @@ def main() -> None:
         "--fabric-grain",
         type=str,
         help="Optional fabric grain direction as comma-separated vector (e.g., 1,0,0).",
+    )
+    parser.add_argument(
+        "--fabric-dir",
+        type=Path,
+        default=None,
+        help="Optional directory with fabric YAML/JSON profiles.",
+    )
+    parser.add_argument(
+        "--fabric-id",
+        type=str,
+        default=None,
+        help="Fabric id to use when --fabric-dir is provided (defaults to first profile).",
     )
     parser.add_argument("--out", type=Path, default=Path("outputs/seams"), help="Output directory.")
     parser.add_argument("--vertex-weight", type=float, default=0.0, help="Vertex weight contribution for solvers.")
@@ -130,9 +158,24 @@ def main() -> None:
         if len(parts) == 3:
             fabric_grain = np.array(parts, dtype=float)
 
+    fabric_catalog = load_fabrics_from_dir(args.fabric_dir) if args.fabric_dir else None
+    fabric_profile = _resolve_fabric_profile(fabric_catalog, args.fabric_id)
+
     weights = _weights_from_path(args.weights)
     mdl_prior = _mdl_from_path(args.mdl)
-    kernels = build_edge_kernels(cost_field, seam_graph, vertices=vertices, fabric_grain=fabric_grain, constraints=constraints)
+    kernels = build_edge_kernels(
+        cost_field,
+        seam_graph,
+        vertices=vertices,
+        fabric_grain=fabric_grain,
+        fabric_profile=fabric_profile,
+        constraints=constraints,
+    )
+    panel_fabrics = (
+        {panel.name: fabric_profile.fabric_id for panel in seam_graph.panels}
+        if fabric_profile is not None
+        else None
+    )
 
     if args.solver == "pda":
         solution = solve_seams_pda(
@@ -145,9 +188,19 @@ def main() -> None:
             cost_field=cost_field,
             vertices=vertices,
             vertex_weight=args.vertex_weight,
+            fabric_catalog=fabric_catalog,
+            fabric_grain=fabric_grain,
+            panel_fabrics=panel_fabrics,
         )
     elif args.solver == "mst":
-        solution = solve_seams(seam_graph, cost_field, constraints=constraints, vertex_weight=args.vertex_weight)
+        solution = solve_seams(
+            seam_graph,
+            cost_field,
+            constraints=constraints,
+            kernels=kernels,
+            kernel_weights=weights,
+            vertex_weight=args.vertex_weight,
+        )
     elif args.solver == "shortest_path":
         solution = solve_seams_shortest_path(
             seam_graph,
@@ -263,6 +316,8 @@ def main() -> None:
                 print(f"Flex heatmap with seams: {overlay_png}")
             print(f"Flex stats CSV: {csv_path}")
     print(f"Solver: {solution.solver}")
+    if fabric_profile is not None:
+        print(f"Fabric: {fabric_profile.fabric_id}")
     print(f"Total cost: {solution.total_cost:.4f}")
     print(f"Report: {args.out / 'seam_report.json'}")
     if overlay_path:

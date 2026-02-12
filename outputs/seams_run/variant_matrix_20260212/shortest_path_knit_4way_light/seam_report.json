@@ -1,0 +1,159 @@
+{
+  "solver": "shortest_path",
+  "total_cost": Infinity,
+  "mdl_cost": 2.0,
+  "mdl_breakdown": {
+    "seam_count": 0.0,
+    "seam_length": 0.0,
+    "panel_count": 2.0,
+    "boundary_roughness": 0.0,
+    "symmetry_violation": 0.0
+  },
+  "warnings": [],
+  "panels": {
+    "chest_circumference_to_neck_circumference_left": {
+      "edges": [],
+      "cost_breakdown": {
+        "edge_cost": Infinity,
+        "vertex_cost": 0.0
+      },
+      "warnings": [
+        "no path between anchors"
+      ],
+      "vertex_costs": {
+        "mean": 0.18295076524289924,
+        "max": 0.5634470862218145
+      },
+      "fabric": {
+        "fabric_id": null,
+        "grain_rotation_deg": 0.0
+      }
+    },
+    "chest_circumference_to_neck_circumference_right": {
+      "edges": [],
+      "cost_breakdown": {
+        "edge_cost": Infinity,
+        "vertex_cost": 0.0
+      },
+      "warnings": [
+        "no path between anchors"
+      ],
+      "vertex_costs": {
+        "mean": 0.18295076524289924,
+        "max": 0.5634470862218145
+      },
+      "fabric": {
+        "fabric_id": null,
+        "grain_rotation_deg": 0.0
+      }
+    },
+    "hip_circumference_to_waist_circumference_left": {
+      "edges": [],
+      "cost_breakdown": {
+        "edge_cost": Infinity,
+        "vertex_cost": 0.0
+      },
+      "warnings": [
+        "no path between anchors"
+      ],
+      "vertex_costs": {
+        "mean": 0.18291947503882117,
+        "max": 0.5634470862218145
+      },
+      "fabric": {
+        "fabric_id": null,
+        "grain_rotation_deg": 0.0
+      }
+    },
+    "hip_circumference_to_waist_circumference_right": {
+      "edges": [],
+      "cost_breakdown": {
+        "edge_cost": Infinity,
+        "vertex_cost": 0.0
+      },
+      "warnings": [
+        "no path between anchors"
+      ],
+      "vertex_costs": {
+        "mean": 0.18291947503882117,
+        "max": 0.5634470862218145
+      },
+      "fabric": {
+        "fabric_id": null,
+        "grain_rotation_deg": 0.0
+      }
+    },
+    "thigh_circumference_to_hip_circumference_left": {
+      "edges": [],
+      "cost_breakdown": {
+        "edge_cost": Infinity,
+        "vertex_cost": 0.0
+      },
+      "warnings": [
+        "no path between anchors"
+      ],
+      "vertex_costs": {
+        "mean": 0.18291947503882117,
+        "max": 0.5634470862218145
+      },
+      "fabric": {
+        "fabric_id": null,
+        "grain_rotation_deg": 0.0
+      }
+    },
+    "thigh_circumference_to_hip_circumference_right": {
+      "edges": [],
+      "cost_breakdown": {
+        "edge_cost": Infinity,
+        "vertex_cost": 0.0
+      },
+      "warnings": [
+        "no path between anchors"
+      ],
+      "vertex_costs": {
+        "mean": 0.18291947503882117,
+        "max": 0.5634470862218145
+      },
+      "fabric": {
+        "fabric_id": null,
+        "grain_rotation_deg": 0.0
+      }
+    },
+    "waist_circumference_to_chest_circumference_left": {
+      "edges": [],
+      "cost_breakdown": {
+        "edge_cost": Infinity,
+        "vertex_cost": 0.0
+      },
+      "warnings": [
+        "no path between anchors"
+      ],
+      "vertex_costs": {
+        "mean": 0.18291947503882117,
+        "max": 0.5634470862218145
+      },
+      "fabric": {
+        "fabric_id": null,
+        "grain_rotation_deg": 0.0
+      }
+    },
+    "waist_circumference_to_chest_circumference_right": {
+      "edges": [],
+      "cost_breakdown": {
+        "edge_cost": Infinity,
+        "vertex_cost": 0.0
+      },
+      "warnings": [
+        "no path between anchors"
+      ],
+      "vertex_costs": {
+        "mean": 0.18291947503882117,
+        "max": 0.5634470862218145
+      },
+      "fabric": {
+        "fabric_id": null,
+        "grain_rotation_deg": 0.0
+      }
+    }
+  }
+}

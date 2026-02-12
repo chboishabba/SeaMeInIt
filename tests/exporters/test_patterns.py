@@ -18,6 +18,7 @@ from exporters.patterns import (
     GrainlineAnnotation,
     LabelAnnotation,
     NotchAnnotation,
+    _apply_auto_split,
     Panel2D,
     Panel3D,
     PatternExporter,
@@ -376,6 +377,97 @@ def test_pattern_exporter_propagates_seam_split_metadata(tmp_path: Path) -> None
     )[0]
     assert panel.metadata["seam_avoid_ranges"] == [(2, 4)]
     assert panel.metadata["seam_midpoint_index"] == 3
+
+
+def test_auto_split_remaps_child_issue_indices() -> None:
+    boundary = [
+        (0.0, 0.0),
+        (2.0, 0.0),
+        (3.0, 1.0),
+        (3.0, 2.0),
+        (2.0, 3.0),
+        (0.0, 3.0),
+        (-1.0, 2.0),
+        (-1.0, 1.0),
+        (0.0, 0.0),
+    ]
+    panel = Panel2D(
+        name="panel_split",
+        outline=boundary,
+        seam_outline=boundary,
+        seam_allowance=0.01,
+        metadata={
+            "issues": [
+                {"code": "SUGGEST_SPLIT", "severity": "info", "index": 0},
+                {"code": "TURNING_BUDGET_EXCEEDED", "severity": "warning", "index": 2},
+                {"code": "MIN_FEATURE_VIOLATION", "severity": "warning", "index": 6},
+            ],
+            "warnings": ["SUGGEST_SPLIT", "TURNING_BUDGET_EXCEEDED", "MIN_FEATURE_VIOLATION"],
+        },
+    )
+
+    split_panels, strategies = _apply_auto_split([panel])
+
+    assert len(split_panels) == 2
+    assert strategies == {"single_cut"}
+
+    codes_per_panel = [
+        {str(issue.get("code", "")) for issue in child.metadata.get("issues", [])}
+        for child in split_panels
+    ]
+    assert any(
+        "TURNING_BUDGET_EXCEEDED" in codes and "MIN_FEATURE_VIOLATION" not in codes
+        for codes in codes_per_panel
+    )
+    assert any(
+        "MIN_FEATURE_VIOLATION" in codes and "TURNING_BUDGET_EXCEEDED" not in codes
+        for codes in codes_per_panel
+    )
+
+    for child in split_panels:
+        child_issues = child.metadata.get("issues", [])
+        for issue in child_issues:
+            if "index" in issue:
+                index = int(issue["index"])
+                assert 0 <= index < len(child.seam_outline)
+                assert "source_index" in issue
+        warning_codes = set(str(code) for code in child.metadata.get("warnings", []))
+        issue_codes = {str(issue.get("code", "")) for issue in child_issues}
+        assert warning_codes == issue_codes
+
+
+def test_auto_split_respects_multi_cut_strategy_metadata() -> None:
+    boundary = [
+        (0.0, 0.0),
+        (2.0, 0.0),
+        (3.0, 1.0),
+        (3.0, 2.0),
+        (2.0, 3.0),
+        (0.0, 3.0),
+        (-1.0, 2.0),
+        (-1.0, 1.0),
+        (0.0, 0.0),
+    ]
+    panel = Panel2D(
+        name="panel_multi",
+        outline=boundary,
+        seam_outline=boundary,
+        seam_allowance=0.01,
+        metadata={
+            "split_strategy": "multi_cut",
+            "issues": [
+                {"code": "SUGGEST_SPLIT", "severity": "info", "index": 0},
+                {"code": "SUGGEST_SPLIT", "severity": "info", "index": 2},
+            ],
+            "warnings": ["SUGGEST_SPLIT"],
+        },
+    )
+
+    split_panels, strategies = _apply_auto_split([panel])
+
+    assert len(split_panels) == 3
+    assert strategies == {"multi_cut"}
+    assert all(child.metadata.get("split_strategy") == "multi_cut" for child in split_panels)
 
 
 def test_annotations_do_not_change_outline(tmp_path: Path) -> None:

@@ -49,21 +49,120 @@ class GateReason:
     blocking: bool
 
 
+@dataclass(slots=True)
+class GateRuntimeState:
+    """Mutable runtime state for sequence-aware gate derivations."""
+
+    evaluated_samples: int = 0
+    seam_tear_damage: float = 0.0
+
+
 class RomGate:
     """Evaluates coupling rules against observed seam/ROM metrics."""
 
-    def __init__(self, rules: Sequence[CouplingRule]) -> None:
+    def __init__(
+        self,
+        rules: Sequence[CouplingRule],
+        *,
+        fatigue_floor: float = 0.35,
+        fatigue_horizon: float = 8.0,
+    ) -> None:
         self.rules = {rule.id: rule for rule in rules}
+        self._fatigue_floor = max(0.0, min(float(fatigue_floor), 0.99))
+        self._fatigue_horizon = max(float(fatigue_horizon), 1.0)
+
+    def new_runtime_state(self) -> GateRuntimeState:
+        """Create mutable state for stream-aware gate evaluation."""
+
+        return GateRuntimeState()
+
+    @staticmethod
+    def _as_metric(value: float | bool | object) -> float | None:
+        if isinstance(value, bool):
+            return 1.0 if value else 0.0
+        try:
+            return float(value)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return None
+
+    @classmethod
+    def _derive_observations(
+        cls,
+        observations: Mapping[str, float | bool],
+    ) -> dict[str, float | bool]:
+        derived: dict[str, float | bool] = dict(observations)
+        if "seam_tear_risk" in derived:
+            return derived
+
+        risk = 0.0
+        has_signal = False
+
+        shear = cls._as_metric(derived.get("shear_hotspot", 0.0))
+        if shear is not None:
+            risk = max(risk, max(shear, 0.0))
+            has_signal = has_signal or bool(shear > 0.0)
+
+        pressure = cls._as_metric(derived.get("pressure_hotspot", 0.0))
+        if pressure is not None:
+            # Pressure is a secondary contributor to tear risk.
+            risk = max(risk, max(pressure, 0.0) * 0.85)
+            has_signal = has_signal or bool(pressure > 0.0)
+
+        self_intersection = cls._as_metric(derived.get("edge_self_intersection", 0.0))
+        if self_intersection is not None and self_intersection >= 1.0:
+            risk = 1.0
+            has_signal = True
+
+        forbidden_hit = cls._as_metric(derived.get("forbidden_vertices", 0.0))
+        if forbidden_hit is not None and forbidden_hit >= 1.0:
+            risk = max(risk, 1.0)
+            has_signal = True
+
+        if has_signal:
+            derived["seam_tear_risk"] = risk
+        return derived
+
+    def _derive_dynamic_tear_risk(
+        self,
+        observations: dict[str, float | bool],
+        runtime_state: GateRuntimeState,
+    ) -> None:
+        tear_risk = self._as_metric(observations.get("seam_tear_risk", 0.0))
+        risk_value = 0.0 if tear_risk is None else max(0.0, min(float(tear_risk), 1.0))
+        normalized_excess = max(risk_value - self._fatigue_floor, 0.0) / max(
+            1.0 - self._fatigue_floor,
+            1e-6,
+        )
+        runtime_state.evaluated_samples += 1
+        runtime_state.seam_tear_damage = min(
+            1.0,
+            runtime_state.seam_tear_damage + normalized_excess / self._fatigue_horizon,
+        )
+        observations["seam_tear_risk_dynamic"] = runtime_state.seam_tear_damage
+
+    def prepare_observations(
+        self,
+        observations: Mapping[str, float | bool],
+        *,
+        runtime_state: GateRuntimeState | None = None,
+    ) -> dict[str, float | bool]:
+        """Normalize and derive gate observations before threshold checks."""
+
+        prepared = self._derive_observations(observations)
+        if runtime_state is not None:
+            self._derive_dynamic_tear_risk(prepared, runtime_state)
+        return prepared
 
     def evaluate(self, observations: Mapping[str, float | bool]) -> GateDecision:
         """Check observations against configured rules."""
 
+        observed = self.prepare_observations(observations)
         accepted = True
         reasons: list[GateReason] = []
         for rule_id, rule in self.rules.items():
-            if rule_id not in observations:
+            if rule_id not in observed:
                 continue
-            value = observations[rule_id]
+            value = observed[rule_id]
             triggered = bool(value) if isinstance(value, bool) else float(value) >= rule.threshold
             if not triggered:
                 continue

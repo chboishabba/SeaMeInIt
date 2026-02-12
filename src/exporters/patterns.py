@@ -702,6 +702,12 @@ class SimplePlaneProjectionBackend(CADBackend):
             seam_midpoint_index = seam_meta.get("seam_midpoint_index")
             if seam_midpoint_index is not None:
                 metadata["seam_midpoint_index"] = int(seam_midpoint_index)
+            split_strategy = seam_meta.get(
+                "split_strategy",
+                seam_meta.get("auto_split_strategy"),
+            )
+            if split_strategy is not None:
+                metadata["split_strategy"] = str(split_strategy)
             if issues:
                 metadata["warnings"] = [issue.code for issue in issues]
                 metadata["issues"] = [panel_issue_to_mapping(issue) for issue in issues]
@@ -780,6 +786,12 @@ class LSCMUnwrapBackend(CADBackend):
             seam_midpoint_index = seam_meta.get("seam_midpoint_index")
             if seam_midpoint_index is not None:
                 metadata["seam_midpoint_index"] = int(seam_midpoint_index)
+            split_strategy = seam_meta.get(
+                "split_strategy",
+                seam_meta.get("auto_split_strategy"),
+            )
+            if split_strategy is not None:
+                metadata["split_strategy"] = str(split_strategy)
             try:
                 seam_outline = self._unwrap_panel(panel, scale=scale)
             except Exception:
@@ -914,8 +926,9 @@ class PatternExporter:
             budgets=self.budgets,
         )
         _reconcile_seams(flattened)
+        auto_split_strategies: set[str] = set()
         if auto_split:
-            flattened = _apply_auto_split(flattened)
+            flattened, auto_split_strategies = _apply_auto_split(flattened)
 
         combined_metadata = {
             "scale": self.scale,
@@ -924,11 +937,18 @@ class PatternExporter:
             "pdf_page_size": self.pdf_page_size,
         }
         if auto_split:
+            strategy = "single_cut"
+            if len(auto_split_strategies) == 1:
+                strategy = next(iter(auto_split_strategies))
+            elif len(auto_split_strategies) > 1:
+                strategy = "mixed"
             combined_metadata["auto_split"] = {
                 "enabled": True,
                 "count": len(flattened),
-                "strategy": "single_cut",
+                "strategy": strategy,
             }
+            if auto_split_strategies:
+                combined_metadata["auto_split"]["strategies"] = sorted(auto_split_strategies)
         panel_warnings: dict[str, list[str]] = {}
         panel_issues: dict[str, list[dict[str, object]]] = {}
         panel_issue_summaries: dict[str, dict[str, object]] = {}
@@ -1043,10 +1063,130 @@ def _issue_from_mapping(mapping: Mapping[str, Any]) -> PanelIssue:
     )
 
 
-def _apply_auto_split(panels: Sequence[Panel2D]) -> list[Panel2D]:
+_SUPPORTED_AUTO_SPLIT_STRATEGIES = {"single_cut", "seam_aware", "multi_cut"}
+
+
+def _normalize_split_strategy(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower().replace("-", "_")
+    if normalized in _SUPPORTED_AUTO_SPLIT_STRATEGIES:
+        return normalized
+    return None
+
+
+def _select_auto_split_strategy(
+    panel: Panel2D,
+    issues: Sequence[PanelIssue],
+    *,
+    has_avoid_ranges: bool,
+) -> str:
+    explicit = _normalize_split_strategy(panel.metadata.get("split_strategy"))
+    if explicit is None:
+        explicit = _normalize_split_strategy(panel.metadata.get("auto_split_strategy"))
+    if explicit is not None:
+        return explicit
+
+    split_count = sum(
+        1
+        for issue in issues
+        if issue.code == "SUGGEST_SPLIT" and issue.index is not None
+    )
+    if split_count > 1:
+        return "multi_cut"
+    if has_avoid_ranges:
+        return "seam_aware"
+    return "single_cut"
+
+
+def _derive_child_issues(
+    issues_meta: Sequence[Mapping[str, Any]],
+    index_map: Sequence[int],
+    *,
+    source_count: int,
+) -> list[dict[str, object]]:
+    if source_count <= 0:
+        return []
+
+    open_map = list(index_map)
+    if len(open_map) >= 2 and open_map[0] == open_map[-1]:
+        open_map = open_map[:-1]
+    local_index_by_source: dict[int, int] = {}
+    for local_idx, source_idx in enumerate(open_map):
+        wrapped = int(source_idx) % source_count
+        local_index_by_source.setdefault(wrapped, local_idx)
+
+    child_issues: list[dict[str, object]] = []
+    for issue_raw in issues_meta:
+        issue = dict(issue_raw)
+        source_index_raw = issue.get("index")
+        if source_index_raw is None:
+            child_issues.append(issue)
+            continue
+        try:
+            source_index = int(source_index_raw) % source_count
+        except (TypeError, ValueError):
+            continue
+        local_index = local_index_by_source.get(source_index)
+        if local_index is None:
+            continue
+        issue["index"] = local_index
+        issue["source_index"] = source_index
+        child_issues.append(issue)
+    return child_issues
+
+
+def _rewrite_child_issue_metadata(
+    metadata: dict[str, Any],
+    parent_issues_meta: Sequence[Mapping[str, Any]],
+    child_issues: Sequence[Mapping[str, Any]],
+) -> None:
+    parent_codes = {
+        str(issue.get("code", ""))
+        for issue in parent_issues_meta
+        if issue.get("code") is not None
+    }
+    inherited_warnings = [str(item) for item in metadata.get("warnings", [])]
+    retained_warnings = [warning for warning in inherited_warnings if warning not in parent_codes]
+
+    if not child_issues:
+        metadata.pop("issues", None)
+        metadata.pop("issue_summary", None)
+        if retained_warnings:
+            metadata["warnings"] = retained_warnings
+        else:
+            metadata.pop("warnings", None)
+        return
+
+    rewritten_issues = [dict(item) for item in child_issues]
+    metadata["issues"] = rewritten_issues
+    child_codes = [
+        str(issue.get("code"))
+        for issue in rewritten_issues
+        if issue.get("code") is not None
+    ]
+    warnings = list(dict.fromkeys(retained_warnings + child_codes))
+    if warnings:
+        metadata["warnings"] = warnings
+    else:
+        metadata.pop("warnings", None)
+
+    summary = summarize_panel_issues([_issue_from_mapping(item) for item in rewritten_issues])
+    metadata["issue_summary"] = {
+        "sewable": summary.sewable,
+        "action": summary.action,
+    }
+
+
+def _apply_auto_split(panels: Sequence[Panel2D]) -> tuple[list[Panel2D], set[str]]:
     split_panels: list[Panel2D] = []
+    strategies_used: set[str] = set()
     for panel in panels:
-        issues_meta = panel.metadata.get("issues", [])
+        issues_raw = panel.metadata.get("issues", [])
+        if not isinstance(issues_raw, list):
+            split_panels.append(panel)
+            continue
+        issues_meta = [dict(issue) for issue in issues_raw if isinstance(issue, Mapping)]
         if not issues_meta:
             split_panels.append(panel)
             continue
@@ -1062,19 +1202,41 @@ def _apply_auto_split(panels: Sequence[Panel2D]) -> list[Panel2D]:
                 ranges = parsed
         seam_midpoint_index = panel.metadata.get("seam_midpoint_index")
         midpoint = int(seam_midpoint_index) if seam_midpoint_index is not None else None
-        boundaries = split_boundary(
+        strategy = _select_auto_split_strategy(
+            panel,
+            issues,
+            has_avoid_ranges=bool(ranges),
+        )
+        boundaries, index_maps = split_boundary(
             panel.seam_outline,
             issues,
+            strategy=strategy,
             avoid_ranges=ranges,
             seam_midpoint_index=midpoint,
+            return_index_maps=True,
         )
         if len(boundaries) == 1:
             split_panels.append(panel)
             continue
-        for idx, boundary in enumerate(boundaries):
+        strategies_used.add(strategy)
+        source_outline = list(panel.seam_outline or [])
+        if len(source_outline) >= 2 and source_outline[0] == source_outline[-1]:
+            source_outline = source_outline[:-1]
+        source_count = len(source_outline)
+        if source_count <= 0:
+            source_count = max((max(item) for item in index_maps if item), default=0) + 1
+
+        for idx, (boundary, index_map) in enumerate(zip(boundaries, index_maps)):
             metadata = dict(panel.metadata)
             metadata["split_from"] = panel.name
             metadata["split_index"] = idx
+            metadata["split_strategy"] = strategy
+            child_issues = _derive_child_issues(
+                issues_meta,
+                index_map,
+                source_count=source_count,
+            )
+            _rewrite_child_issue_metadata(metadata, issues_meta, child_issues)
             split_panels.append(
                 Panel2D(
                     name=f"{panel.name}__split{idx}",
@@ -1088,7 +1250,7 @@ def _apply_auto_split(panels: Sequence[Panel2D]) -> list[Panel2D]:
                     label=panel.label,
                 )
             )
-    return split_panels
+    return split_panels, strategies_used
 
 
 def _append_panel_issue(panel: Panel2D, issue: PanelIssue) -> None:

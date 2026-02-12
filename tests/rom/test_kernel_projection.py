@@ -113,6 +113,31 @@ def test_rom_gate_blocks_on_threshold():
     assert len(decision.reasons) == 2
 
 
+def test_rom_gate_derives_seam_tear_risk_from_observations():
+    gate = RomGate(
+        [
+            CouplingRule(
+                id="seam_tear_risk",
+                description="Predicted seam/fabric tear risk is too high.",
+                threshold=0.7,
+                block=True,
+            )
+        ]
+    )
+
+    accepted = gate.evaluate({"shear_hotspot": 0.3, "pressure_hotspot": 0.2})
+    assert accepted.accepted
+    assert not accepted.reasons
+
+    rejected = gate.evaluate({"shear_hotspot": 0.8, "pressure_hotspot": 0.2})
+    assert not rejected.accepted
+    assert rejected.blocking_reasons[0].id == "seam_tear_risk"
+
+    rejected_intersection = gate.evaluate({"edge_self_intersection": 1})
+    assert not rejected_intersection.accepted
+    assert rejected_intersection.blocking_reasons[0].id == "seam_tear_risk"
+
+
 def test_aggregate_fields_handles_edges_and_gating():
     basis = KernelBasis.from_arrays(np.eye(3))
     projector = KernelProjector(basis)
@@ -147,6 +172,36 @@ def test_aggregate_fields_handles_edges_and_gating():
     assert diagnostics.edge_hotspots[0].edge in edges
 
 
+def test_aggregate_fields_gates_on_dynamic_seam_tear_risk():
+    basis = KernelBasis.from_arrays(np.eye(1))
+    projector = KernelProjector(basis)
+    gate = RomGate(
+        [
+            CouplingRule(
+                id="seam_tear_risk_dynamic",
+                description="fatigue risk too high",
+                threshold=0.5,
+                block=True,
+            )
+        ]
+    )
+    samples = [
+        RomSample(
+            pose_id=f"pose_{idx}",
+            coeffs={"T": np.array([1.0])},
+            observations={"shear_hotspot": 0.9},
+        )
+        for idx in range(6)
+    ]
+
+    agg = aggregate_fields(samples, projector, gate=gate)
+    assert agg.total_samples == 6
+    assert agg.sample_count == 4
+    assert agg.rejection_report.rejected_samples == 2
+    assert agg.rejection_report.reasons[0].id == "seam_tear_risk_dynamic"
+    assert agg.rejection_report.reasons[0].count == 2
+
+
 def test_aggregate_fields_optional_and_missing_keys():
     basis = KernelBasis.from_arrays(np.eye(2))
     projector = KernelProjector(basis)
@@ -177,6 +232,8 @@ def test_load_coupling_manifest(tmp_path):
         "rules": [
             {"id": "forbidden_vertices", "description": "blocked", "threshold": 1, "block": True},
             {"id": "pressure_hotspot", "description": "warn", "threshold": 0.5, "block": False},
+            {"id": "seam_tear_risk", "description": "tear", "threshold": 0.7, "block": True},
+            {"id": "seam_tear_risk_dynamic", "description": "tear fatigue", "threshold": 0.8, "block": True},
         ],
     }
     manifest_path.write_text(json.dumps(manifest_payload), encoding="utf-8")
@@ -186,3 +243,6 @@ def test_load_coupling_manifest(tmp_path):
     gate = build_gate_from_manifest(manifest)
     decision = gate.evaluate({"forbidden_vertices": 1})
     assert not decision.accepted
+    tear_decision = gate.evaluate({"shear_hotspot": 0.8})
+    assert not tear_decision.accepted
+    assert any(reason.id == "seam_tear_risk" for reason in tear_decision.blocking_reasons)

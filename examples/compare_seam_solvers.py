@@ -10,6 +10,7 @@ import numpy as np
 
 from smii.rom.constraints import ConstraintRegistry, load_constraints
 from smii.rom.seam_costs import load_seam_cost_field
+from smii.seams.fabric_kernels import FabricProfile, load_fabrics_from_dir
 from smii.seams.kernels import KernelWeights, build_edge_kernels
 from smii.seams.mdl import MDLPrior
 from smii.seams.pda import solve_seams_pda
@@ -61,6 +62,21 @@ def _mdl_from_path(path: Path | None) -> MDLPrior:
     )
 
 
+def _resolve_fabric_profile(
+    fabric_catalog: Mapping[str, FabricProfile] | None,
+    fabric_id: str | None,
+) -> FabricProfile | None:
+    if not fabric_catalog:
+        return None
+    if fabric_id:
+        profile = fabric_catalog.get(str(fabric_id))
+        if profile is None:
+            available = ", ".join(sorted(fabric_catalog.keys()))
+            raise KeyError(f"Unknown fabric '{fabric_id}'. Available: {available}")
+        return profile
+    return next(iter(fabric_catalog.values()))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Compare ROM-driven seam solvers.")
     parser.add_argument("--body", type=Path, required=True, help="NPZ with vertices, faces.")
@@ -68,6 +84,14 @@ def main() -> None:
     parser.add_argument("--constraints", type=Path, help="Optional constraint manifest directory.")
     parser.add_argument("--weights", type=Path, default=Path("configs/kernel_weights.yaml"), help="Kernel weights YAML/JSON.")
     parser.add_argument("--mdl", type=Path, default=Path("configs/mdl_prior.yaml"), help="MDL prior YAML/JSON.")
+    parser.add_argument("--fabric-dir", type=Path, default=None, help="Optional fabric profile directory.")
+    parser.add_argument("--fabric-id", type=str, default=None, help="Fabric id from --fabric-dir.")
+    parser.add_argument(
+        "--fabric-grain",
+        type=str,
+        default=None,
+        help="Optional fabric grain vector (x,y,z).",
+    )
     parser.add_argument("--budget", type=int, default=8, help="PDA iteration budget.")
     args = parser.parse_args()
 
@@ -76,16 +100,41 @@ def main() -> None:
     constraints: ConstraintRegistry | None = load_constraints(args.constraints) if args.constraints else None
     weights = _weights_from_path(args.weights)
     mdl_prior = _mdl_from_path(args.mdl)
+    fabric_grain = None
+    if args.fabric_grain:
+        parts = [float(p) for p in args.fabric_grain.split(",")]
+        if len(parts) == 3:
+            fabric_grain = np.array(parts, dtype=float)
+    fabric_catalog = load_fabrics_from_dir(args.fabric_dir) if args.fabric_dir else None
+    fabric_profile = _resolve_fabric_profile(fabric_catalog, args.fabric_id)
 
     axis_map = {
         "longitudinal": np.array([0.0, 0.0, 1.0], dtype=float),
         "lateral": np.array([1.0, 0.0, 0.0], dtype=float),
     }
     seam_graph = SeamGenerator().generate(vertices, faces, measurement_loops=None, axis_map=axis_map)
-    kernels = build_edge_kernels(cost_field, seam_graph, vertices=vertices, constraints=constraints)
+    kernels = build_edge_kernels(
+        cost_field,
+        seam_graph,
+        vertices=vertices,
+        fabric_grain=fabric_grain,
+        fabric_profile=fabric_profile,
+        constraints=constraints,
+    )
+    panel_fabrics = (
+        {panel.name: fabric_profile.fabric_id for panel in seam_graph.panels}
+        if fabric_profile is not None
+        else None
+    )
 
     runs = {}
-    runs["mst"] = solve_seams(seam_graph, cost_field, constraints=constraints)
+    runs["mst"] = solve_seams(
+        seam_graph,
+        cost_field,
+        constraints=constraints,
+        kernels=kernels,
+        kernel_weights=weights,
+    )
     runs["pda"] = solve_seams_pda(
         seam_graph,
         kernels,
@@ -95,6 +144,9 @@ def main() -> None:
         budget=args.budget,
         cost_field=cost_field,
         vertices=vertices,
+        fabric_catalog=fabric_catalog,
+        fabric_grain=fabric_grain,
+        panel_fabrics=panel_fabrics,
     )
     runs["shortest_path"] = solve_seams_shortest_path(
         seam_graph,
