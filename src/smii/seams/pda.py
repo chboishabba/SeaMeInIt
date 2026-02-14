@@ -147,6 +147,49 @@ def _edges_for_panel(panel, kernels: Mapping[tuple[int, int], EdgeKernel]) -> li
     ]
 
 
+def _select_spanning_edges(
+    panel_vertices: tuple[int, ...],
+    panel_edges: list[tuple[int, int]],
+    edge_costs: Mapping[tuple[int, int], float],
+    *,
+    max_branch_degree: int | None,
+    branch_penalty_weight: float,
+) -> list[tuple[int, int]]:
+    parent = _component_roots(panel_vertices)
+    degrees = {int(v): 0 for v in panel_vertices}
+    remaining = sorted(
+        {tuple(sorted(edge)) for edge in panel_edges if edge[0] in degrees and edge[1] in degrees}
+    )
+    selected: list[tuple[int, int]] = []
+
+    while remaining:
+        best_idx: int | None = None
+        best_key: tuple[float, tuple[int, int]] | None = None
+        best_edge: tuple[int, int] | None = None
+        for idx, edge in enumerate(remaining):
+            a, b = edge
+            if _find(parent, a) == _find(parent, b):
+                continue
+            if max_branch_degree is not None and max_branch_degree >= 0:
+                if degrees.get(a, 0) >= max_branch_degree or degrees.get(b, 0) >= max_branch_degree:
+                    continue
+            base = float(edge_costs.get(edge, edge_costs.get((edge[1], edge[0]), 0.0)))
+            branch_term = float(branch_penalty_weight) * float(degrees.get(a, 0) + degrees.get(b, 0))
+            key = (base + branch_term, edge)
+            if best_key is None or key < best_key:
+                best_idx = idx
+                best_key = key
+                best_edge = edge
+        if best_edge is None:
+            break
+        remaining.pop(best_idx)  # type: ignore[arg-type]
+        if _union(parent, best_edge[0], best_edge[1]):
+            selected.append(best_edge)
+            degrees[best_edge[0]] = degrees.get(best_edge[0], 0) + 1
+            degrees[best_edge[1]] = degrees.get(best_edge[1], 0) + 1
+    return selected
+
+
 def _panel_solution_from_edges(
     panel,
     edges: Iterable[tuple[int, int]],
@@ -156,6 +199,7 @@ def _panel_solution_from_edges(
     symmetry_penalty_weight: float,
     constraints: ConstraintRegistry | None,
     vertex_weight: float,
+    max_branch_degree: int | None = None,
     fabric_costs: Mapping[tuple[int, int], float] | None = None,
     fabric_assignment: FabricAssignment | None = None,
 ) -> PanelSolution:
@@ -180,18 +224,29 @@ def _panel_solution_from_edges(
 
     vertex_term = float(np.nansum(np.asarray(vertex_costs, dtype=float)[list(panel_vertices)])) * float(vertex_weight)
     symmetry_term = _symmetry_penalty(selected_edges, constraints, symmetry_penalty_weight)
+    degree_penalty = 0.0
+    if max_branch_degree is not None and max_branch_degree >= 0:
+        degree: MutableMapping[int, int] = {}
+        for a, b in selected_edges:
+            degree[int(a)] = degree.get(int(a), 0) + 1
+            degree[int(b)] = degree.get(int(b), 0) + 1
+        excess = sum(max(0, value - int(max_branch_degree)) for value in degree.values())
+        degree_penalty = 1000.0 * float(excess)
 
-    total_cost = edge_cost_sum + vertex_term + symmetry_term + connectivity_penalty
+    total_cost = edge_cost_sum + vertex_term + symmetry_term + connectivity_penalty + degree_penalty
     warnings = []
     if not selected_edges:
         warnings.append("panel has no seam edges")
     if connectivity_penalty > 0.0:
         warnings.append("panel is disconnected")
+    if degree_penalty > 0.0:
+        warnings.append("panel exceeds max_branch_degree")
     breakdown = {
         "edge_energy": edge_cost_sum,
         "vertex_cost": vertex_term,
         "symmetry_penalty": symmetry_term,
         "connectivity_penalty": connectivity_penalty,
+        "degree_penalty": degree_penalty,
     }
     if fabric_costs is not None:
         breakdown["fabric_cost"] = fabric_sum
@@ -242,6 +297,8 @@ def _initial_solution(
     vertices: np.ndarray,
     vertex_weight: float,
     symmetry_penalty_weight: float,
+    max_branch_degree: int | None,
+    branch_penalty_weight: float,
     *,
     fabric_catalog: Mapping[str, FabricProfile] | None,
     fabric_grain: np.ndarray | None,
@@ -267,11 +324,13 @@ def _initial_solution(
             fabric_grain=fabric_grain,
             grain_rotation_deg=assignment.grain_rotation_deg,
         )
-        parent = _component_roots(seam_vertices)
-        chosen: list[tuple[int, int]] = []
-        for edge in sorted(panel_edges, key=lambda edge: (edge_costs.get(edge, 0.0), edge)):
-            if _union(parent, edge[0], edge[1]):
-                chosen.append(edge)
+        chosen = _select_spanning_edges(
+            seam_vertices,
+            panel_edges,
+            edge_costs,
+            max_branch_degree=max_branch_degree,
+            branch_penalty_weight=branch_penalty_weight,
+        )
         solutions[panel.name] = _panel_solution_from_edges(
             panel,
             chosen,
@@ -280,6 +339,7 @@ def _initial_solution(
             symmetry_penalty_weight=symmetry_penalty_weight,
             constraints=constraints,
             vertex_weight=vertex_weight,
+            max_branch_degree=max_branch_degree,
             fabric_costs=fabric_costs,
             fabric_assignment=assignment,
         )
@@ -300,6 +360,8 @@ def _witness_stable(
     weights: KernelWeights,
     vertex_weight: float,
     symmetry_penalty_weight: float,
+    max_branch_degree: int | None,
+    branch_penalty_weight: float,
     noise: float,
 ) -> bool:
     default_fabric_id = next(iter(fabric_catalog.keys()), None) if fabric_catalog else None
@@ -323,6 +385,8 @@ def _witness_stable(
             vertices,
             vertex_weight,
             symmetry_penalty_weight,
+            max_branch_degree,
+            branch_penalty_weight,
             fabric_catalog=fabric_catalog,
             fabric_grain=fabric_grain,
             panel_fabrics=fabric_assignments,
@@ -380,6 +444,8 @@ def solve_seams_pda(
     vertices: np.ndarray,
     vertex_weight: float = 1.0,
     symmetry_penalty_weight: float = 0.5,
+    max_branch_degree: int | None = None,
+    branch_penalty_weight: float = 0.0,
     witness_noise: float = 0.05,
     fabric_catalog: Mapping[str, FabricProfile] | None = None,
     fabric_grain: np.ndarray | None = None,
@@ -407,6 +473,8 @@ def solve_seams_pda(
         vertices,
         vertex_weight,
         symmetry_penalty_weight,
+        max_branch_degree,
+        branch_penalty_weight,
         fabric_catalog=fabric_catalog,
         fabric_grain=fabric_grain_arr,
         panel_fabrics=fabric_assignments,
@@ -426,6 +494,8 @@ def solve_seams_pda(
             "iterations": 0,
             "symmetry_penalty": symmetry_penalty_weight,
             "vertex_weight": vertex_weight,
+            "max_branch_degree": float(max_branch_degree) if max_branch_degree is not None else -1.0,
+            "branch_penalty_weight": float(branch_penalty_weight),
             "witness_noise": witness_noise,
             **mdl_breakdown,
         },
@@ -492,6 +562,8 @@ def solve_seams_pda(
                     weights=weights,
                     vertex_weight=vertex_weight,
                     symmetry_penalty_weight=symmetry_penalty_weight,
+                    max_branch_degree=max_branch_degree,
+                    branch_penalty_weight=branch_penalty_weight,
                     noise=witness_noise,
                 ):
                     best_candidate = candidate_solution
@@ -509,6 +581,7 @@ def solve_seams_pda(
                     symmetry_penalty_weight=symmetry_penalty_weight,
                     constraints=constraints,
                     vertex_weight=vertex_weight,
+                    max_branch_degree=max_branch_degree,
                     fabric_costs=fabric_costs_current,
                     fabric_assignment=current_assignment,
                 )
@@ -537,6 +610,7 @@ def solve_seams_pda(
                         symmetry_penalty_weight=symmetry_penalty_weight,
                         constraints=constraints,
                         vertex_weight=vertex_weight,
+                        max_branch_degree=max_branch_degree,
                         fabric_costs=alt_fabric_costs,
                         fabric_assignment=assignment,
                     )
@@ -568,6 +642,7 @@ def solve_seams_pda(
                             symmetry_penalty_weight=symmetry_penalty_weight,
                             constraints=constraints,
                             vertex_weight=vertex_weight,
+                            max_branch_degree=max_branch_degree,
                             fabric_costs=rot_fabric_costs,
                             fabric_assignment=assignment,
                         )

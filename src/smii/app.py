@@ -21,6 +21,17 @@ __all__ = [
 ]
 
 
+def _pillow_supports_avif() -> bool:
+    try:
+        from PIL import features  # type: ignore
+    except Exception:
+        return False
+    try:
+        return bool(features.check("avif"))
+    except Exception:
+        return False
+
+
 _SUPPORTED_IMAGE_SUFFIXES = {
     ".jpg",
     ".jpeg",
@@ -29,8 +40,9 @@ _SUPPORTED_IMAGE_SUFFIXES = {
     ".tif",
     ".tiff",
     ".webp",
-    ".avif",
 }
+if _pillow_supports_avif():
+    _SUPPORTED_IMAGE_SUFFIXES.add(".avif")
 
 
 @dataclass(frozen=True)
@@ -154,7 +166,11 @@ def _expand_image_inputs(paths: Iterable[Path]) -> list[Path]:
             ]
             expanded.extend(files)
         else:
-            if path.suffix.lower() in _SUPPORTED_IMAGE_SUFFIXES:
+            suffix = path.suffix.lower()
+            if suffix == ".avif" and ".avif" not in _SUPPORTED_IMAGE_SUFFIXES:
+                print(f"Skipping {path}: AVIF support not available in this environment.")
+                continue
+            if suffix in _SUPPORTED_IMAGE_SUFFIXES:
                 expanded.append(path)
     seen: set[Path] = set()
     unique: list[Path] = []
@@ -202,7 +218,10 @@ def run_afflec_fixture_demo(
         plot_measurement_report,
         save_fit,
     )
-    import trimesh
+    try:
+        import trimesh  # type: ignore
+    except Exception:
+        trimesh = None  # type: ignore[assignment]
 
     image_paths = list(images or _default_afflec_images())
     # Expand directories to file lists to avoid silent no-ops
@@ -278,17 +297,22 @@ def run_afflec_fixture_demo(
             gender=gender,
         )
 
-        mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
-        if not mesh.is_watertight:
-            repaired = repair_mesh_with_pymeshfix(vertices, faces)
-            if repaired is not None:
-                vertices, faces = repaired
-                mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
-        if not mesh.is_watertight:
-            raise ValueError(
-                "Fitted SMPL-X body is not watertight. Install PyMeshFix (`pip install pymeshfix`) "
-                "or repair the mesh manually with tools/repair_body_mesh.py."
+        if trimesh is None:
+            print(
+                "Warning: 'trimesh' is not installed; skipping watertight/repair checks for afflec-demo mesh."
             )
+        else:
+            mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
+            if not mesh.is_watertight:
+                repaired = repair_mesh_with_pymeshfix(vertices, faces)
+                if repaired is not None:
+                    vertices, faces = repaired
+                    mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
+            if not mesh.is_watertight:
+                raise ValueError(
+                    "Fitted SMPL-X body is not watertight. Install PyMeshFix (`pip install pymeshfix`) "
+                    "or repair the mesh manually with tools/repair_body_mesh.py."
+                )
     else:  # pragma: no cover - fallback path without parameter record
         vertices, faces = mesh_output
 

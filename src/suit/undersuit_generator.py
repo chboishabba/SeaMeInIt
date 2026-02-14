@@ -83,8 +83,9 @@ class UnderSuitResult:
 class UnderSuitGenerator:
     """Generate watertight undersuit meshes based on SMPL-X outputs."""
 
-    def __init__(self, seam_tolerance: float = 1e-5) -> None:
+    def __init__(self, seam_tolerance: float = 1e-5, *, require_watertight: bool = True) -> None:
         self.seam_tolerance = float(seam_tolerance)
+        self.require_watertight = bool(require_watertight)
 
     def generate(
         self,
@@ -126,10 +127,11 @@ class UnderSuitGenerator:
             "measurement_scale": measurement_scale,
             "ease_percent": options.ease_percent,
             "watertight": _is_watertight(faces, tolerance=self.seam_tolerance),
+            "watertight_required": self.require_watertight,
             "body_axes": body_axes.to_metadata(),
         }
 
-        if not layer_metadata["watertight"]:
+        if self.require_watertight and not layer_metadata["watertight"]:
             raise ValueError("Body mesh must be watertight to generate undersuit layers.")
 
         base_layer: MeshLayer | None = None

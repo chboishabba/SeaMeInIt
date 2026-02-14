@@ -9,6 +9,9 @@ Please see our docs:
 - [Hard Layer Shell](docs/hard_layer_shell.md)
 - [Hard Shell Clearance](docs/hard_shell_clearance.md)
 - [Measurement Inference](docs/measurement_inference.md)
+- [Afflec Mesh Provenance](docs/mesh_provenance_afflec.md)
+- [Body Lineage Protocol](docs/body_lineage_protocol.md)
+- [Seam Pipeline: Intended vs Observed](docs/seam_pipeline_intended_vs_observed.md)
 - [ROM Latent Space Notes](CONTEXT.md) (see lines 1-120 for the validity and latent-space framing)
 - [Schemas](docs/schemas.md)
 - [Undersuit Generation](docs/undersuit_generation.md) - Currently in progress.

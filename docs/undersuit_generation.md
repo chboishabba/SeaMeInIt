@@ -30,6 +30,19 @@ python -m smii.pipelines.generate_undersuit \
   --material neoprene
 ```
 
+### Debug-only: allow non-watertight inputs
+
+By default, the undersuit generator requires watertight input topology. If you
+are debugging a fitting pipeline in an environment missing mesh-repair tooling,
+you can bypass the hard failure:
+
+```bash
+python -m smii.pipelines.generate_undersuit <body.npz> --allow-non-watertight
+```
+
+This is intended for diagnostics only; downstream panels/patterns may be
+unreliable when the input mesh has holes or non-manifold edges.
+
 ### ROM seam-cost inputs (afflec demo)
 
 The undersuit CLI can annotate seams with ROM-driven cost fields. The real

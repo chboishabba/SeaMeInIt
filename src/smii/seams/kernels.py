@@ -88,6 +88,38 @@ def _seam_vertices(seam_graph: SeamGraph) -> set[int]:
     return vertices
 
 
+def _panel_mesh_seam_edges(seam_graph: SeamGraph) -> set[tuple[int, int]]:
+    """Return mesh-adjacent seam edges from panel triangle connectivity.
+
+    This prevents solver kernels from introducing non-manifold "teleport" links
+    when ROM edge payloads include long-range graph edges.
+    """
+
+    allowed: set[tuple[int, int]] = set()
+    for panel in seam_graph.panels:
+        seam_set = {int(idx) for idx in panel.seam_vertices}
+        if not seam_set:
+            continue
+        faces = np.asarray(panel.faces, dtype=int)
+        global_indices = np.asarray(panel.global_indices, dtype=int)
+        if faces.size == 0 or global_indices.size == 0:
+            continue
+        for tri in faces:
+            if len(tri) != 3:
+                continue
+            try:
+                a = int(global_indices[int(tri[0])])
+                b = int(global_indices[int(tri[1])])
+                c = int(global_indices[int(tri[2])])
+            except Exception:
+                continue
+            for u, v in ((a, b), (b, c), (c, a)):
+                edge = (min(u, v), max(u, v))
+                if edge[0] in seam_set and edge[1] in seam_set:
+                    allowed.add(edge)
+    return allowed
+
+
 def build_edge_kernels(
     cost_field: SeamCostField,
     seam_graph: "SeamGraph",
@@ -108,13 +140,23 @@ def build_edge_kernels(
         raise ImportError("suit.seam_generator.SeamGraph is required to build kernels.")
 
     seam_vertices = _seam_vertices(seam_graph)
+    allowed_mesh_edges = _panel_mesh_seam_edges(seam_graph)
+    use_mesh_edge_gate = bool(allowed_mesh_edges)
     grain = rotate_grain(_unit(fabric_grain), _clamp_rotation(grain_rotation_deg, fabric_profile))
     curvature_arr = np.asarray(curvature, dtype=float) if curvature is not None else None
 
     kernels: MutableMapping[tuple[int, int], EdgeKernel] = {}
-    for edge in cost_field.edges:
+    if use_mesh_edge_gate:
+        candidate_edges = sorted(allowed_mesh_edges)
+    else:
+        candidate_edges = [(int(edge[0]), int(edge[1])) for edge in cost_field.edges]
+
+    for edge in candidate_edges:
         a, b = int(edge[0]), int(edge[1])
+        edge_key = (min(a, b), max(a, b))
         if a not in seam_vertices or b not in seam_vertices:
+            continue
+        if use_mesh_edge_gate and edge_key not in allowed_mesh_edges:
             continue
         if constraints and (constraints.is_vertex_forbidden(a) or constraints.is_vertex_forbidden(b)):
             continue
@@ -143,6 +185,6 @@ def build_edge_kernels(
             curvature=np.nan_to_num(curv_value, nan=0.0, posinf=0.0, neginf=0.0),
             fabric_misalignment=np.nan_to_num(misalignment, nan=0.0, posinf=0.0, neginf=0.0),
         )
-        kernels[(min(a, b), max(a, b))] = kernel
+        kernels[edge_key] = kernel
 
     return kernels

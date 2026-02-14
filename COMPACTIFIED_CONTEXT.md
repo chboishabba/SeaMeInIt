@@ -22,3 +22,33 @@ Date: 2026-02-06
 - Add mtimes/hashes to detect no-op ROM/heatmap runs.
 - Switch measurement fixtures to explicit `measurements.yaml` ingestion (PGMs deprecated).
 - Add runtime perf attribution to flag “GPU-assisted” runs that are CPU-bound.
+
+## Seam Debug Snapshot (2026-02-12)
+- Ogre/pathology overlays are now documented as explicit failure modes in `docs/ogre_artifact_diagnostics.md`.
+- `shortest_path` remains the baseline open-path solver, with optional controls:
+  - `require_loop` (loop attempt),
+  - `symmetry_penalty_weight` (mirrored edge mismatch),
+  - `allow_unfiltered_fallback` (strict locality toggle),
+  - `reference_vertices` (origin-mesh seam length diagnostics).
+- TODO and changelog were aligned to these controls before implementation.
+
+## Mesh Provenance Snapshot (2026-02-13)
+- Added `docs/mesh_provenance_afflec.md` to disambiguate `afflec_body` vs `afflec_canonical_basis`.
+- Current working branch has two topology families in artifacts:
+  - base/demo pipeline: `3240` vertices (`outputs/afflec_demo/afflec_body.npz`),
+  - legacy realshape/suit branch: `9438` vertices (`outputs/suits/afflec_body/base_layer.npz` and related seam runs).
+- Added `scripts/audit_mesh_lineage.py` to produce JSON/CSV lineage checks over body, ROM costs/meta, ogre seam report, and reprojected seam report.
+
+## Pipeline Position Snapshot (2026-02-13)
+- Added `docs/seam_pipeline_intended_vs_observed.md` as the explicit alignment document for:
+  - intended pipeline stage semantics,
+  - user-observed and agent-observed mismatch behavior,
+  - unresolved decision on canonical solve domain (base-first vs ROM-first).
+- Roadmap/TODO now include a decision gate requiring lineage manifests and strict transfer acceptance before cross-topology seam interpretation.
+- The document now contains a runnable A-vs-B protocol and decision-record section; policy freeze remains pending execution.
+- Protocol execution `outputs/seams_run/domain_ab_20260213_051532` completed:
+  - Strategy A passes native checks,
+  - Strategy B fails strict reprojection gates,
+  - reverse-direction NN transfer also collapses (not invertible in practice),
+  - provisional Strategy A freeze for interpretable outputs.
+- Added persistent map tooling (`scripts/build_mesh_vertex_map.py`) and map-driven reprojection (`--vertex-map-file`); current ogre<->afflec map still fails quality gates, indicating correspondence quality issue rather than seam-point sampling issue.

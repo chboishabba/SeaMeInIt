@@ -155,14 +155,17 @@ def test_afflec_demo_announces_plot(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     dummy_trimesh_module.Trimesh = DummyTrimesh
     monkeypatch.setitem(sys.modules, "trimesh", dummy_trimesh_module)
 
-    images = [tmp_path / "front.pgm"]
+    images = [tmp_path / "front.jpg"]
+    # The demo expands and validates image inputs; create a stub file so the
+    # mocked fitter is exercised instead of failing early.
+    images[0].write_bytes(b"stub")
     output_dir = tmp_path / "afflec"
 
     result_path = app.run_afflec_fixture_demo(images=images, output_dir=output_dir)
 
     assert result_path == output_dir / "afflec_measurement_fit.json"
     assert called["images"] == tuple(images)
-    assert called["fit_kwargs"] == {}
+    assert called["fit_kwargs"] == {"detector": "bbox"}
     assert called["save_path"] == result_path
     assert called["plot_dir"] == output_dir
     assert (output_dir / "measurement_report.png").exists()

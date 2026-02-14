@@ -6,8 +6,28 @@
 - Wire PDA coupling manifest + gate decisions into ROM sampler/export paths with rejection logging (aggregation now emits structured gate ids/reasons).
 - Expand ROM aggregation diagnostics (visuals, hotspot overlays) and connect to seam validators; demo stubs live at `examples/rom_hotspot_diagnostic.py` and `examples/rom_aggregate_from_samples.py`.
 - Add output no-op verification for ROM/heatmap runs: log mtimes + content hashes for `afflec_body.npz`, `seam_costs`, heatmaps, and fitted params; warn when outputs are unchanged.
+- Install/verify SMPL-X runtime extras (`smplx`, torch backend) in the active venv so `python -m smii.rom.sampler_real` can regenerate ROM artifacts (currently blocked by `ModuleNotFoundError: smplx` in this environment).
 - Replace PGM-only measurement fixtures with explicit `tests/fixtures/afflec/measurements.yaml` ingestion (keep PGM support behind deprecation if needed).
 - Add runtime performance attribution: detect GPU vs CPU heavy compute paths and flag when a claimed GPU-assisted run is actually CPU-bound (log + metrics).
+- Add an explicit mesh-lineage audit CLI (ingest -> body -> ROM -> seam report -> reprojection) that emits vertex counts, hashes, and mismatch flags as JSON/CSV.
+- Persist body provenance in undersuit metadata (`body_vertex_count`, `body_face_count`, body hash) so historical `outputs/suits/*` runs can be disambiguated from later `outputs/afflec_demo/*` regenerations.
+- Add a mesh registry/labeling helper that emits stable labels (`subject`, `stage`, `topology`, `body_hash`) and optional alias symlinks for human-friendly browsing (do not rename/overwrite in-place).
+- Fix render-axis instability in `scripts/render_variant_orbits.py`: stop inferring “up axis” from max span; add explicit axis convention flags and record the convention in the render manifest.
+- Add a required “vertex-map orbit” renderer for correspondence debugging (target colored by map distance; optional source overlay + subsampled correspondence lines) so claims about collision/retention have viewable artifacts.
+- Record mesh-edge conformance metrics in every seam report (native and transferred) so “single scapula line” failures can be attributed to solver vs transfer.
+- Regenerate and timestamp canonical basis artifacts with source-path metadata (do not overwrite ambiguous legacy files without an accompanying lineage manifest).
+- Add reprojection quality gates (`max_distance`, `mean_distance`, edge-retention ratio) so seam transfer fails loudly when source/target meshes are not geometrically compatible.
+- Add stage-level edge divergence report (`source edges` -> `mapped edges` -> `collapsed` -> `deduped`) to simplify root-cause triage for cross-topology seams.
+- Make seam reprojection consume sampler-native `--out-correspondence` artifacts by default (and only fall back to ad-hoc NN map generation when missing).
+- Add transform-native correspondence export for the ogre domain (`9438`) itself; current sampler-native map is `10475 -> 3240` and cannot be applied directly to `B_ogre (9438) -> base (3240)` seam transfer.
+- Decide canonical seam solve domain and freeze policy:
+  - Option A: solve on `afflec_body` then evaluate/project to ROM.
+  - Option B: solve on ROM/ogre domain then reproject to base.
+  - Document acceptance metrics and a hard pass/fail checkpoint.
+- Add per-run lineage manifest requirement (`body`, `rom_costs`, `solver_input_mesh`, `render_mesh`, vertex counts, hashes) and reject runs missing it.
+- Replace semantic run labels (`A_base`, `B_ogre`) with topology-explicit labels (`A_v3240`, `B_v9438`, etc.) in protocol outputs to avoid morphology/name inversion confusion.
+- Improve strict loop feasibility diagnostics/actionability: per-panel loop-feasibility score and clearer reasons for `no path`/`loop closure unavailable` under `--sp-loop-strict`.
+- Execute and record the A-vs-B protocol defined in `docs/seam_pipeline_intended_vs_observed.md` and freeze canonical solve policy (A or B) with dated decision rationale.
 - Regenerate canonical ROM basis via `python scripts/generate_canonical_basis.py --vertices <production mesh npy/npz> --components <K> --harmonics 5 --output outputs/rom/canonical_basis.npz`
   (do not commit the resulting NPZ; keep outputs/rom/ ignored), then run the sampler aggregator with real payloads:
   `PYTHONPATH=src python examples/rom_aggregate_from_samples.py --samples outputs/rom/afflec_sampler.json --basis outputs/rom/canonical_basis.npz --save-costs outputs/rom/seam_costs.npz`
@@ -25,6 +45,7 @@
   - PDA seam optimizer stack (kernels, MDL prior, moves, PDA controller) shipped in `smii/seams/{kernels,mdl,moves,pda}.py`; next: tune weights, add visual/debug outputs, and wire CLI/driver.
 - Sprint S2 (production + diagnostics):
   - Add solver variants (`solve_seams_shortest_path`, `solve_seams_mincut`) reusing kernel+MDL objective and compare to MST baseline — implemented; extend benchmarks.
+  - Add shortest-path mode controls for semantics work: `require_loop`, `symmetry_penalty_weight`, strict-local fallback, and reference-body diagnostics; validate on non-warped base mesh parity runs.
   - Ship diagnostics: ROM heatmap + seam overlays, avoided high-cost region highlights, per-seam kernel/MDL breakdown, stability/witness report; output PNG/SVG + JSON — scaffold added (`smii/seams/diagnostics.py` with threshold highlighting), still need richer visuals/witness.
   - Comparative evaluation script/notebook covering MST, PDA-MST, PDA-SP/mincut with metrics (total cost, seam length, panel count, max ROM cost intersected, perturbation stability) — initial script `examples/compare_seam_solvers.py` added; add notebook + perturbation metrics.
   - CLI/example driver `examples/solve_seams_from_rom.py` with config-driven weights/MDL (`configs/kernel_weights.yaml`, `configs/mdl_prior.yaml`) and solver selection emitting seams + diagnostics — defaults added; still need sample inputs/assets.
@@ -33,3 +54,4 @@
   - Task profiles: load task mixtures (`configs/tasks/*.yaml`) and feed task-weighted ROM aggregation (`aggregate_rom(samples, task_profile)`).
   - Regime layer: extend PDA state with fabric assignments and grain rotations; add moves (`switch_fabric`, `rotate_grain`), manufacturability/MDL modifiers.
   - Diagnostics: per-panel rationale (fabric vs ROM), overlays showing fabric regimes + seams, stability under ROM and grain jitter; add task/fabric-aware example driver `examples/task_fabric_seam_demo.py`.
+  - Add loop-mode panel controls (`min_panels`, `max_panels`) and chart-complexity regularization to prevent over-fragmented seam sets.

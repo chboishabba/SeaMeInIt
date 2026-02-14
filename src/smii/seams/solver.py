@@ -94,6 +94,62 @@ def _symmetry_penalty(
     return penalty
 
 
+def _select_spanning_edges(
+    panel_vertex_set: set[int],
+    candidate_edges: list[tuple[tuple[int, int], float]],
+    *,
+    edge_weight: float,
+    max_branch_degree: int | None,
+    branch_penalty_weight: float,
+) -> tuple[list[tuple[int, int]], float, float]:
+    """Greedy spanning-edge selection with optional branch-degree controls."""
+
+    parent = _component_roots(panel_vertex_set)
+    degrees = {vertex: 0 for vertex in panel_vertex_set}
+    remaining = list(candidate_edges)
+    selected_edges: list[tuple[int, int]] = []
+    edge_cost_sum = 0.0
+    branch_penalty_sum = 0.0
+
+    while remaining:
+        best_idx: int | None = None
+        best_key: tuple[float, tuple[int, int]] | None = None
+        best_edge: tuple[int, int] | None = None
+        best_base_cost = 0.0
+        best_branch_penalty = 0.0
+
+        for idx, (edge, cost) in enumerate(remaining):
+            a, b = edge
+            if _find(parent, a) == _find(parent, b):
+                continue
+            if max_branch_degree is not None and max_branch_degree >= 0:
+                if degrees.get(a, 0) >= max_branch_degree or degrees.get(b, 0) >= max_branch_degree:
+                    continue
+
+            base_cost = float(cost) * float(edge_weight)
+            branch_term = float(branch_penalty_weight) * float(degrees.get(a, 0) + degrees.get(b, 0))
+            key = (base_cost + branch_term, edge)
+            if best_key is None or key < best_key:
+                best_idx = idx
+                best_key = key
+                best_edge = edge
+                best_base_cost = base_cost
+                best_branch_penalty = branch_term
+
+        if best_edge is None:
+            break
+
+        remaining.pop(best_idx)  # type: ignore[arg-type]
+        if _union(parent, best_edge[0], best_edge[1]):
+            selected_edges.append(best_edge)
+            edge_cost_sum += best_base_cost
+            branch_penalty_sum += best_branch_penalty
+            degrees[best_edge[0]] = degrees.get(best_edge[0], 0) + 1
+            degrees[best_edge[1]] = degrees.get(best_edge[1], 0) + 1
+
+    return selected_edges, edge_cost_sum, branch_penalty_sum
+
+
 def solve_seams(
     seam_graph: "SeamGraph",
     cost_field: SeamCostField,
@@ -108,6 +164,8 @@ def solve_seams(
     vertex_weight: float = 1.0,
     edge_weight: float = 1.0,
     symmetry_penalty: float = 0.0,
+    max_branch_degree: int | None = None,
+    branch_penalty_weight: float = 0.0,
     forbidden_policy: str = "error",
 ) -> SeamSolution:
     """Compute deterministic seam selections per panel.
@@ -186,15 +244,16 @@ def solve_seams(
             warnings_accum.extend(panel_warnings)
             continue
 
-        # Minimum spanning selection for connectivity
+        selected_edges, edge_cost_sum, branch_penalty_term = _select_spanning_edges(
+            panel_vertex_set,
+            candidate_edges,
+            edge_weight=edge_weight,
+            max_branch_degree=max_branch_degree,
+            branch_penalty_weight=branch_penalty_weight,
+        )
         parent = _component_roots(panel_vertex_set)
-        selected_edges: list[tuple[int, int]] = []
-        edge_cost_sum = 0.0
-        for edge, cost in sorted(candidate_edges, key=lambda item: (item[1], item[0])):
-            if _union(parent, edge[0], edge[1]):
-                selected_edges.append(edge)
-                edge_cost_sum += float(cost) * edge_weight
-
+        for edge in selected_edges:
+            _union(parent, edge[0], edge[1])
         components = {_find(parent, vertex) for vertex in panel_vertex_set}
         if len(components) > 1:
             panel_warnings.append(f"panel remains disconnected after solve (components={len(components)})")
@@ -204,11 +263,12 @@ def solve_seams(
 
         symmetry_term = _symmetry_penalty(selected_edges, constraints, symmetry_penalty)
 
-        total_cost = edge_cost_sum + vertex_cost_term + symmetry_term
+        total_cost = edge_cost_sum + vertex_cost_term + symmetry_term + branch_penalty_term
         breakdown = {
             "edge_cost": edge_cost_sum,
             "vertex_cost": vertex_cost_term,
             "symmetry_penalty": symmetry_term,
+            "branch_penalty": branch_penalty_term,
         }
 
         panel_solution = PanelSolution(
@@ -228,6 +288,8 @@ def solve_seams(
         "vertex_weight": float(vertex_weight),
         "edge_weight": float(edge_weight),
         "symmetry_penalty": float(symmetry_penalty),
+        "max_branch_degree": float(max_branch_degree) if max_branch_degree is not None else -1.0,
+        "branch_penalty_weight": float(branch_penalty_weight),
         "solver": solver,
     }
     return SeamSolution(

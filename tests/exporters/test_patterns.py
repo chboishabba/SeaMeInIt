@@ -102,7 +102,7 @@ def test_panel2d_offsets_guard_for_degenerate_geometry() -> None:
 
     assert panel.cut_outline == []
     warnings = panel.metadata.get("warnings", [])
-    assert any("sufficient geometry" in warning for warning in warnings)
+    assert "SEAM_ALLOWANCE_OFFSET_FAILED" in warnings
 
 
 @pytest.fixture()

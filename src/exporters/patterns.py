@@ -211,9 +211,13 @@ class Panel2D:
                 else:
                     self.cut_outline = []
                     warnings = self.metadata.setdefault("warnings", [])
-                    message = "Panel lacks sufficient geometry for seam allowance offset."
-                    if message not in warnings:
-                        warnings.append(message)
+                    code = "SEAM_ALLOWANCE_OFFSET_FAILED"
+                    if code not in warnings:
+                        warnings.append(code)
+                    issues = self.metadata.setdefault("issues", [])
+                    issue = {"code": code, "severity": "warning"}
+                    if issue not in issues:
+                        issues.append(issue)
         else:
             self.cut_outline = [(float(x), float(y)) for x, y in self.cut_outline]
 
@@ -1033,9 +1037,16 @@ def _cleanup_panel_outline(points: Iterable[tuple[float, float]]) -> list[tuple[
     if len(without_outliers) < 3:
         return without_outliers
 
+    # Laplacian smoothing on very low-vertex outlines (rectangles/triangles) will
+    # shrink the panel dramatically (e.g. two iterations at weight=0.5 yields a
+    # 4x scale collapse for symmetric shapes). Only smooth when we have enough
+    # vertices that smoothing behaves like "noise reduction" rather than
+    # "shape collapse".
+    if len(without_outliers) < 12:
+        return _simplify_polyline(without_outliers)
+
     smoothed = _laplacian_smooth(without_outliers, iterations=2, weight=0.5)
-    simplified = _simplify_polyline(smoothed)
-    return simplified
+    return _simplify_polyline(smoothed)
 
 
 def _regularize_panel_outline(

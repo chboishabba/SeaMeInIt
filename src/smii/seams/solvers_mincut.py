@@ -176,6 +176,8 @@ def solve_seams_mincut(
     vertices: np.ndarray,
     partitions: Mapping[str, Partition] | None = None,
     vertex_weight: float = 0.0,
+    max_branch_degree: int | None = None,
+    branch_penalty_weight: float = 0.0,
 ) -> SeamSolution:
     """Min-cut seam solver per panel using kernel+MDL objective."""
 
@@ -272,5 +274,7 @@ def solve_seams_mincut(
             "mdl_cost": mdl_value,
             **mdl_breakdown,
             "vertex_weight": vertex_weight,
+            "max_branch_degree": float(max_branch_degree) if max_branch_degree is not None else -1.0,
+            "branch_penalty_weight": float(branch_penalty_weight),
         },
     )

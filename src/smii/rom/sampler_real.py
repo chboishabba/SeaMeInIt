@@ -16,10 +16,8 @@ import numpy as np
 
 from smii.meshing import load_body_record
 from smii.pipelines.fit_from_images import SMPLX_BODY_JOINTS
-from smii.pipelines.fit_from_measurements import load_smplx_parameter_payload
 from smii.rom.completeness import build_envelope, compare_envelopes, spearman_rank
 from smii.rom.pose_legality import LegalityConfig
-from smii.rom.pose_schedule import ScheduledSample, load_schedule_samples
 from smii.rom.seam_costs import SeamCostField, save_seam_cost_field
 
 
@@ -33,6 +31,42 @@ POSE_PARAMS_ORDER: tuple[str, ...] = (
     "reye_pose",
     "transl",
 )
+
+
+def _load_smplx_parameter_payload(
+    payload: Mapping[str, Any],
+) -> tuple[dict[str, np.ndarray], float, str, str]:
+    """Decode serialized SMPL-X parameters without importing full fit pipeline deps."""
+
+    scale = float(payload.get("scale", 1.0))
+    model_type = str(payload.get("model_type", "smplx"))
+    gender = str(payload.get("gender", "neutral"))
+
+    param_keys_raw = payload.get("parameters")
+    if param_keys_raw is None:
+        param_keys = [
+            key
+            for key in payload.keys()
+            if key not in {"model_type", "gender", "scale", "parameters"}
+        ]
+    elif isinstance(param_keys_raw, Sequence) and not isinstance(param_keys_raw, (str, bytes)):
+        param_keys = [str(name) for name in param_keys_raw]
+    else:
+        raise TypeError("'parameters' field must be a sequence of parameter names if provided.")
+
+    decoded: dict[str, np.ndarray] = {}
+    for name in param_keys:
+        if name not in payload:
+            raise KeyError(f"Parameter '{name}' is listed but missing from the payload.")
+        array = np.asarray(payload[name], dtype=np.float32)
+        if array.ndim == 1:
+            array = array.reshape(1, -1)
+        elif array.ndim == 0:
+            array = array.reshape(1, 1)
+        elif array.ndim > 2:
+            array = array.reshape(array.shape[0], -1)
+        decoded[name] = array
+    return decoded, scale, model_type, gender
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,7 +94,9 @@ class ParameterLayout:
     total: int
 
     @classmethod
-    def from_shapes(cls, shapes: Mapping[str, Sequence[int]], *, subset: Sequence[str] | None = None) -> "ParameterLayout":
+    def from_shapes(
+        cls, shapes: Mapping[str, Sequence[int]], *, subset: Sequence[str] | None = None
+    ) -> "ParameterLayout":
         ordered = []
         offset = 0
         allowed = set(subset) if subset else None
@@ -83,7 +119,9 @@ class ParameterLayout:
         raise IndexError(f"Coordinate {index} could not be resolved.")
 
     def as_slices(self) -> Mapping[str, slice]:
-        return {block.name: slice(block.offset, block.offset + block.length) for block in self.blocks}
+        return {
+            block.name: slice(block.offset, block.offset + block.length) for block in self.blocks
+        }
 
     def validate_pose(self, pose: Mapping[str, np.ndarray]) -> None:
         for block in self.blocks:
@@ -126,7 +164,9 @@ def _find_params_path(body_path: Path, override: Path | None) -> Path:
     )
 
 
-def _coerce_pose_array(value: Any, *, length: int, joint_map: Mapping[str, int] | None = None) -> np.ndarray:
+def _coerce_pose_array(
+    value: Any, *, length: int, joint_map: Mapping[str, int] | None = None
+) -> np.ndarray:
     if isinstance(value, Mapping):
         if joint_map is None:
             raise TypeError("Joint overrides require a joint layout.")
@@ -153,8 +193,16 @@ def _build_joint_map() -> Mapping[str, int]:
     return {name: 3 * idx for idx, name in enumerate(SMPLX_BODY_JOINTS)}
 
 
-def _merge_pose(entry: Mapping[str, Any], *, layout: ParameterLayout, joint_map: Mapping[str, int], base: Mapping[str, np.ndarray]) -> dict[str, np.ndarray]:
-    merged: dict[str, np.ndarray] = {name: np.asarray(values, dtype=float).reshape(-1) for name, values in base.items()}
+def _merge_pose(
+    entry: Mapping[str, Any],
+    *,
+    layout: ParameterLayout,
+    joint_map: Mapping[str, int],
+    base: Mapping[str, np.ndarray],
+) -> dict[str, np.ndarray]:
+    merged: dict[str, np.ndarray] = {
+        name: np.asarray(values, dtype=float).reshape(-1) for name, values in base.items()
+    }
     length_map = {block.name: block.length for block in layout.blocks}
     for block in layout.blocks:
         if block.name not in merged:
@@ -234,7 +282,9 @@ def _expand_weight_block(
     raise ValueError(f"Weight block expected length {length}, got {arr.size}.")
 
 
-def _load_weights(path: Path, *, layout: ParameterLayout, joint_map: Mapping[str, int]) -> np.ndarray:
+def _load_weights(
+    path: Path, *, layout: ParameterLayout, joint_map: Mapping[str, int]
+) -> np.ndarray:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, Mapping) or "weights" not in payload:
         raise KeyError("Weights payload must include a 'weights' object.")
@@ -257,11 +307,15 @@ def _load_weights(path: Path, *, layout: ParameterLayout, joint_map: Mapping[str
     return weights
 
 
-def _pose_defaults_from_payload(parameter_payload: Mapping[str, Any], layout: ParameterLayout) -> dict[str, np.ndarray]:
+def _pose_defaults_from_payload(
+    parameter_payload: Mapping[str, Any], layout: ParameterLayout
+) -> dict[str, np.ndarray]:
     defaults: dict[str, np.ndarray] = {}
     for block in layout.blocks:
         if block.name in parameter_payload:
-            defaults[block.name] = np.asarray(parameter_payload[block.name], dtype=float).reshape(-1)
+            defaults[block.name] = np.asarray(parameter_payload[block.name], dtype=float).reshape(
+                -1
+            )
         else:
             defaults[block.name] = np.zeros(block.length, dtype=float)
     return defaults
@@ -278,13 +332,15 @@ class SmplxPoseBackend:
         model_path: Path | None = None,
     ) -> None:
         try:
-            from avatar_model import BodyModel  # Local import to avoid heavy dependency at module import.
+            from avatar_model import (
+                BodyModel,
+            )  # Local import to avoid heavy dependency at module import.
         except ImportError as exc:  # pragma: no cover - heavy dependency path
             raise ImportError(
                 "avatar_model (and torch) are required to run the real ROM sampler. Install the SMPL-X extras."
             ) from exc
 
-        params, scale, model_type, gender = load_smplx_parameter_payload(parameter_payload)
+        params, scale, model_type, gender = _load_smplx_parameter_payload(parameter_payload)
         self.scale = float(scale)
         betas = np.asarray(params.get("betas", np.zeros((1, 10), dtype=np.float32)))
         expr = np.asarray(params.get("expression", np.zeros((1, 10), dtype=np.float32)))
@@ -311,7 +367,9 @@ class SmplxPoseBackend:
         vertices = self.model.vertices().detach().cpu().numpy()[0]
         return np.asarray(vertices * self.scale, dtype=float)
 
-    def evaluate_with_joints(self, pose: Mapping[str, np.ndarray]) -> tuple[np.ndarray, dict[str, np.ndarray]]:
+    def evaluate_with_joints(
+        self, pose: Mapping[str, np.ndarray]
+    ) -> tuple[np.ndarray, dict[str, np.ndarray]]:
         """Return vertices and joint centers for a pose."""
 
         updates: MutableMapping[str, np.ndarray] = {}
@@ -432,33 +490,135 @@ def _stream_diagonal_costs(
     return costs, call_counts, pose_stats, pose_metadata, v0
 
 
-def _nearest_neighbor_map(source: np.ndarray, target: np.ndarray, *, batch_size: int = 256) -> tuple[np.ndarray, float, float]:
+def _nearest_neighbor_map(
+    source: np.ndarray, target: np.ndarray, *, batch_size: int = 256
+) -> tuple[np.ndarray, float, float]:
     """Map each target vertex to the nearest source vertex."""
+
+    mapping, min_dists = _nearest_neighbor_lookup(source, target, batch_size=batch_size)
+    max_dist = float(np.max(min_dists)) if len(min_dists) else 0.0
+    mean_dist = float(np.mean(min_dists)) if len(min_dists) else 0.0
+    return mapping, max_dist, mean_dist
+
+
+def _nearest_neighbor_lookup(
+    source: np.ndarray, target: np.ndarray, *, batch_size: int = 256
+) -> tuple[np.ndarray, np.ndarray]:
+    """Map each target vertex to nearest source vertex and return per-target distances."""
 
     source_arr = np.asarray(source, dtype=float)
     target_arr = np.asarray(target, dtype=float)
-    if source_arr.ndim != 2 or target_arr.ndim != 2 or source_arr.shape[1] != 3 or target_arr.shape[1] != 3:
+    if (
+        source_arr.ndim != 2
+        or target_arr.ndim != 2
+        or source_arr.shape[1] != 3
+        or target_arr.shape[1] != 3
+    ):
         raise ValueError("Source and target vertices must be shaped (N, 3).")
 
-    mapping = np.empty(target_arr.shape[0], dtype=int)
-    max_dist = 0.0
-    sum_dist = 0.0
-    count = 0
+    mapping = np.empty(target_arr.shape[0], dtype=np.int64)
+    distances = np.empty(target_arr.shape[0], dtype=np.float64)
+    step = max(1, int(batch_size))
 
-    for start in range(0, target_arr.shape[0], batch_size):
-        end = min(start + batch_size, target_arr.shape[0])
+    for start in range(0, target_arr.shape[0], step):
+        end = min(start + step, target_arr.shape[0])
         chunk = target_arr[start:end]
         diff = chunk[:, None, :] - source_arr[None, :, :]
-        dists = np.linalg.norm(diff, axis=2)
-        nearest = np.argmin(dists, axis=1)
-        mapping[start:end] = nearest
-        min_dists = dists[np.arange(len(nearest)), nearest]
-        max_dist = max(max_dist, float(np.max(min_dists)))
-        sum_dist += float(np.sum(min_dists))
-        count += len(min_dists)
+        dist2 = np.einsum("bij,bij->bi", diff, diff)
+        nearest = np.argmin(dist2, axis=1)
+        mapping[start:end] = nearest.astype(np.int64)
+        distances[start:end] = np.sqrt(dist2[np.arange(len(nearest)), nearest])
 
-    mean_dist = sum_dist / max(count, 1)
-    return mapping, max_dist, mean_dist
+    return mapping, distances
+
+
+def _mapping_collision_ratio(indices: np.ndarray) -> tuple[int, float]:
+    unique_targets = int(np.unique(np.asarray(indices, dtype=np.int64)).size)
+    collisions = max(0, len(indices) - unique_targets)
+    return unique_targets, float(collisions / max(1, len(indices)))
+
+
+def _save_vertex_correspondence(
+    path: Path,
+    *,
+    source_vertices: np.ndarray,
+    target_vertices: np.ndarray,
+    source_label: str,
+    target_label: str,
+    target_to_source_indices: np.ndarray | None = None,
+    target_to_source_distances: np.ndarray | None = None,
+    policy: str,
+    max_distance: float,
+) -> Mapping[str, Any]:
+    """Persist full bidirectional nearest-neighbor correspondence for this sampler run."""
+
+    source_arr = np.asarray(source_vertices, dtype=float)
+    target_arr = np.asarray(target_vertices, dtype=float)
+    if source_arr.ndim != 2 or source_arr.shape[1] != 3:
+        raise ValueError("source_vertices must be shaped (N, 3).")
+    if target_arr.ndim != 2 or target_arr.shape[1] != 3:
+        raise ValueError("target_vertices must be shaped (N, 3).")
+
+    if source_arr.shape[0] == target_arr.shape[0]:
+        identity = np.arange(source_arr.shape[0], dtype=np.int64)
+        source_to_target = np.array(identity, copy=True)
+        target_to_source = np.array(identity, copy=True)
+        pair_dist = np.linalg.norm(source_arr - target_arr, axis=1)
+        source_to_target_dist = np.array(pair_dist, copy=True)
+        target_to_source_dist = np.array(pair_dist, copy=True)
+    else:
+        source_to_target, source_to_target_dist = _nearest_neighbor_lookup(target_arr, source_arr)
+        if target_to_source_indices is None or target_to_source_distances is None:
+            target_to_source, target_to_source_dist = _nearest_neighbor_lookup(
+                source_arr, target_arr
+            )
+        else:
+            target_to_source = np.asarray(target_to_source_indices, dtype=np.int64)
+            target_to_source_dist = np.asarray(target_to_source_distances, dtype=np.float64)
+            if target_to_source.shape[0] != target_arr.shape[0]:
+                raise ValueError("target_to_source_indices length must equal target vertex count.")
+            if target_to_source_dist.shape[0] != target_arr.shape[0]:
+                raise ValueError(
+                    "target_to_source_distances length must equal target vertex count."
+                )
+
+    src_unique, src_collision = _mapping_collision_ratio(source_to_target)
+    tgt_unique, tgt_collision = _mapping_collision_ratio(target_to_source)
+    meta: dict[str, Any] = {
+        "source_label": source_label,
+        "target_label": target_label,
+        "source_vertex_count": int(source_arr.shape[0]),
+        "target_vertex_count": int(target_arr.shape[0]),
+        "policy": str(policy),
+        "max_distance_threshold": float(max_distance),
+        "source_to_target_max_distance": float(np.max(source_to_target_dist))
+        if len(source_to_target_dist)
+        else 0.0,
+        "source_to_target_mean_distance": float(np.mean(source_to_target_dist))
+        if len(source_to_target_dist)
+        else 0.0,
+        "source_to_target_unique_targets": int(src_unique),
+        "source_to_target_collision_ratio": float(src_collision),
+        "target_to_source_max_distance": float(np.max(target_to_source_dist))
+        if len(target_to_source_dist)
+        else 0.0,
+        "target_to_source_mean_distance": float(np.mean(target_to_source_dist))
+        if len(target_to_source_dist)
+        else 0.0,
+        "target_to_source_unique_sources": int(tgt_unique),
+        "target_to_source_collision_ratio": float(tgt_collision),
+    }
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(
+        path,
+        source_to_target_indices=np.asarray(source_to_target, dtype=np.int64),
+        source_to_target_distances=np.asarray(source_to_target_dist, dtype=np.float64),
+        target_to_source_indices=np.asarray(target_to_source, dtype=np.int64),
+        target_to_source_distances=np.asarray(target_to_source_dist, dtype=np.float64),
+        meta=np.array(meta, dtype=object),
+    )
+    return meta
 
 
 def _remap_costs(
@@ -468,6 +628,8 @@ def _remap_costs(
     *,
     policy: str,
     max_distance: float,
+    target_to_source_mapping: np.ndarray | None = None,
+    target_to_source_distances: np.ndarray | None = None,
 ) -> tuple[np.ndarray, Mapping[str, Any]]:
     """Apply vertex-count remapping with configurable policy."""
 
@@ -491,8 +653,19 @@ def _remap_costs(
             f"Vertex count mismatch (source={source_vertex_count}, target={target_vertex_count}) with policy=error."
         )
 
-    mapping, max_dist, mean_dist = _nearest_neighbor_map(neutral_vertices, target_vertices)
+    if target_to_source_mapping is None or target_to_source_distances is None:
+        mapping, min_dists = _nearest_neighbor_lookup(neutral_vertices, target_vertices)
+    else:
+        mapping = np.asarray(target_to_source_mapping, dtype=np.int64)
+        min_dists = np.asarray(target_to_source_distances, dtype=np.float64)
+        if mapping.shape[0] != target_vertex_count:
+            raise ValueError("target_to_source_mapping length must match target vertex count.")
+        if min_dists.shape[0] != target_vertex_count:
+            raise ValueError("target_to_source_distances length must match target vertex count.")
+
     remapped = costs[mapping]
+    max_dist = float(np.max(min_dists)) if len(min_dists) else 0.0
+    mean_dist = float(np.mean(min_dists)) if len(min_dists) else 0.0
     mapping_info["mode"] = "nearest_neighbor"
     mapping_info["max_distance"] = float(max_dist)
     mapping_info["mean_distance"] = float(mean_dist)
@@ -584,7 +757,9 @@ def _save_meta(
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
-def _build_seam_cost_field(costs: np.ndarray, *, samples_used: int, fd_step: float) -> SeamCostField:
+def _build_seam_cost_field(
+    costs: np.ndarray, *, samples_used: int, fd_step: float
+) -> SeamCostField:
     return SeamCostField(
         field="rom_fd_sensitivity",
         vertex_costs=costs,
@@ -601,15 +776,51 @@ def _build_seam_cost_field(costs: np.ndarray, *, samples_used: int, fd_step: flo
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--body", required=True, type=Path, help="Body mesh npz/json containing vertices (faces optional).")
-    parser.add_argument("--poses", required=False, type=Path, help="Pose sweep JSON (see data/rom/afflec_sweep.json).")
-    parser.add_argument("--schedule", required=False, type=Path, help="YAML sweep schedule (data/rom/sweep_schedule.yaml). Overrides --poses when set.")
-    parser.add_argument("--weights", required=True, type=Path, help="Joint weights JSON (diagonal W).")
-    parser.add_argument("--params", type=Path, default=None, help="Optional SMPL-X parameter payload (JSON). Auto-resolves next to body when omitted.")
-    parser.add_argument("--fd-step", type=float, default=1e-3, help="Central difference step size (radians).")
-    parser.add_argument("--epsilon", type=float, default=1e-6, help="Epsilon added to displacement norm.")
-    parser.add_argument("--out-costs", type=Path, default=Path("outputs/rom/seam_costs_afflec.npz"), help="Output NPZ for seam costs.")
-    parser.add_argument("--out-meta", type=Path, default=Path("outputs/rom/afflec_rom_run.json"), help="Output JSON for sampler provenance.")
+    parser.add_argument(
+        "--body",
+        required=True,
+        type=Path,
+        help="Body mesh npz/json containing vertices (faces optional).",
+    )
+    parser.add_argument(
+        "--poses",
+        required=False,
+        type=Path,
+        help="Pose sweep JSON (see data/rom/afflec_sweep.json).",
+    )
+    parser.add_argument(
+        "--schedule",
+        required=False,
+        type=Path,
+        help="YAML sweep schedule (data/rom/sweep_schedule.yaml). Overrides --poses when set.",
+    )
+    parser.add_argument(
+        "--weights", required=True, type=Path, help="Joint weights JSON (diagonal W)."
+    )
+    parser.add_argument(
+        "--params",
+        type=Path,
+        default=None,
+        help="Optional SMPL-X parameter payload (JSON). Auto-resolves next to body when omitted.",
+    )
+    parser.add_argument(
+        "--fd-step", type=float, default=1e-3, help="Central difference step size (radians)."
+    )
+    parser.add_argument(
+        "--epsilon", type=float, default=1e-6, help="Epsilon added to displacement norm."
+    )
+    parser.add_argument(
+        "--out-costs",
+        type=Path,
+        default=Path("outputs/rom/seam_costs_afflec.npz"),
+        help="Output NPZ for seam costs.",
+    )
+    parser.add_argument(
+        "--out-meta",
+        type=Path,
+        default=Path("outputs/rom/afflec_rom_run.json"),
+        help="Output JSON for sampler provenance.",
+    )
     parser.add_argument(
         "--vertex-map",
         type=str,
@@ -623,7 +834,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=0.03,
         help="Maximum allowed nearest-neighbour distance (meters) when remapping vertices.",
     )
-    parser.add_argument("--pose-limit", type=int, default=None, help="Optional cap on number of poses processed.")
+    parser.add_argument(
+        "--out-correspondence",
+        type=Path,
+        default=None,
+        help=(
+            "Optional NPZ export for full transform-native vertex correspondence "
+            "(source<->target nearest-neighbour maps with distances)."
+        ),
+    )
+    parser.add_argument(
+        "--pose-limit", type=int, default=None, help="Optional cap on number of poses processed."
+    )
     parser.add_argument(
         "--joint-subset",
         type=str,
@@ -638,14 +860,53 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         choices=("diagonal",),
         help="Contraction mode (diagonal only for this sprint).",
     )
-    parser.add_argument("--seed", type=int, default=None, help="Optional RNG seed when expanding schedule-driven sweeps.")
-    parser.add_argument("--out-samples", type=Path, default=None, help="Optional JSON manifest of expanded samples (schedule mode).")
-    parser.add_argument("--out-envelope", type=Path, default=None, help="Optional JSON envelope report (L0/L1 angles) when using schedule.")
-    parser.add_argument("--prev-envelope", type=Path, default=None, help="Optional previous envelope JSON to compare for completeness.")
-    parser.add_argument("--prev-costs", type=Path, default=None, help="Optional previous seam costs NPZ to compute rank stability.")
-    parser.add_argument("--out-certificate", type=Path, default=None, help="Optional L3-style completeness certificate JSON.")
-    parser.add_argument("--filter-illegal", action="store_true", help="Filter schedule-expanded samples with legality score > 0.")
-    parser.add_argument("--legality-weight", type=float, default=None, help="If set, downweight samples by exp(-w * legality_score).")
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Optional RNG seed when expanding schedule-driven sweeps.",
+    )
+    parser.add_argument(
+        "--out-samples",
+        type=Path,
+        default=None,
+        help="Optional JSON manifest of expanded samples (schedule mode).",
+    )
+    parser.add_argument(
+        "--out-envelope",
+        type=Path,
+        default=None,
+        help="Optional JSON envelope report (L0/L1 angles) when using schedule.",
+    )
+    parser.add_argument(
+        "--prev-envelope",
+        type=Path,
+        default=None,
+        help="Optional previous envelope JSON to compare for completeness.",
+    )
+    parser.add_argument(
+        "--prev-costs",
+        type=Path,
+        default=None,
+        help="Optional previous seam costs NPZ to compute rank stability.",
+    )
+    parser.add_argument(
+        "--out-certificate",
+        type=Path,
+        default=None,
+        help="Optional L3-style completeness certificate JSON.",
+    )
+    parser.add_argument(
+        "--filter-illegal",
+        action="store_true",
+        help="Filter schedule-expanded samples with legality score > 0.",
+    )
+    parser.add_argument(
+        "--legality-weight",
+        type=float,
+        default=None,
+        help="If set, downweight samples by exp(-w * legality_score).",
+    )
     parser.add_argument(
         "--chain-amplification",
         type=float,
@@ -662,7 +923,9 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     body_path = Path(os.path.expandvars(str(args.body))).expanduser()
     sweep_path = Path(os.path.expandvars(str(args.poses))).expanduser() if args.poses else None
-    schedule_path = Path(os.path.expandvars(str(args.schedule))).expanduser() if args.schedule else None
+    schedule_path = (
+        Path(os.path.expandvars(str(args.schedule))).expanduser() if args.schedule else None
+    )
     weights_path = Path(os.path.expandvars(str(args.weights))).expanduser()
     params_path = _find_params_path(body_path, args.params)
     if sweep_path is None and schedule_path is None:
@@ -686,6 +949,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     base_pose_defaults = _pose_defaults_from_payload(parameter_payload, layout)
     legality_cfg = LegalityConfig()
     if schedule_path is not None:
+        from smii.rom.pose_schedule import load_schedule_samples
+
         neutral_pose, scheduled_samples, pose_meta = load_schedule_samples(
             schedule_path,
             layout_blocks=[block.name for block in layout.blocks],
@@ -697,7 +962,10 @@ def main(argv: Sequence[str] | None = None) -> None:
             legality_weight=args.legality_weight,
         )
         samples = [
-            PoseSample(pose_id=s.pose_id, parameters=s.parameters, weight=s.weight, metadata=s.metadata) for s in scheduled_samples
+            PoseSample(
+                pose_id=s.pose_id, parameters=s.parameters, weight=s.weight, metadata=s.metadata
+            )
+            for s in scheduled_samples
         ]
         pose_meta["schedule_path"] = str(schedule_path)
     else:
@@ -721,7 +989,14 @@ def main(argv: Sequence[str] | None = None) -> None:
         if args.legality_weight is not None:
             md["legality_weight"] = float(args.legality_weight)
         md["chain_amplification"] = float(args.chain_amplification)
-        enriched_samples.append(PoseSample(pose_id=sample.pose_id, parameters=sample.parameters, weight=sample.weight, metadata=md))
+        enriched_samples.append(
+            PoseSample(
+                pose_id=sample.pose_id,
+                parameters=sample.parameters,
+                weight=sample.weight,
+                metadata=md,
+            )
+        )
 
     costs, call_counts, pose_stats, pose_metadata, neutral_vertices = _stream_diagonal_costs(
         backend,
@@ -734,13 +1009,22 @@ def main(argv: Sequence[str] | None = None) -> None:
     )
 
     source_vertex_count = len(costs)
+    target_to_source_mapping: np.ndarray | None = None
+    target_to_source_distances: np.ndarray | None = None
+    if source_vertex_count != vertices.shape[0]:
+        target_to_source_mapping, target_to_source_distances = _nearest_neighbor_lookup(
+            neutral_vertices, vertices
+        )
     costs, mapping_info = _remap_costs(
         costs,
         neutral_vertices,
         vertices,
         policy=args.vertex_map,
         max_distance=args.max_map_distance,
+        target_to_source_mapping=target_to_source_mapping,
+        target_to_source_distances=target_to_source_distances,
     )
+    mapping_info = dict(mapping_info)
     target_vertex_count = len(costs)
     if mapping_info.get("mode") != "identity":
         print(
@@ -748,6 +1032,21 @@ def main(argv: Sequence[str] | None = None) -> None:
             f"(max distance {mapping_info['max_distance']:.6f}, mean {mapping_info['mean_distance']:.6f}, "
             f"threshold {args.max_map_distance:.6f}, policy={args.vertex_map})."
         )
+    if args.out_correspondence is not None:
+        correspondence_meta = _save_vertex_correspondence(
+            args.out_correspondence,
+            source_vertices=neutral_vertices,
+            target_vertices=vertices,
+            source_label="rom_neutral_vertices",
+            target_label="sampler_body_vertices",
+            target_to_source_indices=target_to_source_mapping,
+            target_to_source_distances=target_to_source_distances,
+            policy=args.vertex_map,
+            max_distance=args.max_map_distance,
+        )
+        mapping_info["correspondence_artifact"] = str(args.out_correspondence)
+        mapping_info["correspondence_meta"] = dict(correspondence_meta)
+        print(f"Wrote transform-native correspondence to {args.out_correspondence}")
 
     samples_used = len(pose_stats)
     cost_field = _build_seam_cost_field(costs, samples_used=samples_used, fd_step=args.fd_step)
@@ -816,7 +1115,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         prev_env = None
         if args.prev_envelope and args.prev_envelope.exists():
             prev_env = json.loads(args.prev_envelope.read_text(encoding="utf-8"))
-        envelope_deltas = compare_envelopes(prev_env or {"L0": {}, "L1": {}}, envelope or {"L0": {}, "L1": {}})
+        envelope_deltas = compare_envelopes(
+            prev_env or {"L0": {}, "L1": {}}, envelope or {"L0": {}, "L1": {}}
+        )
 
         rank_corr = None
         if args.prev_costs and args.prev_costs.exists():

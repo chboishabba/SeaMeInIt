@@ -1,5 +1,130 @@
 ## Unreleased
 
+- Formalized body/mesh provenance protocol and reduced ambiguity from misleading filenames:
+  - added `docs/body_lineage_protocol.md` and updated runner/provenance docs to prefer timestamped output roots,
+  - documented that fixed paths under `outputs/*` are not stable provenance and must be backed by hashes/counts.
+- Stabilized orbit rendering morphology:
+  - `scripts/render_variant_orbits.py` now defaults to an explicit up-axis (`--axis-up`, default `y`) instead of inferring up-axis from max span (which can rotate T-poses and create “ogre-like” silhouettes),
+  - render manifests now record axis conventions and canonicalization settings.
+- Added correspondence visualization tooling:
+  - new `scripts/render_vertex_map_orbits.py` renders mesh-only (and optional correspondence-line) orbit artifacts for a vertex-map NPZ, with a timestamped `map_manifest.json`.
+- Added mesh registry tooling:
+  - new `scripts/mesh_registry.py` emits timestamped `mesh_registry.json` with hashes/topology/bbox + a units guess,
+  - optional `--alias-dir` writes descriptive symlink aliases instead of renaming meshes.
+- Made seam edge validity explicit in outputs:
+  - `examples/solve_seams_from_rom.py` now records mesh-edge conformance metrics in `seam_report.json` (`mesh_edge_valid_ratio`, counts),
+  - `scripts/reproject_seam_report.py` now records the same metrics for transferred seam reports when target faces are available.
+- Hardened local test execution after adding submodules:
+  - configured pytest in `pyproject.toml` to collect only `tests/` (avoids submodule test collection),
+  - added `tests/__init__.py` so `tests.helpers.*` imports resolve consistently.
+- Fixed pattern export regressions uncovered by full-suite runs:
+  - `_cleanup_panel_outline` no longer shrinks low-vertex outlines via Laplacian smoothing (restores expected PDF tiling behavior),
+  - seam allowance offset failures now emit structured codes (`SEAM_ALLOWANCE_OFFSET_FAILED`) and matching issue entries.
+- Traced the ogre-generation correspondence stage in `smii.rom.sampler_real` and added native map export:
+  - new CLI flag `--out-correspondence <path.npz>` writes bidirectional source/target vertex maps with distances and collision metrics at sampler runtime,
+  - remap stage now reuses the computed target->source map (no duplicate NN pass) and records correspondence artifact metadata in `out-meta`.
+- Improved orbit artifact naming in `scripts/render_variant_orbits.py`:
+  - preserves canonical `overlay_*` outputs for compatibility,
+  - adds descriptive aliases containing run/body/cost/render settings/timestamp,
+  - summary CSV/JSON now include `*_descriptive` artifact paths.
+- Added per-run render sidecar manifests in `scripts/render_variant_orbits.py`:
+  - writes `render_input_manifest.json` plus timestamped copies,
+  - captures render body/cost hashes + stats, seam report provenance, and render params.
+- Upgraded shortest-path loop mode:
+  - new solver options `strict_loop` and `loop_count`,
+  - strict loop mode drops non-simple loop fallbacks instead of accepting open/non-simple seams,
+  - loop mode now supports selecting multiple disjoint simple loops when available.
+- Refined loop diagnostics:
+  - panel warnings now avoid propagating rejected candidate-loop warnings when a strict-valid loop set is selected,
+  - reduces false-alarm `non-simple` warnings on visually/graph-valid final loop outputs.
+- Extended seam CLI loop controls:
+  - `--sp-loop-count`,
+  - `--sp-loop-strict/--no-sp-loop-strict`.
+- Added shortest-path loop regression coverage:
+  - strict mode dropping invalid loops,
+  - multi-loop selection on disjoint cycle graphs.
+- Verified environment behavior for ROM sampler:
+  - local project venv (`/home/c/Documents/code/ITIR-suite/.venv`) has `torch`/`yaml` but no `smplx`,
+  - sampler now runs via `/opt/conda/bin/python` after making `sampler_real` less dependency-coupled.
+- Reduced sampler coupling to unrelated pipeline dependencies:
+  - `smii.rom.sampler_real` now decodes SMPL payloads locally (no import of `fit_from_measurements`/`jsonschema` chain),
+  - `pose_schedule` import is now lazy (only in `--schedule` mode), so JSON `--poses` mode no longer requires `pyyaml`.
+- Executed A-vs-B protocol run `outputs/seams_run/domain_ab_20260213_101158` with fresh sampler outputs:
+  - regenerated sampler artifacts at `outputs/rom/domain_ab_20260213_101158/`,
+  - established that sampler-native map is `10475 -> 3240` and is incompatible with `B_ogre` seam source `9438`,
+  - control `9438 -> 3240` reprojection still fails quality (`retention=0.0526`, `collision=0.85`, mesh-edge-valid-ratio `0.0`).
+- Executed loop-mode shortest-path probe `outputs/seams_run/looping_probe_20260213_103313`:
+  - `--sp-require-loop` runs on both `v3240` and `v9438` still emitted non-simple/non-closable loop warnings,
+  - control transfer from `v9438 -> v3240` remained collapsed (`edge_retention=0.0476`, collision `0.85`).
+- Executed base-layer-focused strict multi-loop run `outputs/seams_run/base_layer_multiloop_20260213_111639`:
+  - solve target: `outputs/suits/afflec_body/base_layer.npz` (`9438`),
+  - config: `--sp-require-loop --sp-loop-strict --sp-loop-count 2 --sp-loop-waypoints 2`,
+  - result remains sparse in upper panels (several panels empty) with anchor-disconnect and loop-closure warnings.
+- Documented user visual cross-check for `domain_ab_20260213_101158`:
+  - transferred control output remains non-conforming,
+  - native solves remain mesh-edge valid,
+  - morphology appeared inverted relative to `A_base`/`B_ogre` naming; docs now treat those names as provisional labels.
+- Executed A-vs-B protocol run `outputs/seams_run/domain_ab_20260213_095932`:
+  - A and B native solves remain mesh-edge valid (`mesh_edge_valid_ratio=1.0`),
+  - B->base reprojection still fails strict quality (`reproject_exit_code=2`, retention `0.0526`, collision `0.85`, `mesh_edge_valid_ratio=0.0`),
+  - lineage + decision metrics written under the run root.
+- Executed the A-vs-B protocol run `outputs/seams_run/domain_ab_20260213_051532` and recorded outcomes in `docs/seam_pipeline_intended_vs_observed.md`:
+  - Strategy A native checks pass,
+  - Strategy B reprojection fails strict quality gates (`mean/max distance`, `edge retention`, `collision ratio`),
+  - reverse-direction NN transfer (`A_base -> ogre`) also fails (edge collapse to zero),
+  - provisional freeze on Strategy A, Strategy B remains diagnostic.
+- Added persistent full-mesh correspondence tooling:
+  - new `scripts/build_mesh_vertex_map.py` writes source<->target vertex maps with distance/collision metadata,
+  - `scripts/reproject_seam_report.py` now supports `--vertex-map-file` and bidirectional map reuse (`source_to_target` or `target_to_source` arrays),
+  - reprojection metadata now records mapping mode and map artifact path.
+- Added a runnable A-vs-B seam-domain checkpoint protocol to `docs/seam_pipeline_intended_vs_observed.md`:
+  - timestamped command sequence for Strategy A (base-native) and Strategy B (ROM-native + reprojection),
+  - strict quality gates and freeze rule,
+  - decision-record section for dated policy selection.
+- Added `docs/seam_pipeline_intended_vs_observed.md` to explicitly capture:
+  - intended pipeline stage purposes,
+  - user-observed vs agent-observed behavior for `variant_matrix_20260213_035227`,
+  - unresolved solve-domain decision (`solve-on-base` vs `solve-on-ROM`).
+- Updated provenance/diagnostics documentation for alignment:
+  - `docs/mesh_provenance_afflec.md` now links to the intended-vs-observed seam note,
+  - `docs/ogre_artifact_diagnostics.md` now reflects mixed ROM+render contributors and the current uncertainty position.
+- Updated planning docs:
+  - `ROADMAP.md` now includes a seam-domain/topology-lineage checkpoint and acceptance gate,
+  - `TODO.md` now tracks canonical solve-domain decision, lineage manifest requirement, and A-vs-B protocol.
+- Added README link to the new seam pipeline status document.
+- Documented run-specific mismatch case for `variant_matrix_20260213_035227` in `docs/ogre_artifact_diagnostics.md` (mouth/groin seam placement on source topology, scapula-only line after failed reprojection).
+- Added reprojection quality gating in `scripts/reproject_seam_report.py`:
+  - emits `edge_retention_ratio`, `unique_target_vertices`, `target_vertex_collision_ratio`, `quality_ok`, and `quality_violations`,
+  - supports thresholds (`--max-mean-distance`, `--max-distance`, `--min-edge-retention`),
+  - supports threshold `--max-target-collision-ratio` for many-to-one mapping collapse,
+  - supports `--strict-quality` to fail on poor topology transfer.
+- Added explicit Afflec mesh-lineage documentation in `docs/mesh_provenance_afflec.md` and linked it from `README.md`.
+- Clarified topology expectations in provenance-related docs:
+  - `docs/rom_real_sampler.md` now treats body vertex count as run-specific (not fixed to 9438),
+  - `docs/pipeline_runner.md` now references lineage docs and avoids stale hardcoded hash assumptions,
+  - `docs/ogre_artifact_diagnostics.md` now calls out expected 9438->3240 branch mismatch behavior.
+- Added `scripts/audit_mesh_lineage.py` to emit timestamped JSON/CSV audits for body/ROM/seam/reprojection compatibility checks with hash and index diagnostics.
+- Documented ogre/pathology seam artifact signatures and known failure modes in `docs/ogre_artifact_diagnostics.md`, including baseline solver behavior and control toggles.
+- Restored starburst-control compatibility knobs across seam solvers:
+  - `solve_seams(..., max_branch_degree, branch_penalty_weight)` now enforces optional branch-degree-aware spanning selection,
+  - `solve_seams_pda(..., max_branch_degree, branch_penalty_weight)` now threads branch controls into initial solution, witness checks, and candidate scoring,
+  - `solve_seams_mincut(...)` accepts branch-control kwargs for API compatibility and records them in metadata.
+- Revalidated seam starburst regression suite with branch controls enabled (`tests/seams/test_starburst_regression.py`).
+- Added vertex-topology mismatch guards:
+  - `examples/solve_seams_from_rom.py` now fails early on body vs ROM cost length mismatch,
+  - `scripts/render_variant_orbits.py` now fails when seam edge indices are out of range for the selected render body.
+- Added explicit seam-topology transfer utility `scripts/reproject_seam_report.py` for controlled source->target seam index reprojection with distance diagnostics.
+- Added seam-report provenance metadata (`body_path`, vertex counts, ROM cost path) in `examples/solve_seams_from_rom.py` outputs.
+- Expanded basis/sampler provenance fields:
+  - `scripts/generate_canonical_basis.py` now stores `source_path` and `vertex_count` in basis metadata,
+  - `scripts/generate_synthetic_rom_sampler.py` now stores `body_path` in sampler metadata.
+- Added shortest-path solver controls for seam semantics debugging:
+  - `require_loop` loop-attempt mode with explicit closure warnings,
+  - `symmetry_penalty_weight` mirrored-edge penalty term,
+  - `allow_unfiltered_fallback` strict locality control,
+  - optional `reference_vertices` metrics to compare seam lengths on an origin mesh.
+- Extended `examples/solve_seams_from_rom.py` shortest-path CLI with loop/symmetry/fallback/reference-body arguments for repeatable debug runs.
+- Added shortest-path regression tests covering loop mode behavior and symmetry-penalty accounting.
 - Updated ROM formalisation docs (Sprint R levels/schedule/completeness), sprint status, and compact context snapshot; aligned TODOs to new deliverables and operational checks.
 - Added R6-lite spline fitting with curvature-bound fallback and split gating in boundary regularization.
 - Added opt-in auto-split (`--auto-split`) and split helpers, plus structured issue metadata in patterns output.

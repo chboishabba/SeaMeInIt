@@ -88,6 +88,8 @@ def main() -> None:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     meta = {
         "source_mesh": args.source_mesh or args.vertices.name,
+        "source_path": str(args.vertices),
+        "vertex_count": int(vertices.shape[0]),
         "normalization": "qr-orthonormalized",
         "notes": args.notes or "Sinusoidal features with harmonics",
     }

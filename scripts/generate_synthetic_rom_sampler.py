@@ -56,6 +56,7 @@ def generate_sampler(
     payload = {
         "meta": {
             "mesh": body_path.stem,
+            "body_path": str(body_path),
             "vertex_count": vertex_count,
             "component_count": components,
             "synthetic": True,

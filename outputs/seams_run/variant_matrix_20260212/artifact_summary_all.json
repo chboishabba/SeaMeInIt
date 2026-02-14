@@ -1,102 +1,17 @@
 [
   {
-    "run": "mincut_knit_4way_light_grain100",
-    "solver": "mincut",
-    "total_cost": 6621.371668253401,
-    "warnings": 0,
-    "point_size": 5,
-    "png": "outputs/seams_run/variant_matrix_20260212/mincut_knit_4way_light_grain100/overlay_front_3q.png",
-    "gif": "outputs/seams_run/variant_matrix_20260212/mincut_knit_4way_light_grain100/overlay_orbit.gif",
-    "webm": "outputs/seams_run/variant_matrix_20260212/mincut_knit_4way_light_grain100/overlay_orbit.webm"
-  },
-  {
-    "run": "mincut_knit_4way_light_grain100_smallrom",
-    "solver": "mincut",
-    "total_cost": 2.0,
-    "warnings": 8,
-    "point_size": 5,
-    "png": "outputs/seams_run/variant_matrix_20260212/mincut_knit_4way_light_grain100_smallrom/overlay_front_3q.png",
-    "gif": "outputs/seams_run/variant_matrix_20260212/mincut_knit_4way_light_grain100_smallrom/overlay_orbit.gif",
-    "webm": "outputs/seams_run/variant_matrix_20260212/mincut_knit_4way_light_grain100_smallrom/overlay_orbit.webm"
-  },
-  {
-    "run": "mincut_woven_2way_grain100",
-    "solver": "mincut",
-    "total_cost": 5838.234526138127,
-    "warnings": 0,
-    "point_size": 5,
-    "png": "outputs/seams_run/variant_matrix_20260212/mincut_woven_2way_grain100/overlay_front_3q.png",
-    "gif": "outputs/seams_run/variant_matrix_20260212/mincut_woven_2way_grain100/overlay_orbit.gif",
-    "webm": "outputs/seams_run/variant_matrix_20260212/mincut_woven_2way_grain100/overlay_orbit.webm"
-  },
-  {
-    "run": "mincut_woven_2way_grain100_smallrom",
-    "solver": "mincut",
-    "total_cost": 2.0,
-    "warnings": 8,
-    "point_size": 5,
-    "png": "outputs/seams_run/variant_matrix_20260212/mincut_woven_2way_grain100_smallrom/overlay_front_3q.png",
-    "gif": "outputs/seams_run/variant_matrix_20260212/mincut_woven_2way_grain100_smallrom/overlay_orbit.gif",
-    "webm": "outputs/seams_run/variant_matrix_20260212/mincut_woven_2way_grain100_smallrom/overlay_orbit.webm"
-  },
-  {
-    "run": "mst_knit_4way_light_grain100",
-    "solver": "mst",
-    "total_cost": 13290.20715036016,
-    "warnings": 8,
-    "point_size": 5,
-    "png": "outputs/seams_run/variant_matrix_20260212/mst_knit_4way_light_grain100/overlay_front_3q.png",
-    "gif": "outputs/seams_run/variant_matrix_20260212/mst_knit_4way_light_grain100/overlay_orbit.gif",
-    "webm": "outputs/seams_run/variant_matrix_20260212/mst_knit_4way_light_grain100/overlay_orbit.webm"
-  },
-  {
-    "run": "mst_woven_2way_grain100",
-    "solver": "mst",
-    "total_cost": 11338.313882901137,
-    "warnings": 8,
-    "point_size": 5,
-    "png": "outputs/seams_run/variant_matrix_20260212/mst_woven_2way_grain100/overlay_front_3q.png",
-    "gif": "outputs/seams_run/variant_matrix_20260212/mst_woven_2way_grain100/overlay_orbit.gif",
-    "webm": "outputs/seams_run/variant_matrix_20260212/mst_woven_2way_grain100/overlay_orbit.webm"
-  },
-  {
-    "run": "pda_knit_4way_light_grain100",
-    "solver": "pda",
-    "total_cost": 154918.66424937226,
-    "warnings": 0,
-    "point_size": 5,
-    "png": "outputs/seams_run/variant_matrix_20260212/pda_knit_4way_light_grain100/overlay_front_3q.png",
-    "gif": "outputs/seams_run/variant_matrix_20260212/pda_knit_4way_light_grain100/overlay_orbit.gif",
-    "webm": "outputs/seams_run/variant_matrix_20260212/pda_knit_4way_light_grain100/overlay_orbit.webm"
-  },
-  {
-    "run": "pda_woven_2way_grain100",
-    "solver": "pda",
-    "total_cost": 152966.77211549392,
-    "warnings": 0,
-    "point_size": 5,
-    "png": "outputs/seams_run/variant_matrix_20260212/pda_woven_2way_grain100/overlay_front_3q.png",
-    "gif": "outputs/seams_run/variant_matrix_20260212/pda_woven_2way_grain100/overlay_orbit.gif",
-    "webm": "outputs/seams_run/variant_matrix_20260212/pda_woven_2way_grain100/overlay_orbit.webm"
-  },
-  {
     "run": "shortest_path_knit_4way_light_grain100",
     "solver": "shortest_path",
-    "total_cost": 26.824029849743116,
-    "warnings": 8,
+    "total_cost": 7.005292929396374,
+    "warnings": 16,
+    "edge_count": 10,
     "point_size": 5,
+    "timestamp": "20260212_051932",
     "png": "outputs/seams_run/variant_matrix_20260212/shortest_path_knit_4way_light_grain100/overlay_front_3q.png",
+    "png_timestamped": "outputs/seams_run/variant_matrix_20260212/shortest_path_knit_4way_light_grain100/overlay_front_3q_20260212_051932.png",
     "gif": "outputs/seams_run/variant_matrix_20260212/shortest_path_knit_4way_light_grain100/overlay_orbit.gif",
-    "webm": "outputs/seams_run/variant_matrix_20260212/shortest_path_knit_4way_light_grain100/overlay_orbit.webm"
-  },
-  {
-    "run": "shortest_path_woven_2way_grain100",
-    "solver": "shortest_path",
-    "total_cost": 26.796400085081004,
-    "warnings": 0,
-    "point_size": 5,
-    "png": "outputs/seams_run/variant_matrix_20260212/shortest_path_woven_2way_grain100/overlay_front_3q.png",
-    "gif": "outputs/seams_run/variant_matrix_20260212/shortest_path_woven_2way_grain100/overlay_orbit.gif",
-    "webm": "outputs/seams_run/variant_matrix_20260212/shortest_path_woven_2way_grain100/overlay_orbit.webm"
+    "gif_timestamped": "outputs/seams_run/variant_matrix_20260212/shortest_path_knit_4way_light_grain100/overlay_orbit_20260212_051932.gif",
+    "webm": "outputs/seams_run/variant_matrix_20260212/shortest_path_knit_4way_light_grain100/overlay_orbit.webm",
+    "webm_timestamped": "outputs/seams_run/variant_matrix_20260212/shortest_path_knit_4way_light_grain100/overlay_orbit_20260212_051932.webm"
   }
 ]

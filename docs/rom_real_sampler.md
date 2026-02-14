@@ -97,6 +97,7 @@ PYTHONPATH=src python -m smii.rom.sampler_real \
   --fd-step 1e-3 \
   --vertex-map nearest \
   --max-map-distance 0.03 \
+  --out-correspondence outputs/rom/afflec_rom_correspondence.npz \
   --out-costs outputs/rom/seam_costs_afflec.npz \
   --out-meta outputs/rom/afflec_rom_run.json \
   --mode diagonal
@@ -108,19 +109,29 @@ PYTHONPATH=src python -m smii.pipelines.generate_undersuit \
   --pdf-page-size a4
 ```
 
-Outputs are deterministic and sized to the body vertex count (9,438 for afflec).
+Outputs are deterministic and sized to the body vertex count (for example,
+`3240` on the current `outputs/afflec_demo/afflec_body.npz`; legacy branches in
+this repo also include `9438`-vertex artifacts).
 `--out` can optionally emit an audit sampler JSON summarising the pose sweep and
 call counts alongside the direct seam costs.
 
 If the SMPL-X template vertex count differs from the body mesh (e.g., 10,475 →
-9,438), the sampler deterministically remaps costs to the body vertices via a
+3,240), the sampler deterministically remaps costs to the body vertices via a
 nearest-neighbour map in the neutral pose and records the mapping statistics in
 the provenance JSON.
+
+When `--out-correspondence` is provided, the same remap stage also persists a
+bidirectional correspondence artifact (`source_to_target` and
+`target_to_source` index arrays with distances). This is the transform-native
+map emitted during ogre generation, so downstream reprojection can reuse it
+instead of re-deriving NN maps from scratch.
 
 ## Mapping policy and seam graph gaps
 
 - Vertex mapping is now explicit:
   - `--vertex-map nearest|error` selects deterministic nearest-neighbour remap or a hard failure when counts differ.
   - `--max-map-distance <meters>` raises a warning (or error in `error` mode) when any mapped vertex exceeds the threshold; default 0.03 m (3 cm).
+  - `--out-correspondence <path.npz>` exports full bidirectional map arrays and
+    collision metrics from this exact sampler run.
 - Seam graph aggregation handles missing coverage: if a panel has no mapped vertices or edges, the exported seam costs are zero-filled and a warning lists the affected seams so you can inspect topology.
 - Seam cost metadata now includes per-panel counts (`vertex_count`, `edge_count`) and empty flags so reports/exports can highlight zero-filled panels.

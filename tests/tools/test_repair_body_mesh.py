@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import numpy as np
-import trimesh
+import pytest
+
+trimesh = pytest.importorskip("trimesh")
 
 from tools import repair_body_mesh as repair
 

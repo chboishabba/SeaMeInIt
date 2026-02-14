@@ -18,6 +18,31 @@ Current status:
 - Auto-split is opt-in (`--auto-split`) and currently uses a single-cut strategy.
 - Remaining work: seam reconciliation and panel-specific split strategies.
 
+## Checkpoint: Seam Domain and Topology Lineage (2026-02-13)
+
+Before further qualitative seam tuning, we need to freeze one canonical solve
+domain and treat all cross-topology views as explicitly diagnostic.
+
+Decision gate:
+1. `Solve-on-base` policy:
+   - solve seams on `outputs/afflec_demo/afflec_body.npz`,
+   - evaluate ROM costs on that topology,
+   - optionally project for ROM-domain visualization only.
+2. `Solve-on-ROM` policy:
+   - solve seams on ROM/ogre topology,
+   - reproject to base only when transfer quality passes strict thresholds.
+
+Acceptance requirements for either policy:
+- explicit lineage manifest per run (mesh/cost/hash/vertex-count chain),
+- transfer quality gating for any reprojection path,
+- reproducible comparison protocol with fixed seeds and matched solver settings.
+- runnable protocol is defined in `docs/seam_pipeline_intended_vs_observed.md`.
+
+Tracking docs:
+- `docs/seam_pipeline_intended_vs_observed.md`
+- `docs/mesh_provenance_afflec.md`
+- `docs/ogre_artifact_diagnostics.md`
+
 Perfect — these examples tell me **exactly** what final form you want:
 
 ✔️ **Clean vector-style outlines**

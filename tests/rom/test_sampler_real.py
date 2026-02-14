@@ -5,9 +5,11 @@ from smii.rom.sampler_real import (
     ParameterBlock,
     ParameterLayout,
     PoseSample,
+    _load_smplx_parameter_payload,
     _expand_weight_block,
     _nearest_neighbor_map,
     _remap_costs,
+    _save_vertex_correspondence,
     _stream_diagonal_costs,
 )
 
@@ -30,15 +32,25 @@ class DummyBackend:
             result += float(body_pose[idx]) * basis
         return result
 
+    def evaluate_with_joints(
+        self, pose: dict[str, np.ndarray]
+    ) -> tuple[np.ndarray, dict[str, np.ndarray]]:
+        vertices = self.evaluate(pose)
+        return vertices, {"pelvis": np.zeros(3, dtype=float)}
+
 
 def test_stream_diagonal_costs_linear_backend():
     layout = ParameterLayout(blocks=(ParameterBlock("body_pose", 3, 0),), total=3)
     backend = DummyBackend()
     neutral = {"body_pose": np.zeros(3, dtype=float)}
-    samples = [PoseSample(pose_id="pose_a", parameters={"body_pose": np.array([1.0, 0.0, 0.0])}, weight=1.0)]
+    samples = [
+        PoseSample(
+            pose_id="pose_a", parameters={"body_pose": np.array([1.0, 0.0, 0.0])}, weight=1.0
+        )
+    ]
     weights = np.array([1.0, 0.0, 0.0], dtype=float)
 
-    costs, call_counts, pose_stats, neutral_vertices = _stream_diagonal_costs(
+    costs, call_counts, pose_stats, _, neutral_vertices = _stream_diagonal_costs(
         backend,
         neutral_pose=neutral,
         samples=samples,
@@ -93,3 +105,45 @@ def test_remap_costs_warns_on_large_distance():
     assert remapped.shape[0] == target.shape[0]
     assert info["mode"] == "nearest_neighbor"
     assert info["max_distance"] >= 9.0
+
+
+def test_save_vertex_correspondence_exports_bidirectional_map(tmp_path):
+    source = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]], dtype=float)
+    target = np.array([[0.1, 0.0, 0.0], [0.9, 0.0, 0.0], [2.0, 0.0, 0.0]], dtype=float)
+    out = tmp_path / "correspondence.npz"
+
+    meta = _save_vertex_correspondence(
+        out,
+        source_vertices=source,
+        target_vertices=target,
+        source_label="source",
+        target_label="target",
+        policy="nearest",
+        max_distance=0.5,
+    )
+
+    payload = np.load(out, allow_pickle=True)
+    source_to_target = payload["source_to_target_indices"]
+    target_to_source = payload["target_to_source_indices"]
+    assert source_to_target.shape[0] == source.shape[0]
+    assert target_to_source.shape[0] == target.shape[0]
+    assert meta["source_vertex_count"] == source.shape[0]
+    assert meta["target_vertex_count"] == target.shape[0]
+
+
+def test_load_smplx_parameter_payload_decodes_parameter_list():
+    payload = {
+        "model_type": "smplx",
+        "gender": "neutral",
+        "scale": 1.23,
+        "parameters": ["betas", "body_pose"],
+        "betas": [0.1, 0.2, 0.3],
+        "body_pose": [[0.0, 0.1, 0.2]],
+    }
+    params, scale, model_type, gender = _load_smplx_parameter_payload(payload)
+    assert scale == pytest.approx(1.23)
+    assert model_type == "smplx"
+    assert gender == "neutral"
+    assert tuple(params.keys()) == ("betas", "body_pose")
+    assert params["betas"].shape == (1, 3)
+    assert params["body_pose"].shape == (1, 3)
