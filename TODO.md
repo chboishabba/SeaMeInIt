@@ -26,8 +26,18 @@
   - Document acceptance metrics and a hard pass/fail checkpoint.
 - Add per-run lineage manifest requirement (`body`, `rom_costs`, `solver_input_mesh`, `render_mesh`, vertex counts, hashes) and reject runs missing it.
 - Replace semantic run labels (`A_base`, `B_ogre`) with topology-explicit labels (`A_v3240`, `B_v9438`, etc.) in protocol outputs to avoid morphology/name inversion confusion.
+- Enforce artifact naming policy: all orbits/maps/reports must include `human|ogre` role + `vNNNN` topology tag in filename stems (see `docs/seam_pipeline_intended_vs_observed.md`).
+- Enforce render orientation invariant: within a bundle, human+ogre must face the same direction.
+  - Make `--axis-up auto` PCA-based (avoid raw axis-span heuristics; see `docs/seam_overlay_orientation.md`).
+  - In vertex-map orbits, align source->target visualization in a shared canonical frame to avoid mirror/flip confusion.
+  - Use that policy by default in `scripts/protocol_strategy2_bundle.py` and record it in manifests.
+- Add a small "role registry" helper: given a mesh path, print `{role_guess, vertex_count, face_count, sha256}` and allow overriding role via CLI flags for protocol runs.
+- Stop inferring `human|ogre` role from vertex counts in protocol scripts; require explicit `--base-role`/`--rom-role` and treat missing roles as an error (identity comes from provenance).
+- Rename render flag `--canonicalize` to `--normalize-rotation` (keep `--canonicalize` as a deprecated alias for now) to avoid confusion with ROM/domain canonicalization.
+- Run multi-loop seam solver (`shortest_path --sp-require-loop --sp-loop-count>=2`) on the `human` (`v3240`) morphology and persist a timestamped orbit + report.
 - Improve strict loop feasibility diagnostics/actionability: per-panel loop-feasibility score and clearer reasons for `no path`/`loop closure unavailable` under `--sp-loop-strict`.
 - Execute and record the A-vs-B protocol defined in `docs/seam_pipeline_intended_vs_observed.md` and freeze canonical solve policy (A or B) with dated decision rationale.
+- Add quantitative A/B comparison metrics to Strategy 2 bundles and use them as acceptance gates (edge retention/collision, mesh-edge validity, length collapse).
 - Regenerate canonical ROM basis via `python scripts/generate_canonical_basis.py --vertices <production mesh npy/npz> --components <K> --harmonics 5 --output outputs/rom/canonical_basis.npz`
   (do not commit the resulting NPZ; keep outputs/rom/ ignored), then run the sampler aggregator with real payloads:
   `PYTHONPATH=src python examples/rom_aggregate_from_samples.py --samples outputs/rom/afflec_sampler.json --basis outputs/rom/canonical_basis.npz --save-costs outputs/rom/seam_costs.npz`

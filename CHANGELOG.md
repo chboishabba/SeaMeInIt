@@ -8,6 +8,17 @@
   - render manifests now record axis conventions and canonicalization settings.
 - Added correspondence visualization tooling:
   - new `scripts/render_vertex_map_orbits.py` renders mesh-only (and optional correspondence-line) orbit artifacts for a vertex-map NPZ, with a timestamped `map_manifest.json`.
+- Made Strategy 2 bundles unambiguous by encoding morphology roles in filenames:
+  - `scripts/protocol_strategy2_bundle.py` now requires explicit `--base-role` / `--rom-role` provenance labels (no vertex-count inference),
+  - all Strategy 2 renders/maps/seam reprojections now use stems containing `<role>_v<vertex_count>` and the direction (`native`, `reprojected_seams_from_*`).
+- Enforced a shared orientation heuristic by default:
+  - orbit renderers now default `--axis-up auto` and use PCA + robust tail statistics to infer a stable width/depth/up frame from geometry,
+  - `scripts/render_seam_orbit.py` supports aligning a mesh render into a reference mesh canonical frame (`--align-to-mesh`) for bundle comparability,
+  - `scripts/render_vertex_map_orbits.py` aligns source canonical into target canonical in `--axis-up auto` mode (avoids correspondence “pincushion” caused by axis drift),
+  - Strategy 2 default `--axis-width` changed to `none` (do not override auto width unless explicitly requested).
+- Made Strategy A vs B a controlled experiment:
+  - new `scripts/seam_compare_metrics.py` computes seam graph stats, mesh-edge validity, seam lengths, and reprojection quality from a Strategy 2 bundle,
+  - `scripts/protocol_strategy2_bundle.py` now writes `manifests/seam_compare_metrics.json` on every run.
 - Added mesh registry tooling:
   - new `scripts/mesh_registry.py` emits timestamped `mesh_registry.json` with hashes/topology/bbox + a units guess,
   - optional `--alias-dir` writes descriptive symlink aliases instead of renaming meshes.
@@ -17,6 +28,8 @@
 - Hardened local test execution after adding submodules:
   - configured pytest in `pyproject.toml` to collect only `tests/` (avoids submodule test collection),
   - added `tests/__init__.py` so `tests.helpers.*` imports resolve consistently.
+- Made SMPL-X provider import-safe when `smplx` is not installed:
+  - `avatar_model.providers.smplx` now defers importing `smplx` until after asset checks, so tests and tooling can run without the runtime dependency unless SMPL-X is actually instantiated.
 - Fixed pattern export regressions uncovered by full-suite runs:
   - `_cleanup_panel_outline` no longer shrinks low-vertex outlines via Laplacian smoothing (restores expected PDF tiling behavior),
   - seam allowance offset failures now emit structured codes (`SEAM_ALLOWANCE_OFFSET_FAILED`) and matching issue entries.

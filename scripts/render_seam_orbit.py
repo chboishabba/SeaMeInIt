@@ -73,32 +73,153 @@ def _canonicalize_vertices(
         return centered, meta
 
     up_axis = str(up_axis).lower()
-    if up_axis not in _AXIS_INDEX:
-        raise ValueError(f"Unknown up axis '{up_axis}'. Use one of: x,y,z.")
-    up = _AXIS_INDEX[up_axis]
-    remaining = [idx for idx in range(3) if idx != up]
+    # Legacy overrides (raw axis selection) are retained for debugging and
+    # backwards compatibility. Auto mode uses a PCA-based canonical frame.
+    if up_axis != "auto" or width_axis is not None:
+        width_axis = str(width_axis).lower() if width_axis is not None else None
 
-    if width_axis is not None:
-        width_axis = str(width_axis).lower()
-        if width_axis not in _AXIS_INDEX:
-            raise ValueError(f"Unknown width axis '{width_axis}'. Use one of: x,y,z.")
-        width = _AXIS_INDEX[width_axis]
-        if width == up or width not in remaining:
-            raise ValueError("width axis must differ from up axis and be one of the non-up axes.")
-    else:
-        width = max(remaining, key=lambda idx: float(spans[idx]))
+        # Legacy raw-axis mode:
+        # - if `--axis-up` is explicit: treat it as vertical
+        # - if `--axis-up auto` but `--axis-width` is given: force width, then pick up as the
+        #   largest remaining axis span (this matches historical bundle behavior)
+        if up_axis == "auto":
+            if width_axis is None:
+                raise ValueError("internal error: expected width_axis for legacy-auto mode")
+            if width_axis not in _AXIS_INDEX:
+                raise ValueError(f"Unknown width axis '{width_axis}'. Use one of: x,y,z.")
+            width = _AXIS_INDEX[width_axis]
+            remaining_axes = [idx for idx in range(3) if idx != width]
+            up = int(max(remaining_axes, key=lambda idx: float(spans[idx])))
+            remaining = [idx for idx in remaining_axes if idx != up]
+            axis_strategy = "legacy_raw_axes_width_forced_auto_up"
+        else:
+            if up_axis not in _AXIS_INDEX:
+                raise ValueError(f"Unknown up axis '{up_axis}'. Use one of: x,y,z,auto.")
+            up = _AXIS_INDEX[up_axis]
+            remaining = [idx for idx in range(3) if idx != up]
+            if width_axis is not None:
+                if width_axis not in _AXIS_INDEX:
+                    raise ValueError(f"Unknown width axis '{width_axis}'. Use one of: x,y,z.")
+                width = _AXIS_INDEX[width_axis]
+                if width == up or width not in remaining:
+                    raise ValueError(
+                        "width axis must differ from up axis and be one of the non-up axes."
+                    )
+            else:
+                width = max(remaining, key=lambda idx: float(spans[idx]))
+            remaining = [idx for idx in range(3) if idx not in (up, width)]
+            axis_strategy = "legacy_raw_axes"
 
-    depth = next(idx for idx in remaining if idx != width)
-    canonical = np.stack([original[:, width], original[:, depth], original[:, up]], axis=1).astype(
-        float
-    )
-    canonical -= np.mean(canonical, axis=0, keepdims=True)
+        depth = next(idx for idx in remaining if idx != width)
+        canonical = np.stack([original[:, width], original[:, depth], original[:, up]], axis=1).astype(
+            float
+        )
+        canonical -= np.mean(canonical, axis=0, keepdims=True)
+        meta.update(
+            {
+                "axis_up_strategy": axis_strategy,
+                "axis_up": _AXIS_NAME[up],
+                "axis_width": _AXIS_NAME[width],
+                "axis_depth": _AXIS_NAME[depth],
+                "axis_order": [_AXIS_NAME[width], _AXIS_NAME[depth], _AXIS_NAME[up]],
+                # Orthonormal basis in world coords; columns correspond to canonical axes (x=width,y=depth,z=up).
+                "basis_world_cols": [
+                    [float(x) for x in np.eye(3, dtype=float)[:, width]],
+                    [float(x) for x in np.eye(3, dtype=float)[:, depth]],
+                    [float(x) for x in np.eye(3, dtype=float)[:, up]],
+                ],
+            }
+        )
+        return canonical, meta
+
+    # PCA-based canonical frame. This avoids relying on world-axis conventions.
+    centered = original - np.mean(original, axis=0, keepdims=True)
+    cov = (centered.T @ centered) / max(1.0, float(centered.shape[0]))
+    evals, evecs = np.linalg.eigh(cov)  # ascending
+    order = np.argsort(evals)[::-1]
+    evals = evals[order]
+    evecs = evecs[:, order]
+    proj = centered @ evecs
+
+    q = np.array([0.01, 0.25, 0.75, 0.99], dtype=float)
+    quant = np.quantile(proj, q, axis=0)
+    p1, p25, p75, p99 = quant
+    qspan = np.maximum(p99 - p1, 1e-12)
+    iqr = np.maximum(p75 - p25, 1e-12)
+    tail_ratio = qspan / iqr
+
+    def _feet_score(up_i: int, width_i: int, sign: float) -> tuple[float, float, float]:
+        z = sign * proj[:, up_i]
+        x = proj[:, width_i]
+        z_lo = float(np.quantile(z, 0.05))
+        z_hi = float(np.quantile(z, 0.95))
+        top = x[z >= z_hi]
+        bot = x[z <= z_lo]
+        if top.size < 20 or bot.size < 20:
+            return -1e9, float("nan"), float("nan")
+        top_sp = float(np.quantile(top, 0.95) - np.quantile(top, 0.05))
+        bot_sp = float(np.quantile(bot, 0.95) - np.quantile(bot, 0.05))
+        norm = abs(top_sp) + abs(bot_sp) + 1e-12
+        return (bot_sp - top_sp) / norm, top_sp, bot_sp
+
+    # Pick the best (up,width,depth,up_sign) assignment by scoring permutations.
+    best: tuple[float, int, int, int, float, float, float] | None = None
+    for up_i in range(3):
+        for width_i in range(3):
+            if width_i == up_i:
+                continue
+            depth_i = next(idx for idx in range(3) if idx not in (up_i, width_i))
+            for sign in (1.0, -1.0):
+                feet_sc, top_sp, bot_sp = _feet_score(up_i, width_i, sign)
+                # Weights tuned for stability:
+                # - width should look like hands/heavy tails
+                # - up should have large robust span (height)
+                # - feet_score should prefer "feet wider than head" along width when slicing along up
+                score = (
+                    3.0 * float(tail_ratio[width_i])
+                    + 1.0 * float(qspan[up_i])
+                    + 2.0 * float(feet_sc)
+                    - 0.25 * float(qspan[depth_i])
+                )
+                cand = (score, up_i, width_i, depth_i, sign, top_sp, bot_sp)
+                if best is None or cand[0] > best[0]:
+                    best = cand
+
+    assert best is not None
+    score, up_idx, width_idx, depth_idx, up_sign, top_spread, bot_spread = best
+
+    basis = evecs[:, [width_idx, depth_idx, up_idx]].copy()
+    if up_sign < 0.0:
+        basis[:, 2] *= -1.0
+
+    # Ensure a right-handed coordinate frame.
+    if float(np.linalg.det(basis)) < 0.0:
+        basis[:, 1] *= -1.0
+
+    canonical = centered @ basis
     meta.update(
         {
-            "axis_up": _AXIS_NAME[up],
-            "axis_width": _AXIS_NAME[width],
-            "axis_depth": _AXIS_NAME[depth],
-            "axis_order": [_AXIS_NAME[width], _AXIS_NAME[depth], _AXIS_NAME[up]],
+            "axis_up_strategy": "auto_pca_scored",
+            "axis_up": f"pca_component_{int(up_idx)}",
+            "axis_width": f"pca_component_{int(width_idx)}",
+            "axis_depth": f"pca_component_{int(depth_idx)}",
+            "axis_order": ["width", "depth", "up"],
+            "basis_world_cols": [[float(x) for x in basis[:, i]] for i in range(3)],
+            "pca_eigenvalues": [float(v) for v in evals.tolist()],
+            "pca_eigenvectors_world_cols": [[float(x) for x in evecs[:, i]] for i in range(3)],
+            "pca_quantiles": [float(x) for x in q.tolist()],
+            "pca_qspan": [float(x) for x in qspan.tolist()],
+            "pca_iqr": [float(x) for x in iqr.tolist()],
+            "pca_tail_ratio": [float(x) for x in tail_ratio.tolist()],
+            "pca_selected": {
+                "width_component": int(width_idx),
+                "depth_component": int(depth_idx),
+                "up_component": int(up_idx),
+            },
+            "pca_up_sign_flip": bool(up_sign < 0.0),
+            "pca_up_width_spread_top": float(top_spread),
+            "pca_up_width_spread_bottom": float(bot_spread),
+            "pca_scored_best_score": float(score),
         }
     )
     return canonical, meta
@@ -113,6 +234,16 @@ def _rotate_xyz(vertices: np.ndarray, rx_deg: float, ry_deg: float, rz_deg: floa
     rot_y = np.array([[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]], dtype=float)
     rot_z = np.array([[cz, -sz, 0], [sz, cz, 0], [0, 0, 1]], dtype=float)
     return vertices @ (rot_z @ rot_y @ rot_x).T
+
+
+def _basis_from_meta(meta: dict[str, object]) -> np.ndarray:
+    basis_cols = meta.get("basis_world_cols")
+    if not isinstance(basis_cols, list) or len(basis_cols) != 3:
+        raise ValueError("render axis meta missing basis_world_cols; cannot align frames")
+    mat = np.array(basis_cols, dtype=float).T
+    if mat.shape != (3, 3):
+        raise ValueError("render axis meta basis_world_cols has invalid shape")
+    return mat
 
 
 def _project_vertices(
@@ -370,9 +501,12 @@ def main() -> None:
     parser.add_argument(
         "--axis-up",
         type=str,
-        default="y",
-        choices=("x", "y", "z"),
-        help="Axis treated as up when --canonicalize is enabled.",
+        default="auto",
+        choices=("x", "y", "z", "auto"),
+        help=(
+            "Axis treated as up when --canonicalize is enabled. "
+            "'auto' uses PCA + tail statistics to infer width/depth/up from geometry."
+        ),
     )
     parser.add_argument(
         "--axis-width",
@@ -381,6 +515,18 @@ def main() -> None:
         choices=("x", "y", "z"),
         help="Optional width axis override when --canonicalize is enabled (depth inferred).",
     )
+    parser.add_argument(
+        "--align-to-mesh",
+        type=Path,
+        default=None,
+        help=(
+            "Optional reference mesh (NPZ) to align this render's canonical frame against. "
+            "Useful for rendering base+ROM in a shared, comparable frame within a bundle."
+        ),
+    )
+    parser.add_argument("--align-rotate-x", type=float, default=0.0, help="Rigid X rotation for align-to mesh (deg).")
+    parser.add_argument("--align-rotate-y", type=float, default=0.0, help="Rigid Y rotation for align-to mesh (deg).")
+    parser.add_argument("--align-rotate-z", type=float, default=0.0, help="Rigid Z rotation for align-to mesh (deg).")
     parser.add_argument(
         "--timestamp",
         type=str,
@@ -391,14 +537,33 @@ def main() -> None:
     mesh_payload = np.load(args.mesh)
     vertices_raw = np.asarray(mesh_payload["vertices"], dtype=float)
     faces = np.asarray(mesh_payload["faces"], dtype=int) if "faces" in mesh_payload else None
+    if any(abs(v) > 1e-9 for v in (args.rotate_x, args.rotate_y, args.rotate_z)):
+        vertices_raw = _rotate_xyz(vertices_raw, args.rotate_x, args.rotate_y, args.rotate_z)
     vertices, axis_meta = _canonicalize_vertices(
         vertices_raw,
         enabled=bool(args.canonicalize),
         up_axis=str(args.axis_up),
         width_axis=args.axis_width,
     )
-    if any(abs(v) > 1e-9 for v in (args.rotate_x, args.rotate_y, args.rotate_z)):
-        vertices = _rotate_xyz(vertices, args.rotate_x, args.rotate_y, args.rotate_z)
+
+    if args.align_to_mesh is not None and bool(args.canonicalize):
+        ref_payload = np.load(args.align_to_mesh)
+        ref_vertices = np.asarray(ref_payload["vertices"], dtype=float)
+        if any(abs(v) > 1e-9 for v in (args.align_rotate_x, args.align_rotate_y, args.align_rotate_z)):
+            ref_vertices = _rotate_xyz(ref_vertices, args.align_rotate_x, args.align_rotate_y, args.align_rotate_z)
+        _ref_canon, ref_meta = _canonicalize_vertices(
+            ref_vertices,
+            enabled=True,
+            up_axis=str(args.axis_up),
+            width_axis=args.axis_width,
+        )
+        basis_self = _basis_from_meta(axis_meta)
+        basis_ref = _basis_from_meta(ref_meta)
+        rot = basis_self.T @ basis_ref
+        vertices = vertices @ rot
+        axis_meta["align_to_mesh"] = str(args.align_to_mesh)
+        axis_meta["align_rotation_cols"] = [[float(x) for x in rot[:, i]] for i in range(3)]
+        axis_meta["align_ref_axis_meta"] = ref_meta
 
     seam_report: dict[str, Any] | None = None
     seam_edges: list[tuple[int, int]] = []

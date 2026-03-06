@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, Mapping, TYPE_CHECKING
@@ -9,8 +10,6 @@ from typing import Any, Dict, Mapping, TYPE_CHECKING
 import numpy as np
 import torch
 from torch import Tensor
-
-import smplx
 
 from .base import BodyModelProvider, register_provider
 
@@ -60,6 +59,14 @@ class SmplxProvider(BodyModelProvider):
         self.batch_size = config.batch_size
 
         self._verify_assets()
+
+        try:
+            smplx = importlib.import_module("smplx")
+        except ModuleNotFoundError as exc:
+            raise ModuleNotFoundError(
+                "The 'smplx' Python package is required to use the SMPL-X provider. "
+                "Install it in the active environment (e.g. `pip install smplx`)."
+            ) from exc
 
         self._model = smplx.create(
             model_path=str(config.model_path),

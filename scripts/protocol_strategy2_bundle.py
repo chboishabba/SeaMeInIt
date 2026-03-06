@@ -17,6 +17,8 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
+import numpy as np
+
 
 def _run(cmd: list[str]) -> None:
     subprocess.run(cmd, check=True)
@@ -29,6 +31,24 @@ def _capture(cmd: list[str]) -> str:
 def _create_bundle(python: str, *, label: str) -> Path:
     out = _capture([python, "scripts/new_asset_bundle.py", "create", "--label", label])
     return Path(out).resolve()
+
+
+def _mesh_counts(path: Path) -> tuple[int, int | None]:
+    payload = np.load(path, allow_pickle=True)
+    vertices = np.asarray(payload["vertices"])
+    faces = np.asarray(payload["faces"]) if "faces" in payload else None
+    return int(vertices.shape[0]), (int(faces.shape[0]) if faces is not None else None)
+
+
+def _default_role(vertex_count: int) -> str:
+    # Intentionally conservative default.
+    # Role labels are provenance assertions, not geometry classifiers.
+    return "unknown"
+
+
+def _tag(role: str, vertex_count: int) -> str:
+    safe_role = str(role).strip().replace(" ", "_")
+    return f"{safe_role}_v{int(vertex_count)}"
 
 
 def _reproject(
@@ -62,6 +82,8 @@ def _render(
     python: str,
     *,
     mesh: Path,
+    align_to_mesh: Path | None,
+    align_rotate: tuple[float, float, float],
     seam_report: Path | None,
     costs: Path | None,
     out_dir: Path,
@@ -102,9 +124,14 @@ def _render(
         "--rotate-z",
         str(float(rotate_z)),
         "--axis-up",
-        "y",
+        "auto",
         "--canonicalize",
     ]
+    if align_to_mesh is not None:
+        cmd += ["--align-to-mesh", str(align_to_mesh)]
+        cmd += ["--align-rotate-x", str(float(align_rotate[0]))]
+        cmd += ["--align-rotate-y", str(float(align_rotate[1]))]
+        cmd += ["--align-rotate-z", str(float(align_rotate[2]))]
     if axis_width is not None:
         cmd += ["--axis-width", str(axis_width)]
     if seam_report is not None:
@@ -126,6 +153,18 @@ def main() -> None:
     parser.add_argument("--base-costs", type=Path, default=None)
     parser.add_argument("--rom-costs", type=Path, default=None)
     parser.add_argument("--vertex-map", type=Path, default=None, help="Optional NPZ with both map directions.")
+    parser.add_argument(
+        "--base-role",
+        type=str,
+        default=None,
+        help="Required provenance role label for --base-mesh used in filenames (e.g. 'human').",
+    )
+    parser.add_argument(
+        "--rom-role",
+        type=str,
+        default=None,
+        help="Required provenance role label for --rom-mesh used in filenames (e.g. 'ogre').",
+    )
     parser.add_argument(
         "--render-vertex-map",
         action=argparse.BooleanOptionalAction,
@@ -151,7 +190,7 @@ def main() -> None:
     parser.add_argument(
         "--axis-width",
         type=str,
-        default="x",
+        default="none",
         choices=("x", "y", "z", "none"),
         help="Force a shared render width-axis to align base/ROM orientations. Use 'none' for auto.",
     )
@@ -168,6 +207,19 @@ def main() -> None:
     yaw_offset = float(args.yaw_offset)
     base_rot = (float(args.base_rotate_x), float(args.base_rotate_y), float(args.base_rotate_z))
     rom_rot = (float(args.rom_rotate_x), float(args.rom_rotate_y), float(args.rom_rotate_z))
+
+    base_v, base_f = _mesh_counts(args.base_mesh)
+    rom_v, rom_f = _mesh_counts(args.rom_mesh)
+    if args.base_role is None or args.rom_role is None:
+        raise SystemExit(
+            "Missing required provenance roles. Provide both --base-role and --rom-role "
+            "(do not infer roles from vertex counts)."
+        )
+    base_role = str(args.base_role)
+    rom_role = str(args.rom_role)
+    base_tag = _tag(base_role, base_v)
+    rom_tag = _tag(rom_role, rom_v)
+
     bundle = _create_bundle(python, label=str(args.label))
     renders = bundle / "renders"
     seams = bundle / "seams"
@@ -207,7 +259,12 @@ def main() -> None:
     # 1b) Render vertex map correspondence orbits (high-collision maps should look obviously wrong).
     if args.vertex_map is not None and bool(args.render_vertex_map):
         for direction in ("source_to_target", "target_to_source"):
-            out_dir = maps / f"vertex_map__{direction}__{ts}"
+            map_name = (
+                f"vertex_map__{rom_tag}__to__{base_tag}"
+                if direction == "source_to_target"
+                else f"vertex_map__{base_tag}__to__{rom_tag}"
+            )
+            out_dir = maps / f"{map_name}__{ts}"
             out_dir.mkdir(parents=True, exist_ok=True)
             _run(
                 [
@@ -248,8 +305,8 @@ def main() -> None:
             )
 
     # 2) Reproject seams both ways (diagnostic; non-bijective maps are expected to fail quality checks).
-    base_with_rom = seams / "base__rom_seams__reprojected.json"
-    rom_with_base = seams / "rom__base_seams__reprojected.json"
+    base_with_rom = seams / f"{base_tag}__seams_from__{rom_tag}__reprojected.json"
+    rom_with_base = seams / f"{rom_tag}__seams_from__{base_tag}__reprojected.json"
     _reproject(
         python,
         seam_report=args.rom_seams,
@@ -271,10 +328,12 @@ def main() -> None:
     _render(
         python,
         mesh=args.base_mesh,
+        align_to_mesh=None,
+        align_rotate=(0.0, 0.0, 0.0),
         seam_report=args.base_seams,
         costs=args.base_costs,
         out_dir=renders,
-        stem="base__native_base_seams",
+        stem=f"{base_tag}__native_seams",
         timestamp=ts,
         point_size=int(args.point_size),
         seam_width=int(args.seam_width),
@@ -288,10 +347,12 @@ def main() -> None:
     _render(
         python,
         mesh=args.base_mesh,
+        align_to_mesh=None,
+        align_rotate=(0.0, 0.0, 0.0),
         seam_report=base_with_rom,
         costs=args.base_costs,
         out_dir=renders,
-        stem="base__reprojected_rom_seams",
+        stem=f"{base_tag}__reprojected_seams_from__{rom_tag}",
         timestamp=ts,
         point_size=int(args.point_size),
         seam_width=int(args.seam_width),
@@ -305,10 +366,12 @@ def main() -> None:
     _render(
         python,
         mesh=args.rom_mesh,
+        align_to_mesh=args.base_mesh,
+        align_rotate=base_rot,
         seam_report=args.rom_seams,
         costs=args.rom_costs,
         out_dir=renders,
-        stem="rom__native_rom_seams",
+        stem=f"{rom_tag}__native_seams",
         timestamp=ts,
         point_size=int(args.point_size),
         seam_width=int(args.seam_width),
@@ -322,10 +385,12 @@ def main() -> None:
     _render(
         python,
         mesh=args.rom_mesh,
+        align_to_mesh=args.base_mesh,
+        align_rotate=base_rot,
         seam_report=rom_with_base,
         costs=args.rom_costs,
         out_dir=renders,
-        stem="rom__reprojected_base_seams",
+        stem=f"{rom_tag}__reprojected_seams_from__{base_tag}",
         timestamp=ts,
         point_size=int(args.point_size),
         seam_width=int(args.seam_width),
@@ -339,10 +404,12 @@ def main() -> None:
     _render(
         python,
         mesh=args.base_mesh,
+        align_to_mesh=None,
+        align_rotate=(0.0, 0.0, 0.0),
         seam_report=None,
         costs=args.base_costs,
         out_dir=renders,
-        stem="base__mesh_only",
+        stem=f"{base_tag}__mesh_only",
         timestamp=ts,
         point_size=int(args.point_size),
         seam_width=int(args.seam_width),
@@ -356,10 +423,12 @@ def main() -> None:
     _render(
         python,
         mesh=args.rom_mesh,
+        align_to_mesh=args.base_mesh,
+        align_rotate=base_rot,
         seam_report=None,
         costs=args.rom_costs,
         out_dir=renders,
-        stem="rom__mesh_only",
+        stem=f"{rom_tag}__mesh_only",
         timestamp=ts,
         point_size=int(args.point_size),
         seam_width=int(args.seam_width),
@@ -377,6 +446,14 @@ def main() -> None:
         "inputs": {
             "base_mesh": str(args.base_mesh),
             "rom_mesh": str(args.rom_mesh),
+            "base_role": base_role,
+            "rom_role": rom_role,
+            "base_tag": base_tag,
+            "rom_tag": rom_tag,
+            "base_vertex_count": base_v,
+            "rom_vertex_count": rom_v,
+            "base_face_count": base_f,
+            "rom_face_count": rom_f,
             "base_seams": str(args.base_seams),
             "rom_seams": str(args.rom_seams),
             "vertex_map": str(args.vertex_map) if args.vertex_map is not None else None,
@@ -407,19 +484,32 @@ def main() -> None:
             [
                 f"Bundle: {bundle}",
                 "Key renders in renders/:",
-                f"  base__native_base_seams__orbit__{ts}.webm",
-                f"  base__reprojected_rom_seams__orbit__{ts}.webm",
-                f"  rom__native_rom_seams__orbit__{ts}.webm",
-                f"  rom__reprojected_base_seams__orbit__{ts}.webm",
-                f"  base__mesh_only__orbit__{ts}.webm",
-                f"  rom__mesh_only__orbit__{ts}.webm",
+                f"  {base_tag}__native_seams__orbit__{ts}.webm",
+                f"  {base_tag}__reprojected_seams_from__{rom_tag}__orbit__{ts}.webm",
+                f"  {rom_tag}__native_seams__orbit__{ts}.webm",
+                f"  {rom_tag}__reprojected_seams_from__{base_tag}__orbit__{ts}.webm",
+                f"  {base_tag}__mesh_only__orbit__{ts}.webm",
+                f"  {rom_tag}__mesh_only__orbit__{ts}.webm",
                 "",
                 "Audit:",
                 f"  manifests/pipeline_audit.json (and .csv alongside if requested)",
+                "",
+                "A/B comparison metrics:",
+                "  manifests/seam_compare_metrics.json",
             ]
         )
         + "\n",
         encoding="utf-8",
+    )
+
+    # 4) Emit A/B comparison metrics to make Strategy A vs B a controlled experiment.
+    _run(
+        [
+            python,
+            "scripts/seam_compare_metrics.py",
+            "--bundle",
+            str(bundle),
+        ]
     )
     print(bundle)
 

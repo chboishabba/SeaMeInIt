@@ -93,10 +93,35 @@ def _canonicalize_vertices(
         return centered, meta
 
     up_axis = str(up_axis).lower()
-    if up_axis not in AXIS_INDEX:
-        raise ValueError(f"Unknown up axis '{up_axis}'. Use one of: x,y,z.")
-    up = AXIS_INDEX[up_axis]
-    remaining = [idx for idx in range(3) if idx != up]
+    if up_axis == "auto":
+        v = original - np.mean(original, axis=0, keepdims=True)
+        q = np.array([0.01, 0.25, 0.75, 0.99], dtype=float)
+        quant = np.quantile(v, q, axis=0)
+        p1, p25, p75, p99 = quant
+        qspan = np.maximum(p99 - p1, 1e-12)
+        iqr = np.maximum(p75 - p25, 1e-12)
+        tail_ratio = qspan / iqr
+        # If width is forced in legacy mode, pick up as the largest remaining robust span.
+        if width_axis is not None:
+            width_guess = AXIS_INDEX[str(width_axis).lower()]
+            candidate_axes = [idx for idx in range(3) if idx != width_guess]
+        else:
+            width_guess = int(np.argmax(tail_ratio))
+            candidate_axes = [idx for idx in range(3) if idx != width_guess]
+
+        up = int(max(candidate_axes, key=lambda idx: float(qspan[idx])))
+        remaining = [idx for idx in range(3) if idx != up]
+        meta["axis_up_strategy"] = "auto_tail_ratio"
+        meta["axis_up_quantiles"] = [float(x) for x in q.tolist()]
+        meta["axis_up_qspan"] = [float(x) for x in qspan.tolist()]
+        meta["axis_up_iqr"] = [float(x) for x in iqr.tolist()]
+        meta["axis_up_tail_ratio"] = [float(x) for x in tail_ratio.tolist()]
+        meta["axis_up_width_axis_guess"] = AXIS_NAME[int(width_guess)]
+    else:
+        if up_axis not in AXIS_INDEX:
+            raise ValueError(f"Unknown up axis '{up_axis}'. Use one of: x,y,z,auto.")
+        up = AXIS_INDEX[up_axis]
+        remaining = [idx for idx in range(3) if idx != up]
 
     width: int
     if width_axis is not None:
@@ -123,6 +148,142 @@ def _canonicalize_vertices(
         }
     )
     return canonical, meta
+
+
+def _pca_basis(centered: np.ndarray) -> tuple[np.ndarray, dict[str, object]]:
+    cov = (centered.T @ centered) / max(1.0, float(centered.shape[0]))
+    evals, evecs = np.linalg.eigh(cov)  # ascending
+    order = np.argsort(evals)[::-1]
+    evals = evals[order]
+    evecs = evecs[:, order]
+    proj = centered @ evecs
+
+    q = np.array([0.01, 0.25, 0.75, 0.99], dtype=float)
+    quant = np.quantile(proj, q, axis=0)
+    p1, p25, p75, p99 = quant
+    qspan = np.maximum(p99 - p1, 1e-12)
+    iqr = np.maximum(p75 - p25, 1e-12)
+    tail_ratio = qspan / iqr
+    def _feet_score(up_i: int, width_i: int, sign: float) -> tuple[float, float, float]:
+        z = sign * proj[:, up_i]
+        x = proj[:, width_i]
+        z_lo = float(np.quantile(z, 0.05))
+        z_hi = float(np.quantile(z, 0.95))
+        top = x[z >= z_hi]
+        bot = x[z <= z_lo]
+        if top.size < 20 or bot.size < 20:
+            return -1e9, float("nan"), float("nan")
+        top_sp = float(np.quantile(top, 0.95) - np.quantile(top, 0.05))
+        bot_sp = float(np.quantile(bot, 0.95) - np.quantile(bot, 0.05))
+        norm = abs(top_sp) + abs(bot_sp) + 1e-12
+        return (bot_sp - top_sp) / norm, top_sp, bot_sp
+
+    best: tuple[float, int, int, int, float, float, float] | None = None
+    for up_i in range(3):
+        for width_i in range(3):
+            if width_i == up_i:
+                continue
+            depth_i = next(idx for idx in range(3) if idx not in (up_i, width_i))
+            for sign in (1.0, -1.0):
+                feet_sc, top_sp, bot_sp = _feet_score(up_i, width_i, sign)
+                score = (
+                    3.0 * float(tail_ratio[width_i])
+                    + 1.0 * float(qspan[up_i])
+                    + 2.0 * float(feet_sc)
+                    - 0.25 * float(qspan[depth_i])
+                )
+                cand = (score, up_i, width_i, depth_i, sign, top_sp, bot_sp)
+                if best is None or cand[0] > best[0]:
+                    best = cand
+
+    assert best is not None
+    score, up_idx, width_idx, depth_idx, up_sign, top_spread, bot_spread = best
+
+    basis = evecs[:, [width_idx, depth_idx, up_idx]].copy()
+    if up_sign < 0.0:
+        basis[:, 2] *= -1.0
+
+    if float(np.linalg.det(basis)) < 0.0:
+        basis[:, 1] *= -1.0
+
+    meta = {
+        "mode": "auto_pca_scored",
+        "pca_eigenvalues": [float(v) for v in evals.tolist()],
+        "pca_eigenvectors_world_cols": [[float(x) for x in evecs[:, i]] for i in range(3)],
+        "pca_quantiles": [float(x) for x in q.tolist()],
+        "pca_qspan": [float(x) for x in qspan.tolist()],
+        "pca_iqr": [float(x) for x in iqr.tolist()],
+        "pca_tail_ratio": [float(x) for x in tail_ratio.tolist()],
+        "pca_selected": {
+            "width_component": int(width_idx),
+            "depth_component": int(depth_idx),
+            "up_component": int(up_idx),
+        },
+        "pca_up_sign_flip": bool(up_sign < 0.0),
+        "pca_up_width_spread_top": float(top_spread),
+        "pca_up_width_spread_bottom": float(bot_spread),
+        "pca_scored_best_score": float(score),
+    }
+    return basis, meta
+
+
+def _canonicalize_pair(
+    source_vertices: np.ndarray,
+    target_vertices: np.ndarray,
+    *,
+    enabled: bool,
+    up_axis: str,
+    width_axis: str | None,
+) -> tuple[np.ndarray, np.ndarray, dict[str, object]]:
+    src = np.asarray(source_vertices, dtype=float)
+    tgt = np.asarray(target_vertices, dtype=float)
+    src_centered = src - np.mean(src, axis=0, keepdims=True)
+    tgt_centered = tgt - np.mean(tgt, axis=0, keepdims=True)
+
+    meta: dict[str, object] = {
+        "enabled": bool(enabled),
+        "source_original_axis_spans": [float(v) for v in np.ptp(src, axis=0).tolist()],
+        "target_original_axis_spans": [float(v) for v in np.ptp(tgt, axis=0).tolist()],
+    }
+    if not enabled:
+        meta["mode"] = "none"
+        return src_centered, tgt_centered, meta
+
+    up_axis = str(up_axis).lower()
+    if up_axis != "auto" or width_axis is not None:
+        # Legacy raw-axis mode: canonicalize both with the same axis convention.
+        src_canon, src_meta = _canonicalize_vertices(
+            src,
+            enabled=True,
+            up_axis=up_axis,
+            width_axis=width_axis,
+        )
+        tgt_canon, tgt_meta = _canonicalize_vertices(
+            tgt,
+            enabled=True,
+            up_axis=up_axis,
+            width_axis=width_axis,
+        )
+        meta["mode"] = "legacy_raw_axes"
+        meta["source"] = src_meta
+        meta["target"] = tgt_meta
+        return src_canon, tgt_canon, meta
+
+    # PCA mode: canonicalize each mesh, then align source canonical coords into target canonical coords.
+    basis_src, src_meta = _pca_basis(src_centered)
+    basis_tgt, tgt_meta = _pca_basis(tgt_centered)
+    src_canon = src_centered @ basis_src
+    tgt_canon = tgt_centered @ basis_tgt
+    rot_src_to_tgt = basis_src.T @ basis_tgt
+    src_canon = src_canon @ rot_src_to_tgt
+
+    meta["mode"] = "auto_pca_tail_ratio_aligned"
+    meta["source"] = src_meta
+    meta["target"] = tgt_meta
+    meta["source_to_target_canonical_rotation"] = [
+        [float(x) for x in rot_src_to_tgt[:, i]] for i in range(3)
+    ]
+    return src_canon, tgt_canon, meta
 
 
 def _project_vertices(
@@ -411,9 +572,12 @@ def main() -> None:
     parser.add_argument(
         "--axis-up",
         type=str,
-        default="y",
-        choices=("x", "y", "z"),
-        help="Axis treated as up when --canonicalize is enabled.",
+        default="auto",
+        choices=("x", "y", "z", "auto"),
+        help=(
+            "Axis treated as up when --canonicalize is enabled. "
+            "'auto' uses PCA + tail statistics to infer width/depth/up from geometry."
+        ),
     )
     parser.add_argument(
         "--axis-width",
@@ -435,24 +599,29 @@ def main() -> None:
         args.vertex_map, direction=args.direction  # type: ignore[arg-type]
     )
 
-    # Canonicalize both in the same axis convention to keep visuals comparable.
-    src_canon, axis_meta = _canonicalize_vertices(
+    # Apply explicit rigid rotations first (debug), then canonicalize.
+    if any(abs(v) > 1e-9 for v in (args.source_rotate_x, args.source_rotate_y, args.source_rotate_z)):
+        src_vertices = _rotate_xyz(
+            np.asarray(src_vertices, dtype=float),
+            args.source_rotate_x,
+            args.source_rotate_y,
+            args.source_rotate_z,
+        )
+    if any(abs(v) > 1e-9 for v in (args.target_rotate_x, args.target_rotate_y, args.target_rotate_z)):
+        tgt_vertices = _rotate_xyz(
+            np.asarray(tgt_vertices, dtype=float),
+            args.target_rotate_x,
+            args.target_rotate_y,
+            args.target_rotate_z,
+        )
+
+    src_canon, tgt_canon, axis_meta = _canonicalize_pair(
         src_vertices,
-        enabled=bool(args.canonicalize),
-        up_axis=str(args.axis_up),
-        width_axis=args.axis_width,
-    )
-    tgt_canon, _ = _canonicalize_vertices(
         tgt_vertices,
         enabled=bool(args.canonicalize),
         up_axis=str(args.axis_up),
         width_axis=args.axis_width,
     )
-
-    if any(abs(v) > 1e-9 for v in (args.source_rotate_x, args.source_rotate_y, args.source_rotate_z)):
-        src_canon = _rotate_xyz(src_canon, args.source_rotate_x, args.source_rotate_y, args.source_rotate_z)
-    if any(abs(v) > 1e-9 for v in (args.target_rotate_x, args.target_rotate_y, args.target_rotate_z)):
-        tgt_canon = _rotate_xyz(tgt_canon, args.target_rotate_x, args.target_rotate_y, args.target_rotate_z)
 
     colors, dist_stats = _distance_colors(distances, clip=float(args.distance_clip))
     out_dir = args.out_dir

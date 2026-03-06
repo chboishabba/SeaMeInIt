@@ -33,6 +33,56 @@ fabric design quality or final garment aesthetics.
 - `reprojection`:
   seam index transfer from one topology to another via nearest-neighbor mapping.
 
+## Artifact naming policy (required going forward)
+
+To stop repeated morphology/role confusion, **all new artifacts** (reports, orbits,
+maps, overlays) must encode:
+
+- `role`: `human` or `ogre`
+- `topology`: `v3240`, `v9438`, etc.
+- `domain`: `native` or `reprojected_from_<other>`
+
+Examples:
+- `human_v3240__mesh_only__orbit__<ts>.webm`
+- `ogre_v9438__native_seams__orbit__<ts>.webm`
+- `human_v3240__reprojected_seams_from_ogre_v9438__orbit__<ts>.webm`
+
+Role naming note:
+- `human`/`ogre` are **provenance labels**, not geometry classifiers.
+- Do not infer roles from vertex count or morphology. Require explicit role
+  assignment (CLI flags) and record mesh hashes in manifests.
+  - For Strategy 2 bundles: `scripts/protocol_strategy2_bundle.py` requires `--base-role` and `--rom-role`.
+
+## Orientation invariant (required going forward)
+
+Within a single comparison bundle, `human` and `ogre` renders must be aligned to
+the same facing direction and "up" convention. If one domain is face-up while
+the other is face-forward, the comparison is invalid.
+
+Operationally:
+- Bundles must render both domains using the same canonicalization policy.
+- Any per-domain rotation overrides must be explicit and recorded in manifests.
+
+### Three meanings of "canonical" (keep separated)
+
+- **ROM canonical**:
+  the ROM basis / neutral-pose construction. This lives in ROM/model space and
+  is about deformation modeling.
+- **Domain canonical**:
+  which topology / mesh stage is treated as primary for seam solve + downstream
+  pattern tools (v3240 vs v9438); this is a workflow decision (Strategy A vs B).
+- **Render canonical**:
+  rotation normalization for viewable artifacts so different domains can be
+  compared visually. This must not be used to infer identity or provenance.
+
+Current policy (2026-02-14):
+- `scripts/render_seam_orbit.py` and `scripts/render_vertex_map_orbits.py` default to
+  `--canonicalize --axis-up auto`, which uses a PCA-based frame plus robust tail
+  statistics to pick width/depth/up (see `docs/seam_overlay_orientation.md`).
+- Vertex-map orbits additionally align the source canonical frame into the target
+  canonical frame so correspondence lines are not dominated by arbitrary axis
+  conventions.
+
 Important naming caveat:
 - Run labels like `A_base` and `B_ogre` are workflow labels, not morphology
   guarantees. Current visual observations indicate morphology can appear inverted
@@ -552,10 +602,16 @@ Bundle root:
 - `outputs/assets_bundles/20260214_050137__domain_ab_strategy2_aligned/`
 
 Change vs prior bundles:
-- Forced shared render-frame width axis: `--axis-width z` via `scripts/protocol_strategy2_bundle.py`.
-- Result: all render manifests report the same `render_axis.axis_order=['z','x','y']` for both
-  base and ROM domains, so the ogre and normal bodies are directly comparable in orientation.
-  (This does not change the underlying meshes, only the render canonicalization.)
+- Historically, we attempted to force shared render orientation by pinning
+  `--axis-width` in `scripts/protocol_strategy2_bundle.py`. This was brittle:
+  it depends on both domains sharing a common world-axis convention.
+
+Current policy (2026-02-14 onward):
+- Orbit renderers (`scripts/render_seam_orbit.py`, `scripts/render_vertex_map_orbits.py`)
+  use PCA-based canonicalization for `--canonicalize --axis-up auto` so that
+  "up" and "width" are inferred from the geometry rather than raw axis extents.
+- Within a bundle, both domains must use the same canonicalization policy; the
+  render manifest records the inferred axes and statistics.
 
 Follow-up (timestamp `20260214_050754`):
 - `--axis-width x` produced shared `render_axis.axis_order=['x','z','y']` across both domains
@@ -589,8 +645,15 @@ Observable evidence fields (from reprojection report):
 1. Decide whether to promote provisional Strategy A freeze to canonical policy.
 2. Re-run protocol only after solver/mapping changes and append new decision record entry.
 3. Freeze run manifests with body/cost/seam lineage fields so ambiguity does not recur.
+4. For any Strategy 2 bundle run, record `manifests/seam_compare_metrics.json` and use it as the
+   first-pass quantitative check (edge retention/collision, mesh-edge validity, seam length collapse).
 
 ## 2026-02-14 Orientation experiments (Strategy 2)
+
+These ad-hoc manual-rotation experiments were used to debug the misrendering
+of "face-up" vs "face-forward" bodies. They are retained for provenance, but
+the intended stable solution is PCA-based canonicalization (`--axis-up auto`)
+as documented in `docs/seam_overlay_orientation.md`.
 
 - Bundle `20260214_053201__domain_ab_strategy2_rotXneg90` (axis_width=x, yaw_offset=0, rotate_x=-90):
   - `rom__mesh_only` stayed face-down.
@@ -609,6 +672,53 @@ Observable evidence fields (from reprojection report):
   - Check if ROM now faces forward while ogre remains upright.
 
 Pending: choose a single canonical rotation that aligns both base/ROM fronts. Next candidates: rotate_x=90 with rotate_z=180, or rotate_x=180.
+
+## 2026-02-14 Base-only seam solve (no ROM/reprojection)
+
+- Mesh: `outputs/afflec_demo/afflec_body.npz` (3240 verts, faces 6476).
+- Cost field: `outputs/rom/seam_costs_afflec.npz`.
+- Solver: `smii.seams.solver.solve_seams` (mst, edge_mode=mean).
+- Output: `outputs/seams_run/base_only_20260214_092147/seam_report.json`
+- Orbit renders:
+  - `outputs/seams_run/base_only_20260214_092147/base_only__orbit__20260214_092204.webm` (yaw_offset=90, axis_width=x) — body faced up.
+  - `outputs/seams_run/base_only_20260214_092147/base_only_faceforward__orbit__20260214_092559.webm` (axis_width=x, rotate_x=90, rotate_z=180) — face-forward orientation fix.
+- Notes: solver emitted “No edges intersect seam vertices; edge costs default to empty mapping” warning; panels=8; uses default MDL prior.
+
+## 2026-02-14 Multi-loop seam solve on human (v3240)
+
+Goal: run the multi-loop shortest-path solver on the `human` topology without cross-topology reprojection.
+
+- Body: `outputs/afflec_demo/afflec_body.npz` (`human_v3240`)
+- ROM costs: `outputs/rom/seam_costs_afflec.npz` (`vertex_costs.shape == (3240,)`)
+- Command:
+  - `PYTHONPATH=src:. ../.venv/bin/python examples/solve_seams_from_rom.py --body outputs/afflec_demo/afflec_body.npz --rom-costs outputs/rom/seam_costs_afflec.npz --solver shortest_path --sp-require-loop --sp-loop-count 2 --no-sp-allow-unfiltered-fallback --out outputs/seams_run/human_v3240__shortest_path__loop2__20260214_102129`
+- Outputs:
+  - `outputs/seams_run/human_v3240__shortest_path__loop2__20260214_102129/seam_report.json`
+  - `outputs/seams_run/human_v3240__shortest_path__loop2__20260214_102129/overlay.png`
+  - Orbit: `outputs/seams_run/human_v3240__shortest_path__loop2__20260214_102129/human_v3240__shortest_path__loop2__orbit__20260214_102129.webm`
+
+## 2026-02-14 Orientation mismatch observed (role-labeled smoke bundle)
+
+User-observed artifacts (bundle `outputs/assets_bundles/20260214_102426__smoke_roles/`):
+
+- `outputs/seams_run/human_v3240__shortest_path__loop2__20260214_102129/human_v3240__shortest_path__loop2__orbit__20260214_102129.webm`
+  - reported: face-up ogre; valid loop seam
+- `outputs/assets_bundles/20260214_102426__smoke_roles/renders/human_v3240__native_seams__orbit__20260214_102426.webm`
+  - reported: face-up ogre; valid on-mesh non-loop seam
+- `outputs/assets_bundles/20260214_102426__smoke_roles/renders/human_v3240__reprojected_seams_from__ogre_v9438__orbit__20260214_102426.webm`
+  - reported: face-up ogre; invalid inter-scapula non-conforming seam
+- `outputs/assets_bundles/20260214_102426__smoke_roles/renders/ogre_v9438__native_seams__orbit__20260214_102426.webm`
+  - reported: forward-facing human; crotch and mouth conforming seams
+- `outputs/assets_bundles/20260214_102426__smoke_roles/renders/ogre_v9438__reprojected_seams_from__human_v3240__orbit__20260214_102426.webm`
+  - reported: forward-facing human; no seams
+- `outputs/assets_bundles/20260214_102426__smoke_roles/renders/human_v3240__mesh_only__orbit__20260214_102426.webm`
+  - reported: up-facing ogre; no seams
+- `outputs/assets_bundles/20260214_102426__smoke_roles/renders/ogre_v9438__mesh_only__orbit__20260214_102426.webm`
+  - reported: forward-facing human; no seams
+
+Interpretation:
+- Orientation alignment is still not enforced; per-mesh coordinate frames likely differ (e.g. one mesh encodes height in `z`, another in `y`).
+- Role tags must not be derived solely from vertex count; treat them as expected labels, and add deterministic render canonicalization (`axis_up=auto`) to align facing direction.
 
 ## Related Docs
 

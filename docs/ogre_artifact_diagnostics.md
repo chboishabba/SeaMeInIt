@@ -54,6 +54,11 @@ Current known mechanics:
 4. Reprojection between topologies can collapse edges when nearest-neighbor
    distances are large.
 
+Clarification: the seam solver does not operate on a point cloud.
+- Solvers consume `vertices` **and** `faces` to build a panel seam graph (mesh-adjacent edges).
+- The orbit artifacts are point-cloud renders for debugging; they can make seams
+  look visually disconnected even when the underlying edge list is valid.
+
 Additional risk identified:
 
 - Vertex-count mismatch between body mesh and ROM cost field can produce

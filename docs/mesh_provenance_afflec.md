@@ -22,6 +22,28 @@ For intended-vs-observed seam behavior and solve-domain decision framing, see
 Both are valid when intentionally used, but they must not be mixed in a single
 solve/render chain without explicit reprojection.
 
+## Role naming (human vs ogre)
+
+For debugging, we use the following **working** role names. These are not value
+judgements, just a way to stop ambiguous filenames from derailing analysis.
+
+- `human`:
+  the direct image-fit / SMPL-X derived body mesh (currently the `v3240` family).
+  Example: `outputs/afflec_demo/afflec_body.npz` (`3240` verts).
+
+- `ogre`:
+  the high-topology "internalized" body representation used by some ROM and suit
+  pipelines (currently the `v9438` family). It may incorporate remeshing,
+  canonicalization, or "realshape" projections and can look visually unlike the
+  `human` mesh in renders.
+  Examples:
+  - `outputs/suits/afflec_body/base_layer.npz` (`9438` verts)
+  - `outputs/rom/seam_costs_afflec_realshape_edges.npz` (`9438` vertex costs)
+
+Important: "ogre" here means "the `9438` branch we keep confusing with the
+`3240` branch". It does **not** imply that ROM is "deforming" the body; seam
+solvers do not change geometry, they only select edges on whatever mesh you pass.
+
 ## Critical note: output paths are not stable provenance
 
 This repo historically overwrote files under fixed paths like
@@ -48,6 +70,15 @@ This is consistent with the fixture/demo nature of the pipeline, but it means:
 
 ## Provenance map (current local artifacts)
 
+### Key artifacts (paths -> role/topology)
+
+| Path | Role tag | Topology | Notes |
+| --- | --- | --- | --- |
+| `outputs/afflec_demo/afflec_body.npz` | `human` | `v3240` | Image-fit / SMPL-X derived mesh (fixture/demo scale may vary). |
+| `outputs/rom/seam_costs_afflec.npz` | `human` | `v3240` | ROM vertex costs in the same topology as `afflec_body.npz`. |
+| `outputs/suits/afflec_body/base_layer.npz` | `ogre` | `v9438` | Undersuit base layer derived from `afflec_body` (different topology). |
+| `outputs/rom/seam_costs_afflec_realshape_edges.npz` | `ogre` | `v9438` | ROM-derived costs projected into the `v9438` domain (includes edges). |
+
 1. Image ingest and fit
    - command: `python -m smii.app afflec-demo ...`
    - artifact: `outputs/afflec_demo/afflec_body.npz`
@@ -69,6 +100,23 @@ This is consistent with the fixture/demo nature of the pipeline, but it means:
      - `outputs/suits/afflec_body/base_layer.npz` (`9438` vertices)
    - these runs are a different topology branch and need explicit transfer for
      base-body visual inspection.
+
+### Are we applying ROM to the human mesh, or is ogre the ROM internalization?
+
+Both exist in the repo:
+
+- ROM costs in the `human` domain (`v3240`):
+  - `outputs/rom/seam_costs_afflec.npz` has `vertex_costs.shape == (3240,)`.
+  - This is "ROM findings applied to the human mesh" (same vertex count).
+
+- ROM costs in the `ogre` domain (`v9438`):
+  - `outputs/rom/seam_costs_afflec_realshape_edges.npz` has `vertex_costs.shape == (9438,)`.
+  - This implies some upstream step has produced a `v9438` representation of the
+    body and projected the ROM-derived quantities into that topology.
+
+Operationally:
+- If you solve seams using `seam_costs_afflec.npz`, you are solving on `human` (`v3240`).
+- If you solve seams using `seam_costs_afflec_realshape_edges.npz`, you are solving on `ogre` (`v9438`).
 
 4. Reprojection bridge
    - commands:
