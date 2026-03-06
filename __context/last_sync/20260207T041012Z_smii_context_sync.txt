@@ -1,7 +1,7 @@
 # SeaMeInIt Context Sync
 Generated (UTC): 20260207T041012Z
 Source IDs: /home/c/Documents/code/ITIR-suite/SeaMeInIt/__context/convo_ids.md
-Archive DB: /home/c/Documents/code/ITIR-suite/SeaMeInIt/../chat-export-structurer/my_archive.sqlite
+Archive DB: /home/c/Documents/code/ITIR-suite/SeaMeInIt/~/.chat_archive.sqlite
 
 ---
 Conversation ID: 11a134a7c680f9cd5e4fe9d1be468f8cd21c23fd

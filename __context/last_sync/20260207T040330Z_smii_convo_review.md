@@ -1,7 +1,7 @@
 # SeaMeInIt Conversation Review
 
 Generated (UTC): `2026-02-07T04:03:30Z`  
-Source archive: `../chat-export-structurer/my_archive.sqlite` (local snapshot)
+Source archive: `~/.chat_archive.sqlite` (local snapshot)
 
 ## Scope
 

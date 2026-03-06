@@ -6,7 +6,7 @@ CONVO_FILE="$ROOT_DIR/__context/convo_ids.md"
 OUT_DIR="$ROOT_DIR/__context/last_sync"
 TS_UTC="$(date -u +"%Y%m%dT%H%M%SZ")"
 OUT_FILE="$OUT_DIR/${TS_UTC}_smii_context_sync.txt"
-DB_PATH="${SMII_CHAT_ARCHIVE_DB:-$ROOT_DIR/../chat-export-structurer/my_archive.sqlite}"
+DB_PATH="${SMII_CHAT_ARCHIVE_DB:-$HOME/.chat_archive.sqlite}"
 DB_URI="file:${DB_PATH}?mode=ro&immutable=1"
 
 if [[ ! -f "$CONVO_FILE" ]]; then
