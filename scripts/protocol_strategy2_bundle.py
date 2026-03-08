@@ -51,6 +51,25 @@ def _tag(role: str, vertex_count: int) -> str:
     return f"{safe_role}_v{int(vertex_count)}"
 
 
+def _artifact_entry(
+    *,
+    path: Path | None,
+    artifact_level: str,
+    role: str = "none",
+    topology: str = "none",
+    domain: str = "operator",
+) -> dict[str, str] | None:
+    if path is None:
+        return None
+    return {
+        "path": str(path),
+        "artifact_level": artifact_level,
+        "role": role,
+        "topology": topology,
+        "domain": domain,
+    }
+
+
 def _reproject(
     python: str,
     *,
@@ -152,6 +171,11 @@ def main() -> None:
     parser.add_argument("--rom-seams", type=Path, required=True, help="Seam report solved on ROM mesh.")
     parser.add_argument("--base-costs", type=Path, default=None)
     parser.add_argument("--rom-costs", type=Path, default=None)
+    parser.add_argument("--rom-basis", type=Path, default=None)
+    parser.add_argument("--rom-meta", type=Path, default=None)
+    parser.add_argument("--rom-envelope", type=Path, default=None)
+    parser.add_argument("--rom-certificate", type=Path, default=None)
+    parser.add_argument("--rom-coeff-samples", type=Path, default=None)
     parser.add_argument("--vertex-map", type=Path, default=None, help="Optional NPZ with both map directions.")
     parser.add_argument(
         "--base-role",
@@ -231,6 +255,34 @@ def main() -> None:
     manifests.mkdir(parents=True, exist_ok=True)
     notes.mkdir(parents=True, exist_ok=True)
     maps.mkdir(parents=True, exist_ok=True)
+
+    operator_report_dir: Path | None = None
+    operator_report_index: Path | None = None
+    if args.rom_basis is not None and args.rom_meta is not None:
+        operator_report_dir = bundle / "rom_operator"
+        operator_report_dir.mkdir(parents=True, exist_ok=True)
+        report_cmd = [
+            python,
+            "scripts/render_rom_operator_report.py",
+            "--basis",
+            str(args.rom_basis),
+            "--rom-meta",
+            str(args.rom_meta),
+            "--out-dir",
+            str(operator_report_dir),
+        ]
+        if args.rom_coeff_samples is not None:
+            report_cmd += ["--coeff-samples", str(args.rom_coeff_samples)]
+        if args.rom_envelope is not None:
+            report_cmd += ["--envelope", str(args.rom_envelope)]
+        if args.rom_certificate is not None:
+            report_cmd += ["--certificate", str(args.rom_certificate)]
+        if args.rom_costs is not None:
+            report_cmd += ["--costs", str(args.rom_costs)]
+        if args.rom_mesh is not None:
+            report_cmd += ["--body", str(args.rom_mesh)]
+        _run(report_cmd)
+        operator_report_index = operator_report_dir / "index.html"
 
     # 1) Audit stages (mesh + seam provenance + vertex maps).
     audit_json = manifests / "pipeline_audit.json"
@@ -459,6 +511,11 @@ def main() -> None:
             "vertex_map": str(args.vertex_map) if args.vertex_map is not None else None,
             "base_costs": str(args.base_costs) if args.base_costs is not None else None,
             "rom_costs": str(args.rom_costs) if args.rom_costs is not None else None,
+            "rom_basis": str(args.rom_basis) if args.rom_basis is not None else None,
+            "rom_meta": str(args.rom_meta) if args.rom_meta is not None else None,
+            "rom_envelope": str(args.rom_envelope) if args.rom_envelope is not None else None,
+            "rom_certificate": str(args.rom_certificate) if args.rom_certificate is not None else None,
+            "rom_coeff_samples": str(args.rom_coeff_samples) if args.rom_coeff_samples is not None else None,
             "render_axis_width": axis_width,
             "render_yaw_offset_deg": float(yaw_offset),
             "base_render_rotate_deg": {"x": base_rot[0], "y": base_rot[1], "z": base_rot[2]},
@@ -470,10 +527,88 @@ def main() -> None:
             "rom_with_base": str(rom_with_base),
             "renders_dir": str(renders),
             "maps_dir": str(maps),
+            "rom_operator_report_dir": str(operator_report_dir) if operator_report_dir is not None else None,
+            "rom_operator_report_index": str(operator_report_index) if operator_report_index is not None else None,
         },
+        "artifacts": [
+            entry
+            for entry in [
+                _artifact_entry(path=args.rom_basis, artifact_level="operator"),
+                _artifact_entry(path=args.rom_meta, artifact_level="operator"),
+                _artifact_entry(path=args.rom_envelope, artifact_level="operator"),
+                _artifact_entry(path=args.rom_certificate, artifact_level="operator"),
+                _artifact_entry(path=args.rom_coeff_samples, artifact_level="operator"),
+                _artifact_entry(path=operator_report_index, artifact_level="operator"),
+                _artifact_entry(
+                    path=args.base_mesh,
+                    artifact_level="topology",
+                    role=base_role,
+                    topology=f"v{base_v}",
+                    domain="native",
+                ),
+                _artifact_entry(
+                    path=args.rom_mesh,
+                    artifact_level="topology",
+                    role=rom_role,
+                    topology=f"v{rom_v}",
+                    domain="native",
+                ),
+                _artifact_entry(
+                    path=args.base_seams,
+                    artifact_level="topology",
+                    role=base_role,
+                    topology=f"v{base_v}",
+                    domain="native",
+                ),
+                _artifact_entry(
+                    path=args.rom_seams,
+                    artifact_level="topology",
+                    role=rom_role,
+                    topology=f"v{rom_v}",
+                    domain="native",
+                ),
+                _artifact_entry(
+                    path=base_with_rom,
+                    artifact_level="topology",
+                    role=base_role,
+                    topology=f"v{base_v}",
+                    domain=f"reprojected_from_{rom_tag}",
+                ),
+                _artifact_entry(
+                    path=rom_with_base,
+                    artifact_level="topology",
+                    role=rom_role,
+                    topology=f"v{rom_v}",
+                    domain=f"reprojected_from_{base_tag}",
+                ),
+                _artifact_entry(
+                    path=args.base_costs,
+                    artifact_level="topology",
+                    role=base_role,
+                    topology=f"v{base_v}",
+                    domain="native",
+                ),
+                _artifact_entry(
+                    path=args.rom_costs,
+                    artifact_level="topology",
+                    role=rom_role,
+                    topology=f"v{rom_v}",
+                    domain="native",
+                ),
+                _artifact_entry(
+                    path=args.vertex_map,
+                    artifact_level="topology",
+                    role="none",
+                    topology="none",
+                    domain=f"map_{rom_tag}_to_{base_tag}",
+                ),
+            ]
+            if entry is not None
+        ],
         "notes": {
             "protocol": "Render ROM native + reprojected (Strategy 2). "
             "Do not assume vertex maps are invertible unless topology is identical.",
+            "artifact_levels": "operator = basis/coefficients/envelopes/certificates/report; topology = mesh/cost/seam/render/reprojection artifacts.",
         },
     }
     (manifests / "protocol_strategy2.json").write_text(

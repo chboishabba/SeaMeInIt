@@ -32,6 +32,22 @@ def test_kernel_projector_single_and_batch():
     np.testing.assert_allclose(batch[:, 0], np.array([1.0, 0.0, 1.0]))
     np.testing.assert_allclose(batch[:, 1], np.array([0.5, 2.0, 1.5]))
 
+    encoded = projector.encode(single)
+    np.testing.assert_allclose(encoded, np.array([4.0, 11.0]))
+
+    encoded_batch = projector.encode_batch(batch)
+    np.testing.assert_allclose(encoded_batch, np.array([[2.0, 2.0], [1.0, 5.5]]))
+
+
+def test_kernel_projector_encode_round_trip_for_orthonormal_basis():
+    basis = KernelBasis.from_arrays(np.eye(3))
+    projector = KernelProjector(basis)
+
+    coeffs = np.array([0.2, -0.5, 1.1], dtype=float)
+    field = projector.project(coeffs)
+    recovered = projector.encode(field)
+    np.testing.assert_allclose(recovered, coeffs)
+
 
 def test_load_basis_round_trip(tmp_path):
     basis = np.eye(2)

@@ -135,3 +135,32 @@ class KernelProjector:
         """Project multiple named coefficient vectors."""
 
         return {name: self.project(vector) for name, vector in coeffs.items()}
+
+    def encode(self, field: ArrayLike) -> np.ndarray:
+        """Encode a body field back into coefficient space.
+
+        The canonical basis emitted by this repo is QR-orthonormalized, so the
+        inverse projection is a simple transpose projection.
+        """
+
+        arr = np.asarray(field, dtype=float)
+        if arr.ndim != 1:
+            raise ValueError("Field vector must be 1-D.")
+        if arr.shape[0] != self.vertex_count:
+            raise ValueError(
+                f"Field length {arr.shape[0]} does not match basis vertices {self.vertex_count}."
+            )
+        return self.basis.matrix.T @ arr
+
+    def encode_batch(self, fields: ArrayLike) -> np.ndarray:
+        """Encode a batch of body fields shaped (N_vertices, batch)."""
+
+        arr = np.asarray(fields, dtype=float)
+        if arr.ndim != 2:
+            raise ValueError("Batch fields must be 2-D (N_vertices, batch).")
+        if arr.shape[0] != self.vertex_count:
+            raise ValueError(
+                f"Batch field vertex dimension {arr.shape[0]} does not match basis vertices "
+                f"{self.vertex_count}."
+            )
+        return self.basis.matrix.T @ arr

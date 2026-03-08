@@ -10,12 +10,13 @@ import subprocess
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping, MutableMapping, Sequence
+from typing import Any, Mapping, MutableMapping, MutableSequence, Sequence
 
 import numpy as np
 
 from smii.meshing import load_body_record
 from smii.pipelines.fit_from_images import SMPLX_BODY_JOINTS
+from smii.rom.basis import KernelProjector, load_basis
 from smii.rom.completeness import build_envelope, compare_envelopes, spearman_rank
 from smii.rom.pose_legality import LegalityConfig
 from smii.rom.seam_costs import SeamCostField, save_seam_cost_field
@@ -412,6 +413,7 @@ def _stream_diagonal_costs(
     weights: np.ndarray,
     fd_step: float,
     epsilon: float,
+    sample_field_sink: MutableSequence[dict[str, Any]] | None = None,
 ) -> tuple[np.ndarray, dict[str, Any], list[dict[str, float]], list[Mapping[str, Any]], np.ndarray]:
     v0 = backend.evaluate(neutral_pose)
     vertex_count = v0.shape[0]
@@ -474,7 +476,8 @@ def _stream_diagonal_costs(
             except Exception as exc:  # pragma: no cover - defensive
                 meta["legality_runtime_error"] = str(exc)
 
-        costs += float(sample.weight) * chain_factor * q
+        weighted_field = chain_factor * q
+        costs += float(sample.weight) * weighted_field
         pose_stats.append(
             {
                 "pose_id": sample.pose_id,
@@ -485,6 +488,15 @@ def _stream_diagonal_costs(
             }
         )
         pose_metadata.append(meta)
+        if sample_field_sink is not None:
+            sample_field_sink.append(
+                {
+                    "pose_id": sample.pose_id,
+                    "weight": float(sample.weight),
+                    "field": np.asarray(weighted_field, dtype=float),
+                    "metadata": dict(meta),
+                }
+            )
 
     call_counts["total"] = call_counts["base"] + call_counts["fd"]
     return costs, call_counts, pose_stats, pose_metadata, v0
@@ -757,6 +769,64 @@ def _save_meta(
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
+def _save_coeff_samples(
+    path: Path,
+    *,
+    projector: KernelProjector,
+    sampled_fields: Sequence[Mapping[str, Any]],
+    basis_path: Path,
+    body_path: Path,
+    body_hash: str,
+    weights_hash: str,
+    source_vertex_count: int,
+    target_vertex_count: int,
+    params_path: Path,
+    sweep_path: Path | None,
+    schedule_path: Path | None,
+    fd_step: float,
+    mapping_info: Mapping[str, Any],
+    git_commit: str | None,
+) -> None:
+    samples_payload: list[dict[str, Any]] = []
+    for entry in sampled_fields:
+        field = np.asarray(entry["field"], dtype=float).reshape(-1)
+        coeffs = projector.encode(field)
+        samples_payload.append(
+            {
+                "pose_id": str(entry["pose_id"]),
+                "weight": float(entry["weight"]),
+                "coeffs": {"seam_sensitivity": coeffs.tolist()},
+                "observations": None,
+                "metadata": dict(entry.get("metadata") or {}),
+            }
+        )
+
+    payload = {
+        "meta": {
+            "synthetic": False,
+            "field_name": "seam_sensitivity",
+            "basis_path": str(basis_path),
+            "basis_hash": _sha256_path(basis_path),
+            "basis_vertex_count": int(projector.vertex_count),
+            "basis_component_count": int(projector.component_count),
+            "body_path": str(body_path),
+            "body_hash": body_hash,
+            "params_path": str(params_path),
+            "weights_hash": weights_hash,
+            "source_vertex_count": int(source_vertex_count),
+            "target_vertex_count": int(target_vertex_count),
+            "fd_step": float(fd_step),
+            "mapping": dict(mapping_info),
+            "git_commit": git_commit,
+            "sweep_path": str(sweep_path) if sweep_path else None,
+            "schedule_path": str(schedule_path) if schedule_path else None,
+        },
+        "samples": samples_payload,
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
 def _build_seam_cost_field(
     costs: np.ndarray, *, samples_used: int, fd_step: float
 ) -> SeamCostField:
@@ -820,6 +890,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=Path,
         default=Path("outputs/rom/afflec_rom_run.json"),
         help="Output JSON for sampler provenance.",
+    )
+    parser.add_argument(
+        "--basis",
+        type=Path,
+        default=None,
+        help="Optional canonical basis NPZ used for coefficient export/reporting.",
+    )
+    parser.add_argument(
+        "--out-coeff-samples",
+        type=Path,
+        default=None,
+        help="Optional JSON export of per-pose operator coefficients derived from the sampled sensitivity fields.",
     )
     parser.add_argument(
         "--vertex-map",
@@ -913,7 +995,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=0.25,
         help="Amplification factor applied when multiple axes/joints are active in a sample (chain-aware weighting).",
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.out_coeff_samples is not None and args.basis is None:
+        raise ValueError("--basis is required when using --out-coeff-samples.")
+    return args
 
 
 def main(argv: Sequence[str] | None = None) -> None:
@@ -998,6 +1083,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             )
         )
 
+    sampled_fields: list[dict[str, Any]] = []
     costs, call_counts, pose_stats, pose_metadata, neutral_vertices = _stream_diagonal_costs(
         backend,
         neutral_pose=neutral_pose,
@@ -1006,6 +1092,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         weights=weights,
         fd_step=args.fd_step,
         epsilon=args.epsilon,
+        sample_field_sink=sampled_fields if args.out_coeff_samples is not None else None,
     )
 
     source_vertex_count = len(costs)
@@ -1026,6 +1113,11 @@ def main(argv: Sequence[str] | None = None) -> None:
     )
     mapping_info = dict(mapping_info)
     target_vertex_count = len(costs)
+    sweep_hash = _sha256_path(sweep_path) if sweep_path else None
+    schedule_hash = _sha256_path(schedule_path) if schedule_path else None
+    weights_hash = _sha256_path(weights_path)
+    body_hash = _sha256_array(vertices)
+    git_commit = _git_commit()
     if mapping_info.get("mode") != "identity":
         print(
             f"Mapped costs from source vertex count {source_vertex_count} to target {target_vertex_count} "
@@ -1048,15 +1140,56 @@ def main(argv: Sequence[str] | None = None) -> None:
         mapping_info["correspondence_meta"] = dict(correspondence_meta)
         print(f"Wrote transform-native correspondence to {args.out_correspondence}")
 
+    if args.out_coeff_samples is not None:
+        basis = load_basis(args.basis)
+        projector = KernelProjector(basis)
+        if projector.vertex_count != target_vertex_count:
+            raise ValueError(
+                f"Basis vertex count {projector.vertex_count} does not match sampled field vertex count "
+                f"{target_vertex_count}."
+            )
+        remapped_fields: list[dict[str, Any]] = []
+        for entry in sampled_fields:
+            field = np.asarray(entry["field"], dtype=float)
+            remapped_field, _ = _remap_costs(
+                field,
+                neutral_vertices,
+                vertices,
+                policy=args.vertex_map,
+                max_distance=args.max_map_distance,
+                target_to_source_mapping=target_to_source_mapping,
+                target_to_source_distances=target_to_source_distances,
+            )
+            remapped_fields.append(
+                {
+                    "pose_id": entry["pose_id"],
+                    "weight": entry["weight"],
+                    "field": remapped_field,
+                    "metadata": entry.get("metadata"),
+                }
+            )
+        _save_coeff_samples(
+            args.out_coeff_samples,
+            projector=projector,
+            sampled_fields=remapped_fields,
+            basis_path=args.basis,
+            body_path=body_path,
+            body_hash=body_hash,
+            weights_hash=weights_hash,
+            source_vertex_count=source_vertex_count,
+            target_vertex_count=target_vertex_count,
+            params_path=params_path,
+            sweep_path=sweep_path,
+            schedule_path=schedule_path,
+            fd_step=args.fd_step,
+            mapping_info=mapping_info,
+            git_commit=git_commit,
+        )
+        print(f"Wrote coefficient samples to {args.out_coeff_samples}")
+
     samples_used = len(pose_stats)
     cost_field = _build_seam_cost_field(costs, samples_used=samples_used, fd_step=args.fd_step)
     save_seam_cost_field(cost_field, args.out_costs)
-
-    sweep_hash = _sha256_path(sweep_path) if sweep_path else None
-    schedule_hash = _sha256_path(schedule_path) if schedule_path else None
-    weights_hash = _sha256_path(weights_path)
-    body_hash = _sha256_array(vertices)
-    git_commit = _git_commit()
     _save_meta(
         args.out_meta,
         pose_ids=[stat["pose_id"] for stat in pose_stats],

@@ -1,5 +1,14 @@
 ## Unreleased
 
+- Added operator-level ROM inspection artifacts and reporting:
+  - `smii.rom.basis.KernelProjector` now supports field->coefficient encoding (`encode`, `encode_batch`) for orthonormal bases,
+  - `smii.rom.sampler_real` accepts `--basis` + `--out-coeff-samples` and exports per-pose `seam_sensitivity` coefficient samples alongside existing seam-cost outputs,
+  - new `scripts/render_rom_operator_report.py` renders a static `index.html` plus JSON/PNG summaries from basis/meta/coeff/certificate artifacts,
+  - the ROM operator report now explicitly flags basis/body/cost/meta topology mismatches via `consistency_status` and `consistency_flags`, and labels topology-level artifacts using their own vertex counts rather than inheriting the basis topology.
+- Extended Strategy 2 bundle manifests to classify artifact semantics:
+  - `scripts/protocol_strategy2_bundle.py` accepts optional ROM operator inputs (`--rom-basis`, `--rom-meta`, `--rom-envelope`, `--rom-certificate`, `--rom-coeff-samples`),
+  - bundle manifests now include per-artifact `artifact_level`, `role`, `topology`, and `domain`,
+  - when basis + meta are provided, the bundle renders an operator report under `rom_operator/`.
 - Clarified ROM/operator vs topology/domain semantics in docs and planning:
   - `docs/mesh_provenance_afflec.md` now states explicitly that `ogre` is a working topology/provenance label for the `v9438` branch, not "the ROM invariant",
   - `docs/seam_pipeline_intended_vs_observed.md` now separates operator-level ROM inspection from mesh-orbit artifacts,

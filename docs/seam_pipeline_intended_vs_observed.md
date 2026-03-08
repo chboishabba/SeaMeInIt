@@ -89,6 +89,9 @@ Additional clarification (2026-03-09):
 - `ogre`/`human` are current domain/provenance labels for artifact families.
 - If users want to inspect the ROM object itself, that requires operator-level
   artifacts (basis/coefficients/certificates), not mesh orbits.
+- `scripts/render_rom_operator_report.py` is now the default operator-level
+  inspection surface; Strategy 2 bundles may include it under `rom_operator/`
+  when ROM basis + meta inputs are provided.
 
 Important naming caveat:
 - Run labels like `A_base` and `B_ogre` are workflow labels, not morphology

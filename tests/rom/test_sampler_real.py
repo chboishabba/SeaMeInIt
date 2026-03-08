@@ -1,16 +1,21 @@
+import json
+
 import numpy as np
 import pytest
 
+from smii.rom.basis import KernelBasis, KernelProjector
 from smii.rom.sampler_real import (
     ParameterBlock,
     ParameterLayout,
     PoseSample,
+    _save_coeff_samples,
     _load_smplx_parameter_payload,
     _expand_weight_block,
     _nearest_neighbor_map,
     _remap_costs,
     _save_vertex_correspondence,
     _stream_diagonal_costs,
+    parse_args,
 )
 
 
@@ -147,3 +152,52 @@ def test_load_smplx_parameter_payload_decodes_parameter_list():
     assert tuple(params.keys()) == ("betas", "body_pose")
     assert params["betas"].shape == (1, 3)
     assert params["body_pose"].shape == (1, 3)
+
+
+def test_parse_args_requires_basis_for_coeff_export():
+    with pytest.raises(ValueError, match="--basis is required"):
+        parse_args(["--body", "body.npz", "--poses", "poses.json", "--weights", "weights.json", "--out-coeff-samples", "coeffs.json"])
+
+
+def test_save_coeff_samples_exports_operator_payload(tmp_path):
+    basis_path = tmp_path / "basis.npz"
+    basis = KernelBasis.from_arrays(np.eye(2), vertices=np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]))
+    np.savez_compressed(
+        basis_path,
+        basis=basis.matrix,
+        vertices=basis.vertices,
+        meta={"source_mesh": "demo", "normalization": "qr-orthonormalized"},
+    )
+    projector = KernelProjector(basis)
+    out = tmp_path / "coeff_samples.json"
+
+    _save_coeff_samples(
+        out,
+        projector=projector,
+        sampled_fields=(
+            {
+                "pose_id": "pose_a",
+                "weight": 1.0,
+                "field": np.array([0.5, 1.5], dtype=float),
+                "metadata": {"source": "test"},
+            },
+        ),
+        basis_path=basis_path,
+        body_path=tmp_path / "body.npz",
+        body_hash="bodyhash",
+        weights_hash="weightshash",
+        source_vertex_count=2,
+        target_vertex_count=2,
+        params_path=tmp_path / "params.json",
+        sweep_path=None,
+        schedule_path=None,
+        fd_step=1e-3,
+        mapping_info={"mode": "identity"},
+        git_commit="abc123",
+    )
+
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload["meta"]["field_name"] == "seam_sensitivity"
+    assert payload["meta"]["basis_component_count"] == 2
+    assert payload["samples"][0]["pose_id"] == "pose_a"
+    assert payload["samples"][0]["coeffs"]["seam_sensitivity"] == [0.5, 1.5]

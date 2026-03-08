@@ -115,6 +115,33 @@ this repo also include `9438`-vertex artifacts).
 `--out` can optionally emit an audit sampler JSON summarising the pose sweep and
 call counts alongside the direct seam costs.
 
+## Operator inspection outputs
+
+The sampler can now emit operator-level coefficient artifacts in addition to the
+topology-bound seam-cost NPZ:
+
+```bash
+PYTHONPATH=src python -m smii.rom.sampler_real \
+  --body outputs/afflec_demo/afflec_body.npz \
+  --weights data/rom/joint_weights.json \
+  --schedule data/rom/sweep_schedule.yaml \
+  --basis outputs/rom/afflec_canonical_basis.npz \
+  --out-coeff-samples outputs/rom/afflec_coeff_samples.json \
+  --out-envelope outputs/rom/afflec_envelope.json \
+  --out-certificate outputs/rom/afflec_rom_certificate.json \
+  --out-costs outputs/rom/seam_costs_afflec.npz \
+  --out-meta outputs/rom/afflec_rom_run.json
+```
+
+Notes:
+
+- `--basis` is required when using `--out-coeff-samples`.
+- The current exported coefficient field is `seam_sensitivity`.
+- Coefficients are derived from the same per-pose finite-difference sensitivity
+  field used to accumulate seam costs, encoded against the orthonormal basis.
+- `afflec_coeff_samples.json` is an operator-level artifact; the seam-cost NPZ
+  remains a topology-level projection.
+
 If the SMPL-X template vertex count differs from the body mesh (e.g., 10,475 →
 3,240), the sampler deterministically remaps costs to the body vertices via a
 nearest-neighbour map in the neutral pose and records the mapping statistics in
@@ -125,6 +152,35 @@ bidirectional correspondence artifact (`source_to_target` and
 `target_to_source` index arrays with distances). This is the transform-native
 map emitted during ogre generation, so downstream reprojection can reuse it
 instead of re-deriving NN maps from scratch.
+
+To inspect the ROM object directly, use the standalone report generator:
+
+```bash
+PYTHONPATH=src python scripts/render_rom_operator_report.py \
+  --basis outputs/rom/afflec_canonical_basis.npz \
+  --rom-meta outputs/rom/afflec_rom_run.json \
+  --coeff-samples outputs/rom/afflec_coeff_samples.json \
+  --envelope outputs/rom/afflec_envelope.json \
+  --certificate outputs/rom/afflec_rom_certificate.json \
+  --costs outputs/rom/seam_costs_afflec.npz \
+  --body outputs/afflec_demo/afflec_body.npz \
+  --out-dir outputs/rom/operator_report
+```
+
+This produces a static HTML report plus adjacent JSON/PNG artifacts and is the
+preferred answer to "show me the ROM invariant" in the current repo.
+
+The report now performs an explicit consistency check across:
+
+- basis vertex count,
+- ROM meta vertex count,
+- optional body mesh vertex count,
+- optional seam-cost vertex count.
+
+If these disagree, the report marks `consistency_status = WARN` and records
+human-readable mismatch flags in `report_manifest.json`. It does not fail hard:
+the goal is to keep historical artifact inspection possible while making the
+mismatch impossible to miss.
 
 ## Mapping policy and seam graph gaps
 

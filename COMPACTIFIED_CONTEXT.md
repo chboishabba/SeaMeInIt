@@ -73,3 +73,17 @@ Date: 2026-02-06
 - Follow-through required in repo docs/TODO:
   - document "operator-level ROM vs domain-level artifacts" explicitly,
   - add an inspectable ROM artifact path so users can view the ROM object without relying on `ogre` renders.
+
+## ROM Operator Reporting (2026-03-09)
+- Implemented operator-level coefficient export in `smii.rom.sampler_real`:
+  - new optional inputs/outputs: `--basis` and `--out-coeff-samples`
+  - current exported field name is `seam_sensitivity`
+  - coefficients are derived by encoding the sampled per-pose sensitivity field against the orthonormal basis
+- Added static operator report CLI:
+  - `scripts/render_rom_operator_report.py`
+  - inputs: basis + ROM meta, optional coeff samples/envelope/certificate/costs/body
+  - outputs: `index.html`, `report_manifest.json`, `coeff_summary.json`, PNG diagnostics
+- Strategy 2 bundles can now include operator artifacts explicitly:
+  - optional ROM inputs on `scripts/protocol_strategy2_bundle.py`
+  - manifest entries now declare `artifact_level`, `role`, `topology`, and `domain`
+  - bundle can render a ROM operator report under `rom_operator/` when basis + meta are supplied
