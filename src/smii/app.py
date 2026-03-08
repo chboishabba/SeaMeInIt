@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from importlib import util as importlib_util
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Any, Iterable, Sequence
 
 import json
 import numpy as np
@@ -192,6 +192,57 @@ def _infer_subject_id(images: Sequence[Path]) -> str:
     return "image_fit"
 
 
+def _fit_payload_metadata(
+    *,
+    images: Sequence[Path],
+    detector: str,
+    fit_mode: str,
+    measurement_source: str,
+    refinement_applied: bool,
+    trust_level: str,
+    consistency_status: str,
+    consistency_flags: Sequence[str],
+    diagnostics_path: Path | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "images_used": [str(path) for path in images],
+        "detector": detector,
+        "fit_mode": fit_mode,
+        "measurement_source": measurement_source,
+        "refinement_applied": bool(refinement_applied),
+        "trust_level": trust_level,
+        "consistency_status": consistency_status,
+        "consistency_flags": list(consistency_flags),
+    }
+    if diagnostics_path is not None:
+        payload["diagnostics_path"] = str(diagnostics_path)
+    return payload
+
+
+def _merge_payload_metadata(payload: dict[str, Any], metadata: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(payload)
+    merged.update(metadata)
+    return merged
+
+
+def _enforce_fit_quality(
+    *,
+    detector: str,
+    trust_level: str,
+    consistency_status: str,
+    consistency_flags: Sequence[str],
+    require_high_trust_detector: bool,
+    fail_on_consistency_errors: bool,
+) -> None:
+    if require_high_trust_detector and detector != "mediapipe":
+        raise ValueError(
+            "High-trust detector mode requires --detector mediapipe; bbox is only a coarse fallback."
+        )
+    if fail_on_consistency_errors and consistency_status == "FAIL":
+        flags = ", ".join(consistency_flags) if consistency_flags else "unknown"
+        raise ValueError(f"Image-fit consistency checks failed: {flags}")
+
+
 def run_afflec_fixture_demo(
     *,
     images: Iterable[Path] | None = None,
@@ -201,6 +252,9 @@ def run_afflec_fixture_demo(
     force: bool = False,
     clean_output: bool = False,
     detector: str = "bbox",
+    refine_with_measurements: bool = True,
+    require_high_trust_detector: bool = False,
+    fail_on_consistency_errors: bool = False,
 ) -> Path:
     """Fit SMPL family parameters from the tongue-in-cheek Ben Afflec fixtures."""
 
@@ -209,10 +263,16 @@ def run_afflec_fixture_demo(
             "jsonschema is required for Afflec measurement fitting. Install the 'jsonschema' dependency."
         )
 
-    from smii.pipelines import fit_smplx_from_images
+    from smii.pipelines import (
+        build_fit_diagnostics_report,
+        regress_smplx_from_images,
+        save_fit_diagnostics_report,
+        save_regression_json,
+    )
     from smii.pipelines.fit_from_measurements import (
         BodyMeshOutput,
         create_body_mesh,
+        fit_smplx_from_measurements,
         generate_vertices_from_smplx_parameters,
         load_smplx_parameter_payload,
         plot_measurement_report,
@@ -257,7 +317,56 @@ def run_afflec_fixture_demo(
 
     print(f"Writing new artifacts to {target_dir}")
     print("Regressing SMPL-X parameters from the Ben Afflec fixtures...")
-    result = fit_smplx_from_images(image_paths, detector=detector)
+    regression = regress_smplx_from_images(
+        image_paths,
+        detector=detector,
+        refine_with_measurements=refine_with_measurements,
+    )
+
+    _enforce_fit_quality(
+        detector=detector,
+        trust_level=regression.trust_level,
+        consistency_status=regression.consistency_status,
+        consistency_flags=regression.consistency_flags,
+        require_high_trust_detector=require_high_trust_detector,
+        fail_on_consistency_errors=fail_on_consistency_errors,
+    )
+
+    diagnostics_report = build_fit_diagnostics_report(regression)
+    diagnostics_path = target_dir / "afflec_fit_diagnostics.json"
+    save_fit_diagnostics_report(regression, diagnostics_path)
+    print(f"Saved image-fit diagnostics to {diagnostics_path}")
+
+    raw_regression_path = target_dir / "afflec_raw_regression.json"
+    save_regression_json(regression, raw_regression_path)
+    print(f"Saved raw regression payload to {raw_regression_path}")
+
+    if regression.measurement_fit is not None:
+        result = regression.measurement_fit
+    else:
+        result = fit_smplx_from_measurements(regression.measurements)
+
+    payload_metadata = _fit_payload_metadata(
+        images=image_paths,
+        detector=detector,
+        fit_mode=regression.fit_mode,
+        measurement_source=regression.measurement_source,
+        refinement_applied=regression.measurement_fit is not None,
+        trust_level=regression.trust_level,
+        consistency_status=regression.consistency_status,
+        consistency_flags=regression.consistency_flags,
+        diagnostics_path=diagnostics_path,
+    )
+    result = replace(
+        result,
+        provenance=payload_metadata,
+        raw_measurements={name: float(value) for name, value in regression.measurements.items()},
+        fit_mode=regression.fit_mode,
+        trust_level=regression.trust_level,
+        consistency_status=regression.consistency_status,
+        consistency_flags=regression.consistency_flags,
+        diagnostics=diagnostics_report["summary"],
+    )
 
     output_path = target_dir / "afflec_measurement_fit.json"
     save_fit(result, output_path)
@@ -284,6 +393,7 @@ def run_afflec_fixture_demo(
         ) from exc
     if isinstance(mesh_output, BodyMeshOutput):
         assert parameters_payload is not None  # for type-checkers
+        parameters_payload = _merge_payload_metadata(parameters_payload, payload_metadata)
         with params_path.open("w", encoding="utf-8") as stream:
             json.dump(parameters_payload, stream, indent=2)
         print(f"Saved SMPL-X parameter payload to {params_path}")
@@ -321,6 +431,11 @@ def run_afflec_fixture_demo(
     plot_path = plot_measurement_report(result, target_dir)
     if plot_path is not None:
         print(f"Generated measurement report plot at {plot_path}")
+    if regression.consistency_status != "PASS":
+        print(
+            "Image-fit diagnostics status: "
+            f"{regression.consistency_status} ({', '.join(regression.consistency_flags)})"
+        )
     return output_path
 
 
@@ -334,6 +449,8 @@ def run_image_fitting_pipeline(
     gender: str = "neutral",
     detector: str = "mediapipe",
     refine_with_measurements: bool = True,
+    require_high_trust_detector: bool = False,
+    fail_on_consistency_errors: bool = False,
 ) -> Path:
     """Run the image-based SMPL-X regression pipeline."""
 
@@ -348,7 +465,9 @@ def run_image_fitting_pipeline(
     target_dir.mkdir(parents=True, exist_ok=True)
 
     from smii.pipelines import (
+        build_fit_diagnostics_report,
         regress_smplx_from_images,
+        save_fit_diagnostics_report,
         save_regression_json,
         save_regression_mesh,
     )
@@ -360,8 +479,39 @@ def run_image_fitting_pipeline(
         refine_with_measurements=refine_with_measurements,
     )
 
+    _enforce_fit_quality(
+        detector=detector,
+        trust_level=result.trust_level,
+        consistency_status=result.consistency_status,
+        consistency_flags=result.consistency_flags,
+        require_high_trust_detector=require_high_trust_detector,
+        fail_on_consistency_errors=fail_on_consistency_errors,
+    )
+
+    diagnostics_path = target_dir / f"{subject}_fit_diagnostics.json"
+    save_fit_diagnostics_report(result, diagnostics_path)
+    print(f"Saved image-fit diagnostics to {diagnostics_path}")
+
+    raw_json_path = target_dir / f"{subject}_regression_raw.json"
+    save_regression_json(result, raw_json_path)
+    print(f"Saved raw regression parameters to {raw_json_path}")
+
     json_path = target_dir / f"{subject}_smplx_params.json"
-    save_regression_json(result, json_path)
+    regression_payload = _merge_payload_metadata(
+        result.to_dict(),
+        _fit_payload_metadata(
+            images=image_list,
+            detector=detector,
+            fit_mode=result.fit_mode,
+            measurement_source=result.measurement_source,
+            refinement_applied=result.measurement_fit is not None,
+            trust_level=result.trust_level,
+            consistency_status=result.consistency_status,
+            consistency_flags=result.consistency_flags,
+            diagnostics_path=diagnostics_path,
+        ),
+    )
+    json_path.write_text(json.dumps(regression_payload, indent=2), encoding="utf-8")
     print(f"Saved regression parameters to {json_path}")
 
     assets_root = Path(model_assets) if model_assets is not None else Path("assets") / model_backend
@@ -389,6 +539,11 @@ def run_image_fitting_pipeline(
         print(
             "Measurement refinement coverage: "
             f"{coverage:.0%} of manual metrics constrained"
+        )
+    if result.consistency_status != "PASS":
+        print(
+            "Image-fit diagnostics status: "
+            f"{result.consistency_status} ({', '.join(result.consistency_flags)})"
         )
 
     return json_path
@@ -462,6 +617,21 @@ def build_cli(argv: Sequence[str] | None = None) -> int:
         default="bbox",
         help="Landmark detector to use. 'bbox' is fast/embedded; 'mediapipe' requires the vision extra.",
     )
+    afflec.add_argument(
+        "--skip-measurement-refinement",
+        action="store_true",
+        help="Keep the raw image-regressed shape instead of applying measurement-model refinement.",
+    )
+    afflec.add_argument(
+        "--require-high-trust-detector",
+        action="store_true",
+        help="Fail unless the run uses the higher-trust mediapipe detector path.",
+    )
+    afflec.add_argument(
+        "--fail-on-consistency-errors",
+        action="store_true",
+        help="Fail when image-fit diagnostics report a FAIL status.",
+    )
 
     fit_from_images = subparsers.add_parser(
         "fit-from-images",
@@ -512,6 +682,16 @@ def build_cli(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Disable measurement-model refinement of the regressed betas.",
     )
+    fit_from_images.add_argument(
+        "--require-high-trust-detector",
+        action="store_true",
+        help="Fail unless the run uses the higher-trust mediapipe detector path.",
+    )
+    fit_from_images.add_argument(
+        "--fail-on-consistency-errors",
+        action="store_true",
+        help="Fail when image-fit diagnostics report a FAIL status.",
+    )
 
     args = parser.parse_args(argv)
 
@@ -534,6 +714,9 @@ def build_cli(argv: Sequence[str] | None = None) -> int:
             force=args.force,
             clean_output=args.clean_output,
             detector=args.detector,
+            refine_with_measurements=not args.skip_measurement_refinement,
+            require_high_trust_detector=args.require_high_trust_detector,
+            fail_on_consistency_errors=args.fail_on_consistency_errors,
         )
         return 0
 
@@ -547,6 +730,8 @@ def build_cli(argv: Sequence[str] | None = None) -> int:
             gender=args.gender,
             detector=args.detector,
             refine_with_measurements=not args.skip_measurement_refinement,
+            require_high_trust_detector=args.require_high_trust_detector,
+            fail_on_consistency_errors=args.fail_on_consistency_errors,
         )
         return 0
 

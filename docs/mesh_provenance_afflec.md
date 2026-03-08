@@ -89,7 +89,34 @@ metadata.
 Treat **hash + vertex/face counts** as authoritative provenance, not path
 strings.
 
-## Current scale anomaly (afflec-demo)
+## Fit provenance and diagnostics (current contract)
+
+The Afflec image-fit stage now emits three distinct artifacts under the body
+output root:
+
+- `afflec_raw_regression.json`:
+  raw image-regressed pose/shape estimates plus `images_used`, `detector`,
+  trust status, and per-view confidence/measurement summaries.
+- `afflec_measurement_fit.json`:
+  measurement-model refinement output, now linked back to the raw regression via
+  provenance fields and raw measurements.
+- `afflec_fit_diagnostics.json`:
+  canonical audit artifact for deciding whether the run is merely
+  "photo-driven" or numerically credible.
+
+The diagnostics status should be interpreted as:
+
+- `PASS`: numerically plausible and detector path is not obviously degraded.
+- `WARN`: usable for debugging, but not trustworthy as a calibrated baseline.
+- `FAIL`: do not treat the emitted body as a credible anthropometric fit.
+
+Important:
+- `bbox` is retained as a coarse fallback and is expected to emit at least a
+  `WARN` status in many cases.
+- `mediapipe` remains the preferred path when a higher-trust body estimate is
+  required.
+
+## Historical scale anomaly (afflec-demo)
 
 As of 2026-02-13, the local `outputs/afflec_demo/afflec_smplx_params.json`
 contains `scale ≈ 0.0073`, which produces a **centimeter-scale** mesh in
@@ -101,6 +128,9 @@ This is consistent with the fixture/demo nature of the pipeline, but it means:
   meters unless validated per-run, and
 - do not use the filename `afflec_body` as evidence it represents a physically
   sized “Ben baseline”.
+
+Newer runs should be judged from `afflec_fit_diagnostics.json` first, not by
+comparing against that historical anomaly in isolation.
 
 ## Provenance map (current local artifacts)
 

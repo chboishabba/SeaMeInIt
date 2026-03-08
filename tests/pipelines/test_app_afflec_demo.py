@@ -53,15 +53,39 @@ def test_afflec_demo_announces_plot(monkeypatch: pytest.MonkeyPatch, tmp_path: P
 
     measurements = {"height": 170.0, "chest_circumference": 95.5}
 
-    def fake_fit(images, **kwargs):
+    def fake_regress(images, **kwargs):
         called["images"] = tuple(images)
         called["fit_kwargs"] = kwargs
-        return _fake_result(measurements)
+        fit_result = _fake_result(measurements)
+        return SimpleNamespace(
+            measurement_fit=fit_result,
+            trust_level="coarse",
+            consistency_status="WARN",
+            consistency_flags=("detector:bbox_coarse_fallback",),
+            fit_mode="image_regression_plus_measurement_refinement",
+            measurement_source="raw_image_features",
+            measurements=measurements,
+            to_dict=lambda: {"betas": [0.0] * 10},
+        )
 
     def fake_save(result: FitResult, output_path: Path) -> None:
         called["save_path"] = output_path
+        called["saved_result"] = result
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(result.to_dict()), encoding="utf-8")
+
+    def fake_save_regression_json(result, output_path: Path) -> None:
+        called["raw_path"] = output_path
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text("{}", encoding="utf-8")
+
+    def fake_save_diagnostics(result, output_path: Path) -> None:
+        called["diagnostics_path"] = output_path
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text("{}", encoding="utf-8")
+
+    def fake_build_diagnostics(result) -> dict[str, object]:
+        return {"summary": {"consistency_status": "WARN"}}
 
     def fake_plot(result: FitResult, output_dir: Path) -> Path:
         called["plot_dir"] = output_dir
@@ -136,7 +160,10 @@ def test_afflec_demo_announces_plot(monkeypatch: pytest.MonkeyPatch, tmp_path: P
             vertices = self._base_vertices + transl.reshape(1, 3)
             return _DummyTensor(vertices[np.newaxis, ...])
 
-    monkeypatch.setattr("smii.pipelines.fit_smplx_from_images", fake_fit)
+    monkeypatch.setattr("smii.pipelines.regress_smplx_from_images", fake_regress)
+    monkeypatch.setattr("smii.pipelines.save_regression_json", fake_save_regression_json)
+    monkeypatch.setattr("smii.pipelines.save_fit_diagnostics_report", fake_save_diagnostics)
+    monkeypatch.setattr("smii.pipelines.build_fit_diagnostics_report", fake_build_diagnostics)
     monkeypatch.setattr("smii.pipelines.fit_from_measurements.save_fit", fake_save)
     monkeypatch.setattr("smii.pipelines.fit_from_measurements.plot_measurement_report", fake_plot)
 
@@ -165,8 +192,10 @@ def test_afflec_demo_announces_plot(monkeypatch: pytest.MonkeyPatch, tmp_path: P
 
     assert result_path == output_dir / "afflec_measurement_fit.json"
     assert called["images"] == tuple(images)
-    assert called["fit_kwargs"] == {"detector": "bbox"}
+    assert called["fit_kwargs"] == {"detector": "bbox", "refine_with_measurements": True}
     assert called["save_path"] == result_path
+    assert called["raw_path"] == output_dir / "afflec_raw_regression.json"
+    assert called["diagnostics_path"] == output_dir / "afflec_fit_diagnostics.json"
     assert called["plot_dir"] == output_dir
     assert (output_dir / "measurement_report.png").exists()
     np.testing.assert_array_equal(called["betas"], np.zeros((1, 10), dtype=np.float32))
@@ -184,6 +213,10 @@ def test_afflec_demo_announces_plot(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     assert payload["parameters"]
     assert pytest.approx(payload["scale"], rel=1e-6) == 1.0
     assert payload["transl"] == pytest.approx([0.1, 0.2, 0.3])
+    assert payload["images_used"] == [str(images[0])]
+    assert payload["detector"] == "bbox"
+    assert payload["fit_mode"] == "image_regression_plus_measurement_refinement"
+    assert payload["consistency_status"] == "WARN"
     assert mesh_path.exists()
     archive = np.load(mesh_path)
     try:
@@ -207,6 +240,13 @@ def test_afflec_demo_announces_plot(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     )
     np.testing.assert_array_equal(called["trimesh_faces"], np.array([[0, 1, 2]], dtype=np.int32))
     assert called["trimesh_process"] is False
+
+    saved_payload = json.loads(result_path.read_text(encoding="utf-8"))
+    assert saved_payload["provenance"]["images_used"] == [str(images[0])]
+    assert saved_payload["provenance"]["detector"] == "bbox"
+    assert saved_payload["raw_measurements"]["height"] == pytest.approx(170.0)
+    assert saved_payload["raw_measurements"]["chest_circumference"] == pytest.approx(95.5)
+    assert saved_payload["consistency_status"] == "WARN"
 
     out = capsys.readouterr().out
     assert f"Generated measurement report plot at {output_dir / 'measurement_report.png'}" in out

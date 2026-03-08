@@ -227,9 +227,16 @@ class FitResult:
     residual: float
     measurements_used: tuple[str, ...]
     measurement_report: MeasurementReport
+    provenance: Mapping[str, Any] | None = None
+    raw_measurements: Mapping[str, float] | None = None
+    fit_mode: str | None = None
+    trust_level: str | None = None
+    consistency_status: str | None = None
+    consistency_flags: tuple[str, ...] = ()
+    diagnostics: Mapping[str, Any] | None = None
 
     def to_dict(self) -> dict:
-        return {
+        payload: dict[str, Any] = {
             "betas": self.betas.tolist(),
             "scale": float(self.scale),
             "translation": self.translation.tolist(),
@@ -240,6 +247,23 @@ class FitResult:
                 "values": self.measurement_report.visualization_payload(),
             },
         }
+        if self.provenance is not None:
+            payload["provenance"] = dict(self.provenance)
+        if self.raw_measurements is not None:
+            payload["raw_measurements"] = {
+                name: float(value) for name, value in self.raw_measurements.items()
+            }
+        if self.fit_mode is not None:
+            payload["fit_mode"] = self.fit_mode
+        if self.trust_level is not None:
+            payload["trust_level"] = self.trust_level
+        if self.consistency_status is not None:
+            payload["consistency_status"] = self.consistency_status
+        if self.consistency_flags:
+            payload["consistency_flags"] = list(self.consistency_flags)
+        if self.diagnostics is not None:
+            payload["diagnostics"] = dict(self.diagnostics)
+        return payload
 
 
 @dataclass(frozen=True)

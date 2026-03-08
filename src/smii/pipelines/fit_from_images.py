@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Iterable, Mapping, Sequence, TYPE_CHECKING
+from typing import Any, Iterable, Mapping, Sequence, TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle guard for typing only
     from pipelines.measurement_inference import GaussianMeasurementModel
@@ -211,16 +211,10 @@ def _infer_measurements_from_images(paths: Sequence[Path], *, detector: str = "m
         regression = regress_smplx_from_images(
             paths, refine_with_measurements=False, detector=detector
         )
-        vertices, _ = create_body_mesh_from_regression(regression, use_measurement_refinement=False)
-        return infer_measurements_from_mesh(vertices)
+        return {name: float(value) for name, value in regression.measurements.items()}
 
     pgm_paths = _measurement_fixture_paths(paths)
-    from smii.pipelines.fit_from_measurements import fit_smplx_from_measurements, create_body_mesh
-
-    base_measurements = extract_measurements_from_afflec_images(pgm_paths)
-    base_fit = fit_smplx_from_measurements(base_measurements)
-    vertices, _ = create_body_mesh(base_fit)
-    return infer_measurements_from_mesh(vertices)
+    return extract_measurements_from_afflec_images(pgm_paths)
 
 
 def fit_smplx_from_images(
@@ -240,13 +234,31 @@ def fit_smplx_from_images(
 
     from smii.pipelines.fit_from_measurements import fit_smplx_from_measurements
 
-    return fit_smplx_from_measurements(
+    fit_result = fit_smplx_from_measurements(
         measurements,
         backend=backend,
         schema_path=schema_path,
         models=models,
         num_shape_coeffs=num_shape_coeffs,
         inference_model=inference_model,
+    )
+    if not hasattr(fit_result, "measurement_report"):
+        return fit_result
+    trust_level = "coarse" if detector == "bbox" else "high"
+    consistency_flags = ("detector:bbox_coarse_fallback",) if detector == "bbox" else ()
+    return replace(
+        fit_result,
+        provenance={
+            "images_used": [str(path) for path in paths],
+            "detector": detector,
+            "measurement_source": "raw_image_features" if any(not _is_pgm_fixture(path) for path in paths) else "pgm_fixture_headers",
+            "refinement_applied": True,
+        },
+        raw_measurements={name: float(value) for name, value in measurements.items()},
+        fit_mode="image_regression_plus_measurement_refinement",
+        trust_level=trust_level,
+        consistency_status="WARN" if consistency_flags else "PASS",
+        consistency_flags=consistency_flags,
     )
 
 
@@ -353,6 +365,12 @@ class SMPLXRegressionResult:
     left_hand_pose: np.ndarray | None = None
     right_hand_pose: np.ndarray | None = None
     measurement_fit: "FitResult | None" = None
+    detector: str = "mediapipe"
+    measurement_source: str = "raw_image_features"
+    fit_mode: str = "image_regression"
+    trust_level: str = "high"
+    consistency_status: str = "PASS"
+    consistency_flags: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -362,6 +380,16 @@ class SMPLXRegressionResult:
             "transl": self.transl.tolist(),
             "measurements": {name: float(value) for name, value in self.measurements.items()},
             "per_view": [frame.to_dict() for frame in self.frames],
+            "images_used": [str(frame.image_path) for frame in self.frames],
+            "detector": self.detector,
+            "measurement_source": self.measurement_source,
+            "fit_mode": self.fit_mode,
+            "refinement_applied": self.measurement_fit is not None,
+            "trust_level": self.trust_level,
+            "consistency_status": self.consistency_status,
+            "consistency_flags": list(self.consistency_flags),
+            "confidence_summary": _confidence_summary(self.frames),
+            "beta_summary": _beta_summary(self.betas),
         }
         if self.expression is not None:
             payload["expression"] = self.expression.tolist()
@@ -381,6 +409,180 @@ class SMPLXRegressionResult:
         if self.measurement_fit is not None:
             return np.asarray(self.measurement_fit.betas, dtype=float)
         return self.betas
+
+
+def _confidence_summary(frames: Sequence[SMPLXRegressionFrame]) -> dict[str, float | int]:
+    confidences = np.asarray([frame.confidence for frame in frames], dtype=float)
+    if confidences.size == 0:
+        return {"count": 0, "mean": 0.0, "min": 0.0, "max": 0.0}
+    return {
+        "count": int(confidences.size),
+        "mean": float(np.mean(confidences)),
+        "min": float(np.min(confidences)),
+        "max": float(np.max(confidences)),
+    }
+
+
+def _beta_summary(values: np.ndarray) -> dict[str, float]:
+    array = np.asarray(values, dtype=float).reshape(-1)
+    return {
+        "l2_norm": float(np.linalg.norm(array)),
+        "max_abs": float(np.max(np.abs(array))) if array.size else 0.0,
+        "mean_abs": float(np.mean(np.abs(array))) if array.size else 0.0,
+    }
+
+
+def _measurement_value_iter(payload: Mapping[str, float]) -> Iterable[tuple[str, float]]:
+    for name, value in payload.items():
+        if isinstance(value, (int, float, np.integer, np.floating)):
+            yield name, float(value)
+
+
+def _measurement_flags(payload: Mapping[str, float], *, stage: str) -> list[str]:
+    flags: list[str] = []
+    values = {name: float(value) for name, value in _measurement_value_iter(payload)}
+
+    for name, value in values.items():
+        if not np.isfinite(value):
+            flags.append(f"{stage}:{name}:non_finite")
+        elif value <= 0:
+            flags.append(f"{stage}:{name}:non_positive")
+
+    height = values.get("height")
+    if height is not None and not 120.0 <= height <= 230.0:
+        flags.append(f"{stage}:height:implausible_range")
+
+    shoulder = values.get("shoulder_width")
+    if shoulder is not None and not 25.0 <= shoulder <= 75.0:
+        flags.append(f"{stage}:shoulder_width:implausible_range")
+
+    chest = values.get("chest_circumference")
+    waist = values.get("waist_circumference")
+    hips = values.get("hip_circumference")
+    if chest is not None and not 60.0 <= chest <= 180.0:
+        flags.append(f"{stage}:chest_circumference:implausible_range")
+    if waist is not None and not 50.0 <= waist <= 180.0:
+        flags.append(f"{stage}:waist_circumference:implausible_range")
+    if hips is not None and not 60.0 <= hips <= 190.0:
+        flags.append(f"{stage}:hip_circumference:implausible_range")
+    if chest is not None and waist is not None and waist > chest * 1.15:
+        flags.append(f"{stage}:waist_gt_chest")
+    if hips is not None and waist is not None and hips < waist * 0.7:
+        flags.append(f"{stage}:hips_lt_waist")
+    return flags
+
+
+def _regression_consistency_flags(result: SMPLXRegressionResult) -> tuple[str, ...]:
+    flags: list[str] = []
+    if result.detector == "bbox":
+        flags.append("detector:bbox_coarse_fallback")
+
+    flags.extend(_measurement_flags(result.measurements, stage="raw"))
+
+    raw_beta = _beta_summary(result.betas)
+    if raw_beta["max_abs"] > 25.0:
+        flags.append("raw_betas:large_magnitude")
+    if raw_beta["max_abs"] > 50.0:
+        flags.append("raw_betas:extreme_magnitude")
+
+    confidence = _confidence_summary(result.frames)
+    if float(confidence["mean"]) < 0.4:
+        flags.append("confidence:low_mean")
+
+    if result.measurement_fit is not None:
+        refined_measurements = {
+            item["name"]: float(item["value"])
+            for item in result.measurement_fit.measurement_report.visualization_payload()
+            if "name" in item and "value" in item
+        }
+        flags.extend(_measurement_flags(refined_measurements, stage="refined"))
+        refined_beta = _beta_summary(result.measurement_fit.betas)
+        if refined_beta["max_abs"] > 25.0:
+            flags.append("refined_betas:large_magnitude")
+        if refined_beta["max_abs"] > 50.0:
+            flags.append("refined_betas:extreme_magnitude")
+        scale = float(result.measurement_fit.scale)
+        if not 0.5 <= scale <= 1.5:
+            flags.append("refinement:scale_implausible")
+        beta_shift = float(np.linalg.norm(np.asarray(result.measurement_fit.betas, dtype=float) - np.asarray(result.betas, dtype=float)))
+        if beta_shift > 25.0:
+            flags.append("refinement:large_beta_shift")
+
+    return tuple(dict.fromkeys(flags))
+
+
+def _consistency_status(flags: Sequence[str]) -> str:
+    severe_tokens = ("non_positive", "non_finite", "extreme_magnitude", "scale_implausible", "implausible_range")
+    if any(any(token in flag for token in severe_tokens) for flag in flags):
+        return "FAIL"
+    if flags:
+        return "WARN"
+    return "PASS"
+
+
+def _trust_level(detector: str, status: str) -> str:
+    if status == "FAIL":
+        return "invalid"
+    if detector == "bbox":
+        return "coarse"
+    return "high"
+
+
+def finalize_regression_diagnostics(result: SMPLXRegressionResult) -> SMPLXRegressionResult:
+    flags = _regression_consistency_flags(result)
+    status = _consistency_status(flags)
+    return replace(
+        result,
+        trust_level=_trust_level(result.detector, status),
+        consistency_status=status,
+        consistency_flags=flags,
+    )
+
+
+def build_fit_diagnostics_report(result: SMPLXRegressionResult) -> dict[str, Any]:
+    refined_measurements = None
+    refinement = None
+    if result.measurement_fit is not None:
+        refined_measurements = result.measurement_fit.measurement_report.visualization_payload()
+        refinement = {
+            "betas_summary": _beta_summary(result.measurement_fit.betas),
+            "scale": float(result.measurement_fit.scale),
+            "residual": float(result.measurement_fit.residual),
+            "measurements_used": list(result.measurement_fit.measurements_used),
+            "measurement_report": {
+                "coverage": float(result.measurement_fit.measurement_report.coverage),
+                "values": refined_measurements,
+            },
+        }
+
+    return {
+        "summary": {
+            "images_used": [str(frame.image_path) for frame in result.frames],
+            "detector": result.detector,
+            "fit_mode": result.fit_mode,
+            "measurement_source": result.measurement_source,
+            "refinement_applied": result.measurement_fit is not None,
+            "trust_level": result.trust_level,
+            "consistency_status": result.consistency_status,
+            "consistency_flags": list(result.consistency_flags),
+        },
+        "raw_regression": {
+            "measurements": {name: float(value) for name, value in result.measurements.items()},
+            "betas_summary": _beta_summary(result.betas),
+            "confidence_summary": _confidence_summary(result.frames),
+            "per_view": [frame.to_dict() for frame in result.frames],
+        },
+        "measurement_refinement": refinement,
+        "final_mesh_inputs": {
+            "refined_betas_summary": _beta_summary(result.refined_betas()),
+            "translation": np.asarray(
+                result.measurement_fit.translation if result.measurement_fit is not None else result.transl,
+                dtype=float,
+            ).reshape(-1).tolist(),
+            "scale": float(result.measurement_fit.scale) if result.measurement_fit is not None else 1.0,
+            "refined_measurements": refined_measurements,
+        },
+    }
 
 
 def _lazy_import_pillow() -> "module":
@@ -742,13 +944,30 @@ def regress_smplx_from_images(
             measurement_fit=fit_smplx_from_measurements(result.measurements),
         )
 
-    return result
+    result = replace(
+        result,
+        detector=detector,
+        measurement_source="raw_image_features",
+        fit_mode=(
+            "image_regression_plus_measurement_refinement"
+            if refine_with_measurements and result.measurement_fit is not None
+            else "image_regression_only"
+        ),
+    )
+    return finalize_regression_diagnostics(result)
 
 
 def save_regression_json(result: SMPLXRegressionResult, path: Path) -> Path:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(result.to_dict(), indent=2), encoding="utf-8")
+    return path
+
+
+def save_fit_diagnostics_report(result: SMPLXRegressionResult, path: Path) -> Path:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(build_fit_diagnostics_report(result), indent=2), encoding="utf-8")
     return path
 
 
@@ -850,6 +1069,8 @@ __all__ = [
     "fit_smplx_from_images",
     "regress_smplx_from_images",
     "regress_smplx_from_landmarks",
+    "build_fit_diagnostics_report",
+    "save_fit_diagnostics_report",
     "save_regression_json",
     "save_regression_mesh",
 ]

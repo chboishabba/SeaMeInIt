@@ -138,25 +138,6 @@ def test_fit_from_images_uses_embedded_metadata_when_regressor_missing(monkeypat
         "smii.pipelines.fit_from_measurements.fit_smplx_from_measurements",
         fake_fit_from_measurements,
     )
-    monkeypatch.setattr(
-        "smii.pipelines.fit_from_measurements.create_body_mesh",
-        lambda *args, **kwargs: (
-            np.array(
-                [
-                    [0.0, 0.0, 0.0],
-                    [1.0, 0.0, 0.0],
-                    [0.0, 0.0, 1.0],
-                    [1.0, 0.0, 1.0],
-                    [0.0, 2.0, 0.0],
-                    [1.0, 2.0, 0.0],
-                    [0.0, 2.0, 1.0],
-                    [1.0, 2.0, 1.0],
-                ],
-                dtype=float,
-            ),
-            np.zeros((0, 3), dtype=np.int32),
-        ),
-    )
     monkeypatch.delitem(sys.modules, "pipelines.afflec_regression", raising=False)
     monkeypatch.setattr(
         "smii.pipelines.fit_from_images.regress_smplx_from_images",
@@ -167,12 +148,11 @@ def test_fit_from_images_uses_embedded_metadata_when_regressor_missing(monkeypat
 
     assert result == "fit-result"
     assert called["measurements"] == {
-        "height": 2.0,
-        "shoulder_width": 1.0,
-        "hip_width": 1.0,
-        "chest_circumference": 4.0,
-        "waist_circumference": 4.0,
-        "hip_circumference": 4.0,
+        "height": 170.0,
+        "chest_circumference": 96.5,
+        "shoulder_width": 42.2,
+        "waist_circumference": 82.3,
+        "hip_circumference": 98.1,
     }
     assert called["kwargs"] == {
         "backend": "smplx",
@@ -186,56 +166,37 @@ def test_fit_from_images_uses_embedded_metadata_when_regressor_missing(monkeypat
 def test_fit_from_images_prefers_regressor_when_available(monkeypatch: pytest.MonkeyPatch):
     called: dict[str, object] = {}
 
-    def fake_regressor(image_paths):
-        called["paths"] = tuple(image_paths)
-        return {"height": 180.0}
-
-    fake_module = ModuleType("pipelines.afflec_regression")
-    fake_module.regress_measurements_from_images = fake_regressor
-    monkeypatch.setitem(sys.modules, "pipelines.afflec_regression", fake_module)
-
     def fake_fit_from_measurements(measurements, **kwargs):
         called["measurements"] = measurements
         called["kwargs"] = kwargs
         return "regressed-fit"
 
+    def fake_regress(paths, detector="mediapipe", refine_with_measurements=False):
+        called["regress_paths"] = tuple(paths)
+        called["detector"] = detector
+        called["regress_refine"] = refine_with_measurements
+        return SimpleNamespace(measurements={"height": 180.0, "waist_circumference": 84.0})
+
+    monkeypatch.setattr(
+        "smii.pipelines.fit_from_images.regress_smplx_from_images",
+        fake_regress,
+    )
     monkeypatch.setattr(
         "smii.pipelines.fit_from_measurements.fit_smplx_from_measurements",
         fake_fit_from_measurements,
     )
-    monkeypatch.setattr(
-        "smii.pipelines.fit_from_measurements.create_body_mesh",
-        lambda *args, **kwargs: (
-            np.array(
-                [
-                    [0.0, 0.0, 0.0],
-                    [1.0, 0.0, 0.0],
-                    [0.0, 0.0, 1.0],
-                    [1.0, 0.0, 1.0],
-                    [0.0, 2.0, 0.0],
-                    [1.0, 2.0, 0.0],
-                    [0.0, 2.0, 1.0],
-                    [1.0, 2.0, 1.0],
-                ],
-                dtype=float,
-            ),
-            np.zeros((0, 3), dtype=np.int32),
-        ),
-    )
-
-    if PGM_FRONT is None:
-        pytest.skip("Afflec PGM fixtures missing")
-    paths = [PGM_FRONT]
+    missing = [p for p in AFFLEC_PHOTOS if not p.exists()]
+    if missing or PGM_FRONT is None:
+        pytest.skip("Afflec fixtures missing")
+    paths = AFFLEC_PHOTOS + [PGM_FRONT]
     result = fit_smplx_from_images(paths)
 
     assert result == "regressed-fit"
+    assert called["regress_paths"] == tuple(paths)
+    assert called["regress_refine"] is False
     assert called["measurements"] == {
-        "height": 2.0,
-        "shoulder_width": 1.0,
-        "hip_width": 1.0,
-        "chest_circumference": 4.0,
-        "waist_circumference": 4.0,
-        "hip_circumference": 4.0,
+        "height": 180.0,
+        "waist_circumference": 84.0,
     }
     assert called["kwargs"] == {
         "backend": "smplx",
@@ -291,12 +252,7 @@ def test_fit_from_images_runs_regression_when_photos_present(monkeypatch: pytest
     assert called["regress_paths"] == tuple(paths)
     assert called["regress_refine"] is False
     assert called["measurements"] == {
-        "height": 2.0,
-        "shoulder_width": 1.0,
-        "hip_width": 1.0,
-        "chest_circumference": 2.0,
-        "waist_circumference": 2.0,
-        "hip_circumference": 2.0,
+        "height": 172.0,
     }
     assert called["kwargs"] == {
         "backend": "smplx",
@@ -345,12 +301,8 @@ def test_fit_from_images_derives_measurements_from_photos_when_no_pgm(monkeypatc
     assert result == "photo-derived-fit"
     assert called["regress_paths"] == tuple(AFFLEC_PHOTOS)
     assert called["measurements"] == {
-        "height": 1.8,
-        "shoulder_width": 0.5,
-        "hip_width": 0.5,
-        "chest_circumference": 1.0,
-        "waist_circumference": 1.0,
-        "hip_circumference": 1.0,
+        "height": 171.5,
+        "waist_circumference": 90.0,
     }
     assert called["kwargs"] == {
         "backend": "smplx",

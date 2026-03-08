@@ -1,5 +1,11 @@
 ## Unreleased
 
+- Recalibrated the Afflec image-fit pipeline and made it auditable:
+  - `smii.pipelines.fit_from_images` now uses raw photo-derived measurements directly for refinement instead of re-measuring an intermediate mesh, which removes the earlier unit/sign pathology in the `bbox` path,
+  - raw regression payloads now include `images_used`, `detector`, `fit_mode`, `measurement_source`, trust status, confidence summaries, and consistency flags,
+  - new diagnostics artifact `afflec_fit_diagnostics.json` / `<subject>_fit_diagnostics.json` reports raw vs refined stages, beta magnitudes, and fit warnings,
+  - `afflec_measurement_fit.json` and `afflec_smplx_params.json` now persist explicit image-fit provenance and consistency metadata,
+  - `smii.app afflec-demo` and `fit-from-images` gained stricter control flags for refinement/trust enforcement (`--skip-measurement-refinement`, `--require-high-trust-detector`, `--fail-on-consistency-errors`).
 - Added operator-level ROM inspection artifacts and reporting:
   - `smii.rom.basis.KernelProjector` now supports field->coefficient encoding (`encode`, `encode_batch`) for orthonormal bases,
   - `smii.rom.sampler_real` accepts `--basis` + `--out-coeff-samples` and exports per-pose `seam_sensitivity` coefficient samples alongside existing seam-cost outputs,

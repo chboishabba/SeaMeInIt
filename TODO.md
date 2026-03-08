@@ -1,4 +1,6 @@
 # TODO
+- Calibrate the `bbox` Afflec fallback against the new diagnostics outputs: raw measurements are now sane again, but refinement still warns on large beta magnitude/shift, so the next step is tuning or constraining the measurement-model handoff rather than debating whether photos are used at all.
+- Thread `afflec_fit_diagnostics.json` status into downstream body/ROM/seam manifests so low-trust Afflec runs are visibly marked outside the body-fit stage.
 - Extend auto-split strategies (multi-cut, seam-aware) and propagate child-specific issues.
 - Expose outline cleanup parameters (outlier threshold, smoothing iterations, simplify tolerance)
   in the pattern export CLI so garment makers can tune output fidelity.
@@ -6,7 +8,6 @@
 - Expand ROM aggregation diagnostics (visuals, hotspot overlays) and connect to seam validators; demo stubs live at `examples/rom_hotspot_diagnostic.py` and `examples/rom_aggregate_from_samples.py`.
 - Add output no-op verification for ROM/heatmap runs: log mtimes + content hashes for `afflec_body.npz`, `seam_costs`, heatmaps, and fitted params; warn when outputs are unchanged.
 - Install/verify SMPL-X runtime extras (`smplx`, torch backend) in the active venv so `python -m smii.rom.sampler_real` can regenerate ROM artifacts (currently blocked by `ModuleNotFoundError: smplx` in this environment).
-- Replace PGM-only measurement fixtures with explicit `tests/fixtures/afflec/measurements.yaml` ingestion (keep PGM support behind deprecation if needed).
 - Add runtime performance attribution: detect GPU vs CPU heavy compute paths and flag when a claimed GPU-assisted run is actually CPU-bound (log + metrics).
 - Add an explicit mesh-lineage audit CLI (ingest -> body -> ROM -> seam report -> reprojection) that emits vertex counts, hashes, and mismatch flags as JSON/CSV.
 - Persist body provenance in undersuit metadata (`body_vertex_count`, `body_face_count`, body hash) so historical `outputs/suits/*` runs can be disambiguated from later `outputs/afflec_demo/*` regenerations.
