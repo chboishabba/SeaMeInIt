@@ -226,11 +226,44 @@ def fit_smplx_from_images(
     num_shape_coeffs: int | None = None,
     inference_model: "GaussianMeasurementModel | None" = None,
     detector: str = "mediapipe",
+    fit_mode: str = "heuristic",
+    model_path: Path | None = None,
+    model_type: str = "smplx",
+    gender: str = "neutral",
 ) -> "FitResult":
     """Fit SMPL-X parameters by inferring measurements from annotated PGM images."""
 
     paths = _normalise_image_paths(image_paths)
-    measurements = _infer_measurements_from_images(paths, detector=detector)
+    rgb_paths = [path for path in paths if not _is_pgm_fixture(path)]
+    regression = None
+    if rgb_paths:
+        regression = regress_smplx_from_images(
+            paths,
+            detector=detector,
+            refine_with_measurements=False,
+            fit_mode=fit_mode,
+            model_path=model_path,
+            model_type=model_type,
+            gender=gender,
+        )
+        measurements = {name: float(value) for name, value in regression.measurements.items()}
+    else:
+        measurements = extract_measurements_from_afflec_images(_measurement_fixture_paths(paths))
+    regression_detector = getattr(regression, "detector", detector) if regression is not None else detector
+    regression_source = (
+        getattr(regression, "measurement_source", "raw_image_features")
+        if regression is not None
+        else "pgm_fixture_headers"
+    )
+    regression_fit_mode = (
+        getattr(regression, "fit_mode", "image_regression_only")
+        if regression is not None
+        else "pgm_measurement_refinement"
+    )
+    regression_trust = getattr(regression, "trust_level", "high") if regression is not None else "fixture"
+    regression_status = getattr(regression, "consistency_status", "PASS") if regression is not None else "PASS"
+    regression_flags = getattr(regression, "consistency_flags", ()) if regression is not None else ()
+    regression_diagnostics = getattr(regression, "optimization_report", None) if regression is not None else None
 
     from smii.pipelines.fit_from_measurements import fit_smplx_from_measurements
 
@@ -241,6 +274,26 @@ def fit_smplx_from_images(
         models=models,
         num_shape_coeffs=num_shape_coeffs,
         inference_model=inference_model,
+        provenance={
+            "images_used": [str(path) for path in paths],
+            "detector": regression_detector,
+            "measurement_source": regression_source,
+            "refinement_applied": True,
+        },
+        raw_measurements=measurements,
+        fit_mode=(
+            "reprojection_plus_measurement_refinement"
+            if regression is not None and str(regression_fit_mode).startswith("reprojection")
+            else (
+                "image_regression_plus_measurement_refinement"
+                if regression is not None
+                else "pgm_measurement_refinement"
+            )
+        ),
+        trust_level=regression_trust,
+        consistency_status=regression_status,
+        consistency_flags=regression_flags,
+        diagnostics=regression_diagnostics,
     )
     if not hasattr(fit_result, "measurement_report"):
         return fit_result
@@ -279,6 +332,32 @@ class PoseLandmarks:
             return np.asarray(self.points[name], dtype=float)
         except KeyError as exc:
             raise KeyError(f"Landmark '{name}' is not available in the detection result.") from exc
+
+
+@dataclass(frozen=True)
+class ImageFitObservation:
+    """2D observations used by the reprojection optimizer."""
+
+    image_path: Path
+    width: int
+    height: int
+    keypoints_2d: Mapping[str, tuple[float, float]]
+    confidences: Mapping[str, float]
+    silhouette_bbox: tuple[float, float, float, float] | None
+    detector: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "image": str(self.image_path),
+            "width": int(self.width),
+            "height": int(self.height),
+            "keypoints_2d": {
+                name: [float(value[0]), float(value[1])] for name, value in self.keypoints_2d.items()
+            },
+            "confidences": {name: float(value) for name, value in self.confidences.items()},
+            "silhouette_bbox": list(self.silhouette_bbox) if self.silhouette_bbox is not None else None,
+            "detector": self.detector,
+        }
 
 
 @dataclass(frozen=True)
@@ -371,6 +450,8 @@ class SMPLXRegressionResult:
     trust_level: str = "high"
     consistency_status: str = "PASS"
     consistency_flags: tuple[str, ...] = ()
+    observations: tuple[ImageFitObservation, ...] = ()
+    optimization_report: Mapping[str, Any] | None = None
 
     def to_dict(self) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -391,6 +472,10 @@ class SMPLXRegressionResult:
             "confidence_summary": _confidence_summary(self.frames),
             "beta_summary": _beta_summary(self.betas),
         }
+        if self.observations:
+            payload["observations"] = [item.to_dict() for item in self.observations]
+        if self.optimization_report is not None:
+            payload["optimization_report"] = dict(self.optimization_report)
         if self.expression is not None:
             payload["expression"] = self.expression.tolist()
         if self.jaw_pose is not None:
@@ -470,6 +555,63 @@ def _measurement_flags(payload: Mapping[str, float], *, stage: str) -> list[str]
     if hips is not None and waist is not None and hips < waist * 0.7:
         flags.append(f"{stage}:hips_lt_waist")
     return flags
+
+
+def _blend_measurement(primary: float, anchor: float, *, primary_weight: float = 0.35) -> float:
+    return float(primary_weight * float(primary) + (1.0 - primary_weight) * float(anchor))
+
+
+def _calibrate_reprojection_measurements(
+    primary: Mapping[str, float],
+    *,
+    anchor: Mapping[str, float] | None,
+    detector: str,
+) -> tuple[dict[str, float], dict[str, Any] | None]:
+    calibrated = {name: float(value) for name, value in primary.items()}
+    if detector != "mediapipe" or not anchor:
+        return calibrated, None
+
+    applied = False
+    reasons: list[str] = []
+    critical = ("height", "shoulder_width", "arm_length", "torso_length", "leg_length")
+    for name in critical:
+        if name not in calibrated or name not in anchor:
+            continue
+        value = float(calibrated[name])
+        anchor_value = float(anchor[name])
+        if anchor_value <= 0:
+            continue
+        ratio = value / anchor_value
+        if ratio < 0.85 or ratio > 1.2:
+            calibrated[name] = _blend_measurement(value, anchor_value)
+            reasons.append(f"{name}:ratio={ratio:.3f}")
+            applied = True
+
+    circumference_names = ("chest_circumference", "waist_circumference", "hip_circumference")
+    for name in circumference_names:
+        if name not in calibrated or name not in anchor:
+            continue
+        value = float(calibrated[name])
+        anchor_value = float(anchor[name])
+        if anchor_value <= 0:
+            continue
+        ratio = value / anchor_value
+        if ratio < 0.85 or ratio > 1.2:
+            calibrated[name] = _blend_measurement(value, anchor_value)
+            reasons.append(f"{name}:ratio={ratio:.3f}")
+            applied = True
+
+    if not applied:
+        return calibrated, None
+
+    return calibrated, {
+        "applied": True,
+        "source": "bbox_anchor",
+        "reasons": reasons,
+        "primary_measurements": {name: float(value) for name, value in primary.items()},
+        "anchor_measurements": {name: float(value) for name, value in anchor.items()},
+        "calibrated_measurements": {name: float(value) for name, value in calibrated.items()},
+    }
 
 
 def _regression_consistency_flags(result: SMPLXRegressionResult) -> tuple[str, ...]:
@@ -572,6 +714,8 @@ def build_fit_diagnostics_report(result: SMPLXRegressionResult) -> dict[str, Any
             "confidence_summary": _confidence_summary(result.frames),
             "per_view": [frame.to_dict() for frame in result.frames],
         },
+        "observations": [item.to_dict() for item in result.observations],
+        "optimization_report": dict(result.optimization_report) if result.optimization_report is not None else None,
         "measurement_refinement": refinement,
         "final_mesh_inputs": {
             "refined_betas_summary": _beta_summary(result.refined_betas()),
@@ -595,6 +739,16 @@ def _lazy_import_pillow() -> "module":
     return Image
 
 
+def _lazy_import_torch() -> "module":
+    try:
+        import torch
+    except ModuleNotFoundError as exc:  # pragma: no cover - optional dependency
+        raise ModuleNotFoundError(
+            "torch is required for reprojection-based SMPL-X fitting."
+        ) from exc
+    return torch
+
+
 def _lazy_import_mediapipe() -> "module":
     try:
         import mediapipe as mp
@@ -609,6 +763,19 @@ def _load_image(path: Path) -> np.ndarray:
     Image = _lazy_import_pillow()
     image = Image.open(path).convert("RGB")
     return np.asarray(image)
+
+
+def _bbox_mask_and_bounds(image: np.ndarray) -> tuple[np.ndarray, tuple[float, float, float, float]]:
+    gray = np.mean(image, axis=2)
+    mask = gray < 250
+    if not np.any(mask):
+        mask = np.ones_like(gray, dtype=bool)
+    ys, xs = np.nonzero(mask)
+    x_min = float(np.min(xs) / max(image.shape[1] - 1, 1))
+    x_max = float(np.max(xs) / max(image.shape[1] - 1, 1))
+    y_min = float(np.min(ys) / max(image.shape[0] - 1, 1))
+    y_max = float(np.max(ys) / max(image.shape[0] - 1, 1))
+    return mask, (x_min, y_min, x_max, y_max)
 
 
 def _distance(point_a: np.ndarray, point_b: np.ndarray) -> float:
@@ -635,9 +802,10 @@ def _pose_landmarks_from_mediapipe(image_path: Path) -> PoseLandmarks:
     mp = _lazy_import_mediapipe()
 
     image = _load_image(image_path)
+    image_bgr = np.ascontiguousarray(image[:, :, ::-1])
     pose = mp.solutions.pose.Pose(static_image_mode=True, model_complexity=2)
     try:
-        result = pose.process(image[:, :, ::-1])
+        result = pose.process(image_bgr)
     finally:  # pragma: no cover - ensures resources are freed during tests
         pose.close()
 
@@ -654,6 +822,38 @@ def _pose_landmarks_from_mediapipe(image_path: Path) -> PoseLandmarks:
 
     confidence = float(np.mean(visibility_scores)) if visibility_scores else 0.0
     return PoseLandmarks(image_path=image_path, points=points, confidence=confidence)
+
+
+def _observation_from_mediapipe(image_path: Path) -> ImageFitObservation:
+    mp = _lazy_import_mediapipe()
+    image = _load_image(image_path)
+    image_bgr = np.ascontiguousarray(image[:, :, ::-1])
+    pose = mp.solutions.pose.Pose(static_image_mode=True, model_complexity=2)
+    try:
+        result = pose.process(image_bgr)
+    finally:  # pragma: no cover
+        pose.close()
+
+    if not result.pose_landmarks:
+        raise RuntimeError(f"No 2D pose landmarks detected in {image_path}.")
+
+    keypoints: dict[str, tuple[float, float]] = {}
+    confidences: dict[str, float] = {}
+    for name, index in POSE_LANDMARK_INDEX.items():
+        landmark = result.pose_landmarks.landmark[index]
+        keypoints[name] = (float(landmark.x), float(landmark.y))
+        confidences[name] = float(landmark.visibility)
+
+    _, bounds = _bbox_mask_and_bounds(image)
+    return ImageFitObservation(
+        image_path=image_path,
+        width=int(image.shape[1]),
+        height=int(image.shape[0]),
+        keypoints_2d=keypoints,
+        confidences=confidences,
+        silhouette_bbox=bounds,
+        detector="mediapipe",
+    )
 
 
 def _pose_landmarks_from_bbox(image_path: Path) -> PoseLandmarks:
@@ -717,6 +917,54 @@ def _pose_landmarks_from_bbox(image_path: Path) -> PoseLandmarks:
     return PoseLandmarks(image_path=image_path, points=points, confidence=confidence)
 
 
+def _observation_from_bbox(image_path: Path) -> ImageFitObservation:
+    image = _load_image(image_path)
+    mask, bounds = _bbox_mask_and_bounds(image)
+    keypoints = {
+        "nose": (0.5, 0.02),
+        "left_eye": (0.46, 0.05),
+        "right_eye": (0.54, 0.05),
+        "left_ear": (0.42, 0.08),
+        "right_ear": (0.58, 0.08),
+        "left_shoulder": (0.32, 0.18),
+        "right_shoulder": (0.68, 0.18),
+        "left_elbow": (0.28, 0.38),
+        "right_elbow": (0.72, 0.38),
+        "left_wrist": (0.26, 0.56),
+        "right_wrist": (0.74, 0.56),
+        "left_hip": (0.40, 0.62),
+        "right_hip": (0.60, 0.62),
+        "left_knee": (0.42, 0.80),
+        "right_knee": (0.58, 0.80),
+        "left_ankle": (0.44, 0.96),
+        "right_ankle": (0.56, 0.96),
+        "left_heel": (0.44, 0.98),
+        "right_heel": (0.56, 0.98),
+        "left_foot_index": (0.46, 1.00),
+        "right_foot_index": (0.54, 1.00),
+    }
+    bbox_width = max(bounds[2] - bounds[0], 1e-6)
+    bbox_height = max(bounds[3] - bounds[1], 1e-6)
+    mapped = {
+        name: (
+            float(bounds[0] + x * bbox_width),
+            float(bounds[1] + y * bbox_height),
+        )
+        for name, (x, y) in keypoints.items()
+    }
+    confidence = float(0.25 + 0.75 * mask.mean())
+    confidences = {name: confidence for name in mapped}
+    return ImageFitObservation(
+        image_path=image_path,
+        width=int(image.shape[1]),
+        height=int(image.shape[0]),
+        keypoints_2d=mapped,
+        confidences=confidences,
+        silhouette_bbox=bounds,
+        detector="bbox",
+    )
+
+
 def _compute_body_features(landmarks: PoseLandmarks) -> BodyFeatures:
     left_shoulder = landmarks.vector("left_shoulder")
     right_shoulder = landmarks.vector("right_shoulder")
@@ -764,6 +1012,72 @@ def _compute_body_features(landmarks: PoseLandmarks) -> BodyFeatures:
         leg_length=leg_length,
         torso_length=torso_length,
     )
+
+
+_REPROJECTION_JOINT_INDEX = {
+    "pelvis": 0,
+    "left_hip": 1,
+    "right_hip": 2,
+    "left_knee": 4,
+    "right_knee": 5,
+    "left_ankle": 7,
+    "right_ankle": 8,
+    "neck": 12,
+    "head": 15,
+    "left_shoulder": 16,
+    "right_shoulder": 17,
+    "left_elbow": 18,
+    "right_elbow": 19,
+    "left_wrist": 20,
+    "right_wrist": 21,
+}
+
+
+def _build_observations(
+    image_paths: Sequence[Path],
+    *,
+    detector: str,
+) -> tuple[ImageFitObservation, ...]:
+    observations: list[ImageFitObservation] = []
+    for path in image_paths:
+        if detector == "mediapipe":
+            observations.append(_observation_from_mediapipe(path))
+        elif detector == "bbox":
+            observations.append(_observation_from_bbox(path))
+        else:
+            raise ValueError(
+                f"Unsupported detector '{detector}'. Choose from 'mediapipe' or 'bbox'."
+            )
+    return tuple(observations)
+
+
+def save_image_fit_observations(
+    observations: Sequence[ImageFitObservation],
+    path: Path,
+) -> Path:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"observations": [item.to_dict() for item in observations]}
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return path
+
+
+def _normalized_bbox_from_points(points: "Any") -> "Any":
+    x_min = points[..., 0].min(dim=1).values
+    y_min = points[..., 1].min(dim=1).values
+    x_max = points[..., 0].max(dim=1).values
+    y_max = points[..., 1].max(dim=1).values
+    return x_min, y_min, x_max, y_max
+
+
+def _coerce_detector_for_reprojection(detector: str) -> str:
+    if detector == "mediapipe":
+        try:
+            _lazy_import_mediapipe()
+            return detector
+        except ModuleNotFoundError:
+            return "bbox"
+    return detector
 
 
 def _regress_betas(features: BodyFeatures, num_betas: int = 10) -> np.ndarray:
@@ -882,6 +1196,220 @@ def regress_smplx_from_landmarks(landmarks: PoseLandmarks) -> SMPLXRegressionFra
     )
 
 
+def _reprojection_fit_from_images(
+    image_paths: Sequence[Path],
+    *,
+    detector: str = "mediapipe",
+    refine_with_measurements: bool = True,
+    model_path: Path | None = None,
+    model_type: str = "smplx",
+    gender: str = "neutral",
+    iterations: int = 200,
+) -> SMPLXRegressionResult:
+    torch = _lazy_import_torch()
+    detector_used = _coerce_detector_for_reprojection(detector)
+    observations = _build_observations(image_paths, detector=detector_used)
+
+    heuristic_frames: list[SMPLXRegressionFrame] = []
+    for path in image_paths:
+        if detector_used == "mediapipe":
+            landmarks = _pose_landmarks_from_mediapipe(path)
+        else:
+            landmarks = _pose_landmarks_from_bbox(path)
+        heuristic_frames.append(regress_smplx_from_landmarks(landmarks))
+    init = aggregate_regression_frames(heuristic_frames)
+
+    anchor_measurements = None
+    if detector_used == "mediapipe":
+        bbox_frames = [regress_smplx_from_landmarks(_pose_landmarks_from_bbox(path)) for path in image_paths]
+        anchor_measurements = aggregate_regression_frames(bbox_frames).measurements
+
+    from avatar_model import BodyModel
+
+    batch_size = len(image_paths)
+    body = BodyModel(
+        model_path=model_path or Path("assets") / model_type,
+        model_type=model_type,
+        gender=gender,
+        batch_size=batch_size,
+        num_betas=int(init.betas.shape[0]),
+        device="cpu",
+    )
+
+    dtype = torch.float32
+    body_pose = torch.tensor(
+        np.stack([frame.body_pose for frame in heuristic_frames], axis=0),
+        dtype=dtype,
+        requires_grad=True,
+    )
+    global_orient = torch.tensor(
+        np.stack([frame.global_orient for frame in heuristic_frames], axis=0),
+        dtype=dtype,
+        requires_grad=True,
+    )
+    transl = torch.tensor(
+        np.stack([frame.transl for frame in heuristic_frames], axis=0),
+        dtype=dtype,
+        requires_grad=True,
+    )
+    betas = torch.tensor(
+        np.asarray(init.betas, dtype=np.float32)[None, :],
+        dtype=dtype,
+        requires_grad=True,
+    )
+    cam_scale = torch.ones((batch_size, 1), dtype=dtype, requires_grad=True)
+    cam_shift = torch.zeros((batch_size, 2), dtype=dtype, requires_grad=True)
+
+    observed_names = sorted(
+        name for name in _REPROJECTION_JOINT_INDEX.keys()
+        if all(name in item.keypoints_2d for item in observations)
+    )
+    if not observed_names:
+        raise RuntimeError("No supported joints were available for reprojection fitting.")
+    observed_points = torch.tensor(
+        [
+            [obs.keypoints_2d[name] for name in observed_names]
+            for obs in observations
+        ],
+        dtype=dtype,
+    )
+    observed_conf = torch.tensor(
+        [
+            [obs.confidences.get(name, 1.0) for name in observed_names]
+            for obs in observations
+        ],
+        dtype=dtype,
+    )
+
+    bbox_targets = []
+    for obs in observations:
+        if obs.silhouette_bbox is None:
+            bbox_targets.append((0.0, 0.0, 1.0, 1.0))
+        else:
+            bbox_targets.append(obs.silhouette_bbox)
+    bbox_targets_t = torch.tensor(bbox_targets, dtype=dtype)
+    init_body_pose = body_pose.detach().clone()
+    init_global_orient = global_orient.detach().clone()
+    init_betas = betas.detach().clone()
+
+    optimizer = torch.optim.Adam([body_pose, global_orient, transl, betas, cam_scale, cam_shift], lr=0.05)
+    loss_history: list[float] = []
+    for _ in range(max(iterations, 1)):
+        optimizer.zero_grad()
+        body.set_shape(betas.repeat(batch_size, 1))
+        body.set_body_pose(body_pose=body_pose, global_orient=global_orient, transl=transl)
+        joints = body.joints()[:, :22, :]
+        model_points = torch.stack(
+            [joints[:, _REPROJECTION_JOINT_INDEX[name], :] for name in observed_names],
+            dim=1,
+        )
+        pelvis = joints[:, 0:1, :]
+        model_points = model_points - pelvis
+        projected = model_points[..., :2] * cam_scale.unsqueeze(1) + cam_shift.unsqueeze(1)
+        point_loss = ((projected - observed_points) ** 2 * observed_conf.unsqueeze(-1)).mean()
+        x_min, y_min, x_max, y_max = _normalized_bbox_from_points(projected)
+        bbox_loss = (
+            (x_min - bbox_targets_t[:, 0]) ** 2
+            + (y_min - bbox_targets_t[:, 1]) ** 2
+            + (x_max - bbox_targets_t[:, 2]) ** 2
+            + (y_max - bbox_targets_t[:, 3]) ** 2
+        ).mean()
+        pose_prior = ((body_pose - init_body_pose) ** 2).mean()
+        orient_prior = ((global_orient - init_global_orient) ** 2).mean()
+        shape_prior = (betas ** 2).mean() + ((betas - init_betas) ** 2).mean()
+        loss = point_loss + 0.25 * bbox_loss + 0.01 * pose_prior + 0.01 * orient_prior + 0.01 * shape_prior
+        loss.backward()
+        optimizer.step()
+        with torch.no_grad():
+            cam_scale.clamp_(0.2, 3.0)
+            cam_shift.clamp_(-2.0, 2.0)
+        loss_history.append(float(loss.detach().cpu()))
+
+    final_body_pose = body_pose.detach().cpu().numpy()
+    final_global_orient = global_orient.detach().cpu().numpy()
+    final_transl = transl.detach().cpu().numpy()
+    final_betas = betas.detach().cpu().numpy()[0]
+    body.set_shape(np.repeat(final_betas[None, :], batch_size, axis=0))
+    body.set_body_pose(body_pose=final_body_pose, global_orient=final_global_orient, transl=final_transl)
+    joints = body.joints().detach().cpu().numpy()[:, :22, :]
+    model_points = np.stack(
+        [joints[:, _REPROJECTION_JOINT_INDEX[name], :] for name in observed_names],
+        axis=1,
+    )
+    model_points = model_points - joints[:, 0:1, :]
+    projected = model_points[..., :2] * cam_scale.detach().cpu().numpy()[:, None, :] + cam_shift.detach().cpu().numpy()[:, None, :]
+    reprojection_error = np.sqrt(np.mean((projected - observed_points.detach().cpu().numpy()) ** 2, axis=(1, 2)))
+
+    frames = tuple(
+        SMPLXRegressionFrame(
+            image_path=obs.image_path,
+            betas=final_betas.astype(np.float32, copy=False),
+            body_pose=final_body_pose[idx].astype(np.float32, copy=False),
+            global_orient=final_global_orient[idx].astype(np.float32, copy=False),
+            transl=final_transl[idx].astype(np.float32, copy=False),
+            measurements=heuristic_frames[idx].measurements,
+            confidence=float(np.mean(list(obs.confidences.values()))) if obs.confidences else 0.0,
+        )
+        for idx, obs in enumerate(observations)
+    )
+    result = aggregate_regression_frames(frames)
+    optimization_report = {
+        "optimizer": "adam",
+        "iterations": int(max(iterations, 1)),
+        "loss_initial": float(loss_history[0]) if loss_history else 0.0,
+        "loss_final": float(loss_history[-1]) if loss_history else 0.0,
+        "observed_joint_names": observed_names,
+        "per_image_reprojection_rmse": reprojection_error.tolist(),
+        "mean_reprojection_rmse": float(np.mean(reprojection_error)),
+        "camera_scale": cam_scale.detach().cpu().numpy().reshape(-1).tolist(),
+        "camera_shift": cam_shift.detach().cpu().numpy().tolist(),
+        "dependency_tier": "reprojection",
+    }
+    calibrated_measurements, calibration_report = _calibrate_reprojection_measurements(
+        init.measurements,
+        anchor=anchor_measurements,
+        detector=detector_used,
+    )
+    if calibration_report is not None:
+        optimization_report["measurement_calibration"] = calibration_report
+    result = replace(
+        result,
+        detector=detector_used,
+        measurement_source=(
+            "reprojection_keypoints_calibrated_with_bbox_anchor"
+            if calibration_report is not None
+            else "reprojection_keypoints"
+        ),
+        fit_mode="reprojection_only",
+        observations=observations,
+        optimization_report=optimization_report,
+        measurements=calibrated_measurements,
+    )
+
+    if refine_with_measurements and result.measurements:
+        from smii.pipelines.fit_from_measurements import fit_smplx_from_measurements
+
+        result = replace(
+            result,
+            measurement_fit=fit_smplx_from_measurements(
+                result.measurements,
+                provenance={
+                    "images_used": [str(path) for path in image_paths],
+                    "detector": detector_used,
+                    "measurement_source": "reprojection_keypoints",
+                    "refinement_applied": True,
+                },
+                raw_measurements={name: float(value) for name, value in result.measurements.items()},
+                fit_mode="reprojection_plus_measurement_refinement",
+                trust_level="high" if detector_used != "bbox" else "coarse",
+                consistency_status="PASS",
+            ),
+        )
+        result = replace(result, fit_mode="reprojection_plus_measurement_refinement")
+
+    return finalize_regression_diagnostics(result)
+
+
 def aggregate_regression_frames(frames: Sequence[SMPLXRegressionFrame]) -> SMPLXRegressionResult:
     if not frames:
         raise ValueError("At least one regression frame is required to aggregate results.")
@@ -917,10 +1445,40 @@ def regress_smplx_from_images(
     *,
     detector: str = "mediapipe",
     refine_with_measurements: bool = True,
+    fit_mode: str = "heuristic",
+    model_path: Path | None = None,
+    model_type: str = "smplx",
+    gender: str = "neutral",
 ) -> SMPLXRegressionResult:
     """Regress SMPL-X parameters from a collection of RGB images."""
 
     paths = _normalise_image_paths(image_paths)
+
+    if fit_mode not in {"heuristic", "reprojection", "auto"}:
+        raise ValueError(
+            f"Unsupported fit_mode '{fit_mode}'. Choose from 'heuristic', 'reprojection', or 'auto'."
+        )
+    effective_fit_mode = fit_mode
+    if effective_fit_mode == "auto":
+        effective_fit_mode = "reprojection"
+    if effective_fit_mode == "reprojection":
+        try:
+            return _reprojection_fit_from_images(
+                paths,
+                detector=detector,
+                refine_with_measurements=refine_with_measurements,
+                model_path=model_path,
+                model_type=model_type,
+                gender=gender,
+            )
+        except Exception as exc:
+            if fit_mode != "auto":
+                raise
+            fallback_reason = f"reprojection_fallback:{type(exc).__name__}"
+        else:
+            fallback_reason = ""
+    else:
+        fallback_reason = ""
 
     frames: list[SMPLXRegressionFrame] = []
     for path in paths:
@@ -954,7 +1512,14 @@ def regress_smplx_from_images(
             else "image_regression_only"
         ),
     )
-    return finalize_regression_diagnostics(result)
+    result = finalize_regression_diagnostics(result)
+    if fallback_reason:
+        result = replace(
+            result,
+            consistency_status="WARN" if result.consistency_status == "PASS" else result.consistency_status,
+            consistency_flags=tuple(dict.fromkeys((*result.consistency_flags, fallback_reason))),
+        )
+    return result
 
 
 def save_regression_json(result: SMPLXRegressionResult, path: Path) -> Path:
@@ -1070,6 +1635,7 @@ __all__ = [
     "regress_smplx_from_images",
     "regress_smplx_from_landmarks",
     "build_fit_diagnostics_report",
+    "save_image_fit_observations",
     "save_fit_diagnostics_report",
     "save_regression_json",
     "save_regression_mesh",

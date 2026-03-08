@@ -94,9 +94,12 @@ strings.
 The Afflec image-fit stage now emits three distinct artifacts under the body
 output root:
 
+- `afflec_observations.json`:
+  the 2D keypoints / silhouette-bbox observations used by the reprojection fit.
 - `afflec_raw_regression.json`:
   raw image-regressed pose/shape estimates plus `images_used`, `detector`,
-  trust status, and per-view confidence/measurement summaries.
+  trust status, per-view confidence/measurement summaries, and optional
+  optimization metrics.
 - `afflec_measurement_fit.json`:
   measurement-model refinement output, now linked back to the raw regression via
   provenance fields and raw measurements.
@@ -115,6 +118,8 @@ Important:
   `WARN` status in many cases.
 - `mediapipe` remains the preferred path when a higher-trust body estimate is
   required.
+- `fit_mode=auto` now prefers the reprojection optimizer and only falls back to
+  the older heuristic path when reprojection cannot run.
 
 ## Historical scale anomaly (afflec-demo)
 

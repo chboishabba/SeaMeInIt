@@ -65,6 +65,7 @@ def test_afflec_demo_announces_plot(monkeypatch: pytest.MonkeyPatch, tmp_path: P
             fit_mode="image_regression_plus_measurement_refinement",
             measurement_source="raw_image_features",
             measurements=measurements,
+            observations=(),
             to_dict=lambda: {"betas": [0.0] * 10},
         )
 
@@ -83,6 +84,9 @@ def test_afflec_demo_announces_plot(monkeypatch: pytest.MonkeyPatch, tmp_path: P
         called["diagnostics_path"] = output_path
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text("{}", encoding="utf-8")
+
+    def fake_save_observations(observations, output_path: Path) -> None:
+        called["observations_path"] = output_path
 
     def fake_build_diagnostics(result) -> dict[str, object]:
         return {"summary": {"consistency_status": "WARN"}}
@@ -163,6 +167,7 @@ def test_afflec_demo_announces_plot(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     monkeypatch.setattr("smii.pipelines.regress_smplx_from_images", fake_regress)
     monkeypatch.setattr("smii.pipelines.save_regression_json", fake_save_regression_json)
     monkeypatch.setattr("smii.pipelines.save_fit_diagnostics_report", fake_save_diagnostics)
+    monkeypatch.setattr("smii.pipelines.save_image_fit_observations", fake_save_observations)
     monkeypatch.setattr("smii.pipelines.build_fit_diagnostics_report", fake_build_diagnostics)
     monkeypatch.setattr("smii.pipelines.fit_from_measurements.save_fit", fake_save)
     monkeypatch.setattr("smii.pipelines.fit_from_measurements.plot_measurement_report", fake_plot)
@@ -192,7 +197,13 @@ def test_afflec_demo_announces_plot(monkeypatch: pytest.MonkeyPatch, tmp_path: P
 
     assert result_path == output_dir / "afflec_measurement_fit.json"
     assert called["images"] == tuple(images)
-    assert called["fit_kwargs"] == {"detector": "bbox", "refine_with_measurements": True}
+    assert called["fit_kwargs"] == {
+        "detector": "bbox",
+        "refine_with_measurements": True,
+        "fit_mode": "auto",
+        "model_path": Path("assets") / "smplx",
+        "model_type": "smplx",
+    }
     assert called["save_path"] == result_path
     assert called["raw_path"] == output_dir / "afflec_raw_regression.json"
     assert called["diagnostics_path"] == output_dir / "afflec_fit_diagnostics.json"

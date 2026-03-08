@@ -552,6 +552,13 @@ def fit_smplx_from_measurements(
     models: Sequence[MeasurementModel] | None = None,
     num_shape_coeffs: int | None = None,
     inference_model: GaussianMeasurementModel | None = None,
+    provenance: Mapping[str, Any] | None = None,
+    raw_measurements: Mapping[str, float] | None = None,
+    fit_mode: str | None = None,
+    trust_level: str | None = None,
+    consistency_status: str | None = None,
+    consistency_flags: Sequence[str] = (),
+    diagnostics: Mapping[str, Any] | None = None,
 ) -> FitResult:
     """Compute SMPL-X shape parameters from manual measurements."""
 
@@ -586,6 +593,13 @@ def fit_smplx_from_measurements(
         residual=rms,
         measurements_used=used_names,
         measurement_report=report,
+        provenance=provenance,
+        raw_measurements=raw_measurements,
+        fit_mode=fit_mode,
+        trust_level=trust_level,
+        consistency_status=consistency_status,
+        consistency_flags=tuple(str(item) for item in consistency_flags),
+        diagnostics=diagnostics,
     )
 
 

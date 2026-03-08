@@ -1,5 +1,10 @@
 ## Unreleased
 
+- Added a real image-space SMPL-X fitting path:
+  - `smii.pipelines.fit_from_images.regress_smplx_from_images` now supports `fit_mode=auto|heuristic|reprojection`,
+  - reprojection mode builds per-image 2D observation artifacts, optimizes shared betas plus per-image pose/camera parameters against joint reprojection loss, and records optimization metrics,
+  - `smii.app afflec-demo` and `fit-from-images` now emit `*_observations.json` sidecars and default to `fit_mode=auto`,
+  - when reprojection cannot run in `auto` mode, the pipeline falls back to the heuristic path and records the fallback in diagnostics.
 - Recalibrated the Afflec image-fit pipeline and made it auditable:
   - `smii.pipelines.fit_from_images` now uses raw photo-derived measurements directly for refinement instead of re-measuring an intermediate mesh, which removes the earlier unit/sign pathology in the `bbox` path,
   - raw regression payloads now include `images_used`, `detector`, `fit_mode`, `measurement_source`, trust status, confidence summaries, and consistency flags,

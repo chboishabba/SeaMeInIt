@@ -11,7 +11,7 @@ import json
 import numpy as np
 import shutil
 
-from smii.meshing import repair_mesh_with_pymeshfix
+from smii.meshing import repair_body_mesh_for_export
 
 __all__ = [
     "InteractiveSession",
@@ -252,6 +252,7 @@ def run_afflec_fixture_demo(
     force: bool = False,
     clean_output: bool = False,
     detector: str = "bbox",
+    fit_mode: str = "auto",
     refine_with_measurements: bool = True,
     require_high_trust_detector: bool = False,
     fail_on_consistency_errors: bool = False,
@@ -266,6 +267,7 @@ def run_afflec_fixture_demo(
     from smii.pipelines import (
         build_fit_diagnostics_report,
         regress_smplx_from_images,
+        save_image_fit_observations,
         save_fit_diagnostics_report,
         save_regression_json,
     )
@@ -317,10 +319,14 @@ def run_afflec_fixture_demo(
 
     print(f"Writing new artifacts to {target_dir}")
     print("Regressing SMPL-X parameters from the Ben Afflec fixtures...")
+    asset_root = Path(model_assets) if model_assets is not None else Path("assets") / model_backend
     regression = regress_smplx_from_images(
         image_paths,
         detector=detector,
         refine_with_measurements=refine_with_measurements,
+        fit_mode=fit_mode,
+        model_path=asset_root,
+        model_type=model_backend,
     )
 
     _enforce_fit_quality(
@@ -336,6 +342,11 @@ def run_afflec_fixture_demo(
     diagnostics_path = target_dir / "afflec_fit_diagnostics.json"
     save_fit_diagnostics_report(regression, diagnostics_path)
     print(f"Saved image-fit diagnostics to {diagnostics_path}")
+
+    if regression.observations:
+        observations_path = target_dir / "afflec_observations.json"
+        save_image_fit_observations(regression.observations, observations_path)
+        print(f"Saved image-fit observations to {observations_path}")
 
     raw_regression_path = target_dir / "afflec_raw_regression.json"
     save_regression_json(regression, raw_regression_path)
@@ -372,7 +383,6 @@ def run_afflec_fixture_demo(
     save_fit(result, output_path)
     print(f"Saved fitted parameters to {output_path}")
 
-    asset_root = Path(model_assets) if model_assets is not None else Path("assets") / model_backend
     try:
         mesh_output = create_body_mesh(
             result,
@@ -414,7 +424,7 @@ def run_afflec_fixture_demo(
         else:
             mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
             if not mesh.is_watertight:
-                repaired = repair_mesh_with_pymeshfix(vertices, faces)
+                repaired = repair_body_mesh_for_export(vertices, faces)
                 if repaired is not None:
                     vertices, faces = repaired
                     mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
@@ -449,6 +459,7 @@ def run_image_fitting_pipeline(
     gender: str = "neutral",
     detector: str = "mediapipe",
     refine_with_measurements: bool = True,
+    fit_mode: str = "auto",
     require_high_trust_detector: bool = False,
     fail_on_consistency_errors: bool = False,
 ) -> Path:
@@ -467,6 +478,7 @@ def run_image_fitting_pipeline(
     from smii.pipelines import (
         build_fit_diagnostics_report,
         regress_smplx_from_images,
+        save_image_fit_observations,
         save_fit_diagnostics_report,
         save_regression_json,
         save_regression_mesh,
@@ -477,6 +489,10 @@ def run_image_fitting_pipeline(
         image_list,
         detector=detector,
         refine_with_measurements=refine_with_measurements,
+        fit_mode=fit_mode,
+        model_path=Path(model_assets) if model_assets is not None else Path("assets") / model_backend,
+        model_type=model_backend,
+        gender=gender,
     )
 
     _enforce_fit_quality(
@@ -491,6 +507,11 @@ def run_image_fitting_pipeline(
     diagnostics_path = target_dir / f"{subject}_fit_diagnostics.json"
     save_fit_diagnostics_report(result, diagnostics_path)
     print(f"Saved image-fit diagnostics to {diagnostics_path}")
+
+    if result.observations:
+        observations_path = target_dir / f"{subject}_observations.json"
+        save_image_fit_observations(result.observations, observations_path)
+        print(f"Saved image-fit observations to {observations_path}")
 
     raw_json_path = target_dir / f"{subject}_regression_raw.json"
     save_regression_json(result, raw_json_path)
@@ -618,6 +639,12 @@ def build_cli(argv: Sequence[str] | None = None) -> int:
         help="Landmark detector to use. 'bbox' is fast/embedded; 'mediapipe' requires the vision extra.",
     )
     afflec.add_argument(
+        "--fit-mode",
+        choices=("auto", "heuristic", "reprojection"),
+        default="auto",
+        help="Image-fitting mode. 'auto' prefers reprojection optimization and falls back to heuristic fitting.",
+    )
+    afflec.add_argument(
         "--skip-measurement-refinement",
         action="store_true",
         help="Keep the raw image-regressed shape instead of applying measurement-model refinement.",
@@ -678,6 +705,12 @@ def build_cli(argv: Sequence[str] | None = None) -> int:
         help="Keypoint detector used for landmark extraction.",
     )
     fit_from_images.add_argument(
+        "--fit-mode",
+        choices=("auto", "heuristic", "reprojection"),
+        default="auto",
+        help="Image-fitting mode. 'auto' prefers reprojection optimization and falls back to heuristic fitting.",
+    )
+    fit_from_images.add_argument(
         "--skip-measurement-refinement",
         action="store_true",
         help="Disable measurement-model refinement of the regressed betas.",
@@ -714,6 +747,7 @@ def build_cli(argv: Sequence[str] | None = None) -> int:
             force=args.force,
             clean_output=args.clean_output,
             detector=args.detector,
+            fit_mode=args.fit_mode,
             refine_with_measurements=not args.skip_measurement_refinement,
             require_high_trust_detector=args.require_high_trust_detector,
             fail_on_consistency_errors=args.fail_on_consistency_errors,
@@ -729,6 +763,7 @@ def build_cli(argv: Sequence[str] | None = None) -> int:
             model_assets=args.assets_root,
             gender=args.gender,
             detector=args.detector,
+            fit_mode=args.fit_mode,
             refine_with_measurements=not args.skip_measurement_refinement,
             require_high_trust_detector=args.require_high_trust_detector,
             fail_on_consistency_errors=args.fail_on_consistency_errors,
