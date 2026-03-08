@@ -1,5 +1,7 @@
 # TODO
 
+- Add explicit ROM-operator inspection artifacts separate from solve/render domains:
+  emit coefficient/certificate summaries and basis-linked diagnostics so users can inspect the ROM object itself without conflating it with `human`/`ogre` topology branches.
 - Extend auto-split strategies (multi-cut, seam-aware) and propagate child-specific issues.
 - Expose outline cleanup parameters (outlier threshold, smoothing iterations, simplify tolerance)
   in the pattern export CLI so garment makers can tune output fidelity.
@@ -33,6 +35,8 @@
   - Use that policy by default in `scripts/protocol_strategy2_bundle.py` and record it in manifests.
 - Add a small "role registry" helper: given a mesh path, print `{role_guess, vertex_count, face_count, sha256}` and allow overriding role via CLI flags for protocol runs.
 - Stop inferring `human|ogre` role from vertex counts in protocol scripts; require explicit `--base-role`/`--rom-role` and treat missing roles as an error (identity comes from provenance).
+- Add an explicit doc/debug checkpoint for "ROM operator vs projected topology":
+  every run bundle should state which artifacts are operator-level (`basis`, `coeffs`, certificates) versus topology-level (`v3240`, `v9438`, reprojections).
 - Rename render flag `--canonicalize` to `--normalize-rotation` (keep `--canonicalize` as a deprecated alias for now) to avoid confusion with ROM/domain canonicalization.
 - Run multi-loop seam solver (`shortest_path --sp-require-loop --sp-loop-count>=2`) on the `human` (`v3240`) morphology and persist a timestamped orbit + report.
 - Improve strict loop feasibility diagnostics/actionability: per-panel loop-feasibility score and clearer reasons for `no path`/`loop closure unavailable` under `--sp-loop-strict`.

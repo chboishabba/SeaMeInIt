@@ -52,3 +52,24 @@ Date: 2026-02-06
   - reverse-direction NN transfer also collapses (not invertible in practice),
   - provisional Strategy A freeze for interpretable outputs.
 - Added persistent map tooling (`scripts/build_mesh_vertex_map.py`) and map-driven reprojection (`--vertex-map-file`); current ogre<->afflec map still fails quality gates, indicating correspondence quality issue rather than seam-point sampling issue.
+
+## ROM Operator Clarification (2026-03-09)
+- Resolved archived thread metadata with `robust-context-fetch`:
+  - title: `Branch · Three-kernel coupling for ROM`
+  - online UUID: `696f0c80-f2e0-8322-b8a3-7b59b1ce3835`
+  - canonical thread id: `2732a8b3196238d99153d6dfe71992a95d59bd7e`
+  - source used: `db`
+  - main topics: ROM as an explicit operator, L0-L3 schedule/completeness, canonical basis + coefficient representation, Sprint R reality check
+- Resolved archived thread metadata with `robust-context-fetch`:
+  - title: `seameinit`
+  - online UUID: unknown in archive
+  - canonical thread id: `11a134a7c680f9cd5e4fe9d1be468f8cd21c23fd`
+  - source used: `db`
+  - main topics: roadmap/planning; not authoritative for `ogre == ROM invariant`
+- Local conclusion to keep repo wording aligned:
+  - archived ROM math/spec language supports "ROM as compressed operator over admissible pose space", not "ogre is the ROM invariant"
+  - `human` and `ogre` remain topology/provenance labels for current artifact families (`v3240` vs `v9438`), not operator-level identities
+  - the closest current operator-level ROM artifacts are the canonical basis, sampler coefficient samples/provenance, and schedule/certificate docs; seam-cost NPZs are already topology-bound projections
+- Follow-through required in repo docs/TODO:
+  - document "operator-level ROM vs domain-level artifacts" explicitly,
+  - add an inspectable ROM artifact path so users can view the ROM object without relying on `ogre` renders.

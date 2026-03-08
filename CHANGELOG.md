@@ -1,5 +1,10 @@
 ## Unreleased
 
+- Clarified ROM/operator vs topology/domain semantics in docs and planning:
+  - `docs/mesh_provenance_afflec.md` now states explicitly that `ogre` is a working topology/provenance label for the `v9438` branch, not "the ROM invariant",
+  - `docs/seam_pipeline_intended_vs_observed.md` now separates operator-level ROM inspection from mesh-orbit artifacts,
+  - `COMPACTIFIED_CONTEXT.md` records archived thread metadata from the canonical ROM/planning chats,
+  - `TODO.md` now includes explicit follow-through for operator-level ROM inspection artifacts and bundle labeling.
 - Formalized body/mesh provenance protocol and reduced ambiguity from misleading filenames:
   - added `docs/body_lineage_protocol.md` and updated runner/provenance docs to prefer timestamped output roots,
   - documented that fixed paths under `outputs/*` are not stable provenance and must be backed by hashes/counts.

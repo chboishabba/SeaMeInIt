@@ -83,6 +83,13 @@ Current policy (2026-02-14):
   canonical frame so correspondence lines are not dominated by arbitrary axis
   conventions.
 
+Additional clarification (2026-03-09):
+- The archived ROM formalization thread does not support reading `ogre` as "the
+  ROM invariant".
+- `ogre`/`human` are current domain/provenance labels for artifact families.
+- If users want to inspect the ROM object itself, that requires operator-level
+  artifacts (basis/coefficients/certificates), not mesh orbits.
+
 Important naming caveat:
 - Run labels like `A_base` and `B_ogre` are workflow labels, not morphology
   guarantees. Current visual observations indicate morphology can appear inverted

@@ -44,6 +44,40 @@ Important: "ogre" here means "the `9438` branch we keep confusing with the
 `3240` branch". It does **not** imply that ROM is "deforming" the body; seam
 solvers do not change geometry, they only select edges on whatever mesh you pass.
 
+## ROM operator vs `ogre` topology
+
+The archived Sprint R / three-kernel ROM thread is explicit about the math:
+ROM is treated as a compressed operator over admissible pose space, represented
+by a canonical basis plus pose-indexed coefficient vectors. In repo terms:
+
+- operator-level ROM:
+  - canonical basis (`B`)
+  - coefficient samples / aggregation semantics
+  - schedule/completeness logic
+- domain-level ROM projections:
+  - seam-cost NPZ sized to a specific mesh topology
+  - seam reports solved on that topology
+  - render artifacts of whichever body mesh was selected
+
+This means:
+
+- `ogre` is **not** the ROM invariant itself.
+- `ogre` is the current working provenance label for the `v9438` topology family.
+- `human` is the current working provenance label for the `v3240` topology family.
+- a ROM-derived artifact can exist in either domain if it has been projected
+  into that topology.
+
+So when asking "where is the ROM invariant?", the answer is not "the ogre
+render". The closest current operator-level artifacts are:
+
+- `docs/rom_definition.md` for the mathematical object,
+- basis artifacts such as `outputs/rom/afflec_canonical_basis.npz`,
+- sampler/certificate metadata describing how pose-space statistics were
+  aggregated before projection to seam costs.
+
+Operationally, if an artifact is viewable as a mesh orbit, it is already a
+domain-level object and should not be treated as the pure ROM operator.
+
 ## Critical note: output paths are not stable provenance
 
 This repo historically overwrote files under fixed paths like
@@ -117,6 +151,9 @@ Both exist in the repo:
 Operationally:
 - If you solve seams using `seam_costs_afflec.npz`, you are solving on `human` (`v3240`).
 - If you solve seams using `seam_costs_afflec_realshape_edges.npz`, you are solving on `ogre` (`v9438`).
+
+That still does **not** mean the `v9438` branch is "the ROM invariant". It only
+means ROM-derived quantities were projected into that topology before solving.
 
 4. Reprojection bridge
    - commands:
