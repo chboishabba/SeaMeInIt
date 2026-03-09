@@ -4,14 +4,16 @@
 from __future__ import annotations
 
 import argparse
+import html
 import hashlib
 import json
 import math
+import mimetypes
+import os
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 import numpy as np
-from PIL import Image, ImageDraw
 
 from smii.rom import load_basis, load_seam_cost_field
 
@@ -68,36 +70,139 @@ def _safe_topology_label(vertex_count: int | None) -> str:
     return f"v{int(vertex_count)}" if vertex_count is not None else "none"
 
 
-def _render_bar_chart(values: Sequence[float], labels: Sequence[str], title: str, output: Path) -> Path:
-    width = 960
-    height = 420
-    margin = 50
-    img = Image.new("RGB", (width, height), (248, 248, 248))
-    draw = ImageDraw.Draw(img)
-    draw.text((margin, 12), title, fill=(20, 20, 20))
-    if not values:
-        draw.text((margin, 70), "No data available", fill=(90, 90, 90))
-        img.save(output)
-        return output
-
-    max_value = max(float(v) for v in values)
-    usable_width = width - 2 * margin
-    usable_height = height - 2 * margin - 40
+def _inline_bar_chart_svg(values: Sequence[float], labels: Sequence[str], title: str) -> str:
+    width = 920
+    height = 320
+    margin_left = 48
+    margin_bottom = 54
+    margin_top = 26
     count = max(1, len(values))
-    bar_gap = 8
-    bar_width = max(8, int((usable_width - bar_gap * (count - 1)) / count))
+    usable_width = width - margin_left - 24
+    usable_height = height - margin_top - margin_bottom
+    max_value = max((float(v) for v in values), default=0.0)
+    gap = 8
+    bar_width = max(12, int((usable_width - gap * max(count - 1, 0)) / count))
+    svg_parts = [
+        f'<svg viewBox="0 0 {width} {height}" class="chart" role="img" aria-label="{html.escape(title)}">',
+        '<rect x="0" y="0" width="100%" height="100%" fill="#fbfaf5" rx="12" />',
+        f'<text x="{margin_left}" y="18" fill="#222" font-size="15" font-weight="700">{html.escape(title)}</text>',
+    ]
+    if not values:
+        svg_parts.append(
+            f'<text x="{margin_left}" y="{height // 2}" fill="#666" font-size="14">No data available</text>'
+        )
+        svg_parts.append("</svg>")
+        return "".join(svg_parts)
+
+    base_y = height - margin_bottom
+    svg_parts.append(
+        f'<line x1="{margin_left}" y1="{base_y}" x2="{width - 16}" y2="{base_y}" stroke="#7d7d7d" stroke-width="1.5" />'
+    )
     for idx, raw in enumerate(values):
         value = float(raw)
         norm = 0.0 if max_value <= 1e-12 else value / max_value
-        x0 = margin + idx * (bar_width + bar_gap)
-        x1 = x0 + bar_width
-        y1 = height - margin - 20
-        y0 = y1 - int(norm * usable_height)
-        draw.rectangle((x0, y0, x1, y1), fill=(66, 135, 245), outline=(40, 70, 120))
-        draw.text((x0, y1 + 4), str(labels[idx]), fill=(40, 40, 40))
-        draw.text((x0, max(24, y0 - 16)), f"{value:.3g}", fill=(40, 40, 40))
-    img.save(output)
-    return output
+        x = margin_left + idx * (bar_width + gap)
+        bar_height = max(2.0, norm * usable_height)
+        y = base_y - bar_height
+        label = html.escape(str(labels[idx]))
+        value_label = html.escape(f"{value:.3g}")
+        svg_parts.append(
+            f'<rect x="{x}" y="{y:.2f}" width="{bar_width}" height="{bar_height:.2f}" '
+            'fill="#2f6db3" stroke="#1a3f6b" stroke-width="1" rx="3" />'
+        )
+        svg_parts.append(
+            f'<text x="{x + bar_width / 2:.2f}" y="{max(32.0, y - 6):.2f}" text-anchor="middle" '
+            f'fill="#333" font-size="11">{value_label}</text>'
+        )
+        svg_parts.append(
+            f'<text x="{x + bar_width / 2:.2f}" y="{base_y + 16}" text-anchor="middle" '
+            f'fill="#444" font-size="10">{label}</text>'
+        )
+    svg_parts.append("</svg>")
+    return "".join(svg_parts)
+
+
+def _iter_media_paths(paths: Sequence[Path]) -> list[Path]:
+    supported = {
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".webp",
+        ".svg",
+        ".webm",
+        ".mp4",
+        ".mov",
+        ".m4v",
+    }
+    seen: set[Path] = set()
+    media: list[Path] = []
+    for candidate in paths:
+        path = Path(candidate)
+        if not path.exists():
+            continue
+        if path.is_dir():
+            iterator = sorted(
+                item for item in path.rglob("*") if item.is_file() and item.suffix.lower() in supported
+            )
+        elif path.suffix.lower() in supported:
+            iterator = [path]
+        else:
+            iterator = []
+        for item in iterator:
+            resolved = item.resolve()
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            media.append(item)
+    return media
+
+
+def _media_manifest_entry(path: Path, *, out_dir: Path) -> Mapping[str, Any]:
+    suffix = path.suffix.lower()
+    kind = "video" if suffix in {".webm", ".mp4", ".mov", ".m4v"} else "image"
+    mime_type = mimetypes.guess_type(str(path))[0] or ("video/webm" if kind == "video" else "image/png")
+    try:
+        relative_path = os.path.relpath(path, out_dir)
+    except ValueError:
+        relative_path = str(path)
+    return {
+        "path": str(path),
+        "relative_path": relative_path,
+        "kind": kind,
+        "mime_type": mime_type,
+        "group": path.parent.name,
+        "name": path.name,
+        "sha256": _sha256_path(path),
+    }
+
+
+def _embedded_media_html(entries: Sequence[Mapping[str, Any]]) -> str:
+    if not entries:
+        return "<p>No external media embedded.</p>"
+    cards: list[str] = []
+    for entry in entries:
+        rel = html.escape(str(entry["relative_path"]))
+        name = html.escape(str(entry["name"]))
+        group = html.escape(str(entry["group"]))
+        if entry["kind"] == "video":
+            media_tag = (
+                f'<video controls preload="metadata" style="width:100%;background:#111;border-radius:10px;">'
+                f'<source src="{rel}" type="{html.escape(str(entry["mime_type"]))}"></video>'
+            )
+        else:
+            media_tag = (
+                f'<img src="{rel}" alt="{name}" '
+                'style="width:100%;border-radius:10px;border:1px solid #d8d2c8;background:#fff;" />'
+            )
+        cards.append(
+            "<figure class=\"media-card\">"
+            f"<div class=\"media-group\">{group}</div>"
+            f"{media_tag}"
+            f"<figcaption><code>{name}</code></figcaption>"
+            "</figure>"
+        )
+    return f'<div class="media-grid">{"".join(cards)}</div>'
 
 
 def _build_coeff_summary(coeff_payload: Mapping[str, Any] | None) -> Mapping[str, Any]:
@@ -226,6 +331,14 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--certificate", type=Path, default=None)
     parser.add_argument("--costs", type=Path, default=None)
     parser.add_argument("--body", type=Path, default=None)
+    parser.add_argument(
+        "--media-path",
+        dest="media_paths",
+        type=Path,
+        action="append",
+        default=[],
+        help="Optional file or directory of existing image/video artifacts to embed in the report.",
+    )
     parser.add_argument("--out-dir", type=Path, required=True)
     args = parser.parse_args(argv)
 
@@ -244,6 +357,10 @@ def main(argv: Sequence[str] | None = None) -> None:
     topology = _safe_topology_label(vertex_count)
     coeff_summary = _build_coeff_summary(coeff_payload)
     cost_vertex_count = int(len(costs_payload.vertex_costs)) if costs_payload is not None else None
+    embedded_media = [
+        _media_manifest_entry(path, out_dir=out_dir)
+        for path in _iter_media_paths(args.media_paths)
+    ]
     consistency_status, consistency_flags = _consistency_summary(
         basis_vertex_count=vertex_count,
         basis_component_count=int(basis.metadata.component_count),
@@ -256,26 +373,6 @@ def main(argv: Sequence[str] | None = None) -> None:
     coeff_summary_path.write_text(json.dumps(coeff_summary, indent=2), encoding="utf-8")
 
     generated_files: dict[str, str] = {}
-    if coeff_summary["available"]:
-        top = coeff_summary["top_variance_components"]
-        top_plot = out_dir / "coeff_top_variance.png"
-        _render_bar_chart(
-            [entry["variance"] for entry in top],
-            [f"k{entry['index']}" for entry in top],
-            "Top coefficient variance components",
-            top_plot,
-        )
-        generated_files["coeff_top_variance_png"] = str(top_plot)
-
-        norms = coeff_summary["sample_norms"][: min(12, len(coeff_summary["sample_norms"]))]
-        norm_plot = out_dir / "coeff_sample_norms.png"
-        _render_bar_chart(
-            [entry["norm"] for entry in norms],
-            [entry["pose_id"] for entry in norms],
-            "Sample coefficient norms",
-            norm_plot,
-        )
-        generated_files["coeff_sample_norms_png"] = str(norm_plot)
 
     warnings_list = [
         "Operator-level ROM artifacts describe basis/coefficient/schedule behavior.",
@@ -324,6 +421,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             "body_vertex_count": body_vertex_count,
         },
         "artifacts": artifact_entries,
+        "embedded_media": embedded_media,
         "generated_files": generated_files,
         "warnings": warnings_list,
     }
@@ -352,22 +450,33 @@ def main(argv: Sequence[str] | None = None) -> None:
         for entry in coeff_summary["top_variance_components"]
     )
     warning_html = "".join(f"<li>{message}</li>" for message in warnings_list)
-    image_html = "".join(
-        f"<figure><img src=\"{Path(path).name}\" alt=\"{name}\" style=\"max-width:100%;border:1px solid #ccc;\"><figcaption>{name}</figcaption></figure>"
-        for name, path in generated_files.items()
+    top_chart_html = _inline_bar_chart_svg(
+        [entry["variance"] for entry in coeff_summary["top_variance_components"]],
+        [f"k{entry['index']}" for entry in coeff_summary["top_variance_components"]],
+        "Top coefficient variance components",
     )
+    norm_chart_html = _inline_bar_chart_svg(
+        [entry["norm"] for entry in coeff_summary["sample_norms"][: min(12, len(coeff_summary["sample_norms"]))]],
+        [entry["pose_id"] for entry in coeff_summary["sample_norms"][: min(12, len(coeff_summary["sample_norms"]))]],
+        "Sample coefficient norms",
+    )
+    media_html = _embedded_media_html(embedded_media)
     html = f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <title>ROM Operator Report</title>
   <style>
-    body {{ font-family: sans-serif; margin: 2rem; color: #222; }}
+    body {{ font-family: sans-serif; margin: 2rem; color: #222; background: #f3efe7; }}
     table {{ border-collapse: collapse; width: 100%; margin-bottom: 1.5rem; }}
     th, td {{ border: 1px solid #ddd; padding: 0.5rem; text-align: left; }}
     th {{ background: #f5f5f5; width: 18rem; }}
     code {{ background: #f5f5f5; padding: 0.1rem 0.25rem; }}
     .callout {{ border-left: 4px solid #4b7bec; padding: 0.75rem 1rem; background: #f7fbff; }}
+    .chart {{ width: 100%; height: auto; margin-bottom: 1rem; }}
+    .media-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }}
+    .media-card {{ margin: 0; padding: 0.75rem; background: #fffaf1; border: 1px solid #d9cfbe; border-radius: 14px; }}
+    .media-group {{ font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.08em; color: #74624d; margin-bottom: 0.5rem; }}
   </style>
 </head>
 <body>
@@ -381,8 +490,11 @@ def main(argv: Sequence[str] | None = None) -> None:
   <ul>{warning_html}</ul>
   <h2>Top Coefficient Components</h2>
   <table><tr><th>Component</th><th>Variance</th><th>Mean abs</th></tr>{top_components_html or '<tr><td colspan="3">No coefficient data available.</td></tr>'}</table>
-  <h2>Generated Visuals</h2>
-  {image_html or '<p>No visuals generated.</p>'}
+  <h2>Operator Charts</h2>
+  {top_chart_html}
+  {norm_chart_html}
+  <h2>Embedded Media</h2>
+  {media_html}
   <h2>Source Artifacts</h2>
   <table>
     <tr><th>Path</th><th>Level</th><th>Topology</th><th>Domain</th></tr>

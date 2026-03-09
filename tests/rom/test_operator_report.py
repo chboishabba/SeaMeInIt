@@ -69,6 +69,13 @@ def test_render_rom_operator_report_generates_html_and_manifest(tmp_path):
     save_seam_cost_field(costs, costs_path)
 
     out_dir = tmp_path / "report"
+    media_dir = tmp_path / "media"
+    media_dir.mkdir()
+    (media_dir / "overlay.svg").write_text(
+        "<svg xmlns='http://www.w3.org/2000/svg' width='8' height='8'></svg>",
+        encoding="utf-8",
+    )
+    (media_dir / "orbit.webm").write_bytes(b"webm")
     module.main(
         [
             "--basis",
@@ -81,6 +88,8 @@ def test_render_rom_operator_report_generates_html_and_manifest(tmp_path):
             str(cert_path),
             "--costs",
             str(costs_path),
+            "--media-path",
+            str(media_dir),
             "--out-dir",
             str(out_dir),
         ]
@@ -89,12 +98,19 @@ def test_render_rom_operator_report_generates_html_and_manifest(tmp_path):
     assert (out_dir / "index.html").exists()
     assert (out_dir / "report_manifest.json").exists()
     assert (out_dir / "coeff_summary.json").exists()
+    assert not (out_dir / "coeff_top_variance.png").exists()
+    assert not (out_dir / "coeff_sample_norms.png").exists()
 
     manifest = json.loads((out_dir / "report_manifest.json").read_text(encoding="utf-8"))
     assert manifest["summary"]["coefficient_samples_available"] is True
     assert manifest["summary"]["consistency_status"] == "PASS"
     assert any(entry["artifact_level"] == "operator" for entry in manifest["artifacts"])
     assert any(entry["artifact_level"] == "topology" for entry in manifest["artifacts"])
+    assert len(manifest["embedded_media"]) == 2
+    html_text = (out_dir / "index.html").read_text(encoding="utf-8")
+    assert "<svg" in html_text
+    assert "<img " in html_text
+    assert "<video" in html_text
 
 
 def test_render_rom_operator_report_flags_topology_mismatch(tmp_path):

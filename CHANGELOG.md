@@ -1,5 +1,16 @@
 ## Unreleased
 
+- Changed ROM report visualization/output policy:
+  - `scripts/render_rom_operator_report.py` now renders analytic coefficient visuals directly into `index.html` as DOM/SVG charts instead of emitting report-generated PNG files,
+  - the report accepts repeatable `--media-path` inputs and embeds existing topology-level media artifacts such as overlays, heatmaps, GIFs, and WebMs directly in the page,
+  - `scripts/protocol_strategy2_bundle.py` now renders the operator report after bundle media exists and passes render/map/seam directories into the report so the page acts as the primary viewing surface.
+- Added run-level reference and index pages:
+  - new `scripts/render_run_reference.py` emits a canonical single-run HTML page that groups body/ROM/seam/media/manifests for one run root,
+  - new `scripts/render_run_index.py` catalogs runs across one or more roots, adds inferred timestamps plus run-type labels, and links to each run reference page,
+  - Strategy 2 bundles now emit `run_reference/index.html`, refresh an `outputs/assets_bundles/index.html` catalog, and also refresh a unified `outputs/index.html` catalog across bundle/comparison/seam run roots when present.
+- Cleaned up seam-orbit temporary artifacts:
+  - `scripts/render_seam_orbit.py` now removes its temporary frame PNG directory after GIF/WebM encoding,
+  - deliberate still outputs remain on disk and are surfaced by run reference pages.
 - Added a real image-space SMPL-X fitting path:
   - `smii.pipelines.fit_from_images.regress_smplx_from_images` now supports `fit_mode=auto|heuristic|reprojection`,
   - reprojection mode builds per-image 2D observation artifacts, optimizes shared betas plus per-image pose/camera parameters against joint reprojection loss, and records optimization metrics,
@@ -14,7 +25,7 @@
 - Added operator-level ROM inspection artifacts and reporting:
   - `smii.rom.basis.KernelProjector` now supports field->coefficient encoding (`encode`, `encode_batch`) for orthonormal bases,
   - `smii.rom.sampler_real` accepts `--basis` + `--out-coeff-samples` and exports per-pose `seam_sensitivity` coefficient samples alongside existing seam-cost outputs,
-  - new `scripts/render_rom_operator_report.py` renders a static `index.html` plus JSON/PNG summaries from basis/meta/coeff/certificate artifacts,
+  - new `scripts/render_rom_operator_report.py` renders a static `index.html` plus JSON summaries from basis/meta/coeff/certificate artifacts,
   - the ROM operator report now explicitly flags basis/body/cost/meta topology mismatches via `consistency_status` and `consistency_flags`, and labels topology-level artifacts using their own vertex counts rather than inheriting the basis topology.
 - Extended Strategy 2 bundle manifests to classify artifact semantics:
   - `scripts/protocol_strategy2_bundle.py` accepts optional ROM operator inputs (`--rom-basis`, `--rom-meta`, `--rom-envelope`, `--rom-certificate`, `--rom-coeff-samples`),

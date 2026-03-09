@@ -170,6 +170,21 @@ PYTHONPATH=src python scripts/render_rom_operator_report.py \
 This produces a static HTML report plus adjacent JSON/PNG artifacts and is the
 preferred answer to "show me the ROM invariant" in the current repo.
 
+Report contract update:
+
+- coefficient/operator charts should render directly in the HTML as DOM-native
+  visual elements rather than being emitted as separate PNG files;
+- existing topology-level media artifacts such as seam overlays, flex heatmaps,
+  map orbits, GIFs, and WebMs should be embedded in the report page when their
+  paths are supplied, so the report becomes the canonical viewing surface;
+- JSON sidecars like `report_manifest.json` and `coeff_summary.json` remain the
+  machine-readable outputs.
+
+This operator report is now a specialized subpage. The canonical user-facing
+surface for a whole run should be a run-level reference page that embeds body,
+ROM, seam, heatmap, overlay, and orbit/map media together and links back to the
+operator page for operator-only inspection.
+
 The report now performs an explicit consistency check across:
 
 - basis vertex count,

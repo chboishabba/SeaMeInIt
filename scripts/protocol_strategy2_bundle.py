@@ -255,34 +255,16 @@ def main() -> None:
     manifests.mkdir(parents=True, exist_ok=True)
     notes.mkdir(parents=True, exist_ok=True)
     maps.mkdir(parents=True, exist_ok=True)
+    run_reference_dir = bundle / "run_reference"
+    run_reference_index = run_reference_dir / "index.html"
+    runs_index = bundle.parent / "index.html"
+    outputs_index = bundle.parent.parent / "index.html"
 
     operator_report_dir: Path | None = None
     operator_report_index: Path | None = None
     if args.rom_basis is not None and args.rom_meta is not None:
         operator_report_dir = bundle / "rom_operator"
         operator_report_dir.mkdir(parents=True, exist_ok=True)
-        report_cmd = [
-            python,
-            "scripts/render_rom_operator_report.py",
-            "--basis",
-            str(args.rom_basis),
-            "--rom-meta",
-            str(args.rom_meta),
-            "--out-dir",
-            str(operator_report_dir),
-        ]
-        if args.rom_coeff_samples is not None:
-            report_cmd += ["--coeff-samples", str(args.rom_coeff_samples)]
-        if args.rom_envelope is not None:
-            report_cmd += ["--envelope", str(args.rom_envelope)]
-        if args.rom_certificate is not None:
-            report_cmd += ["--certificate", str(args.rom_certificate)]
-        if args.rom_costs is not None:
-            report_cmd += ["--costs", str(args.rom_costs)]
-        if args.rom_mesh is not None:
-            report_cmd += ["--body", str(args.rom_mesh)]
-        _run(report_cmd)
-        operator_report_index = operator_report_dir / "index.html"
 
     # 1) Audit stages (mesh + seam provenance + vertex maps).
     audit_json = manifests / "pipeline_audit.json"
@@ -492,6 +474,42 @@ def main() -> None:
         rotate_z=rom_rot[2],
     )
 
+    if operator_report_dir is not None:
+        report_cmd = [
+            python,
+            "scripts/render_rom_operator_report.py",
+            "--basis",
+            str(args.rom_basis),
+            "--rom-meta",
+            str(args.rom_meta),
+            "--out-dir",
+            str(operator_report_dir),
+            "--media-path",
+            str(renders),
+            "--media-path",
+            str(maps),
+            "--media-path",
+            str(Path(args.base_seams).parent),
+            "--media-path",
+            str(Path(args.rom_seams).parent),
+            "--media-path",
+            str(Path(base_with_rom).parent),
+            "--media-path",
+            str(Path(rom_with_base).parent),
+        ]
+        if args.rom_coeff_samples is not None:
+            report_cmd += ["--coeff-samples", str(args.rom_coeff_samples)]
+        if args.rom_envelope is not None:
+            report_cmd += ["--envelope", str(args.rom_envelope)]
+        if args.rom_certificate is not None:
+            report_cmd += ["--certificate", str(args.rom_certificate)]
+        if args.rom_costs is not None:
+            report_cmd += ["--costs", str(args.rom_costs)]
+        if args.rom_mesh is not None:
+            report_cmd += ["--body", str(args.rom_mesh)]
+        _run(report_cmd)
+        operator_report_index = operator_report_dir / "index.html"
+
     protocol_manifest = {
         "timestamp_utc": ts,
         "bundle": str(bundle),
@@ -529,6 +547,10 @@ def main() -> None:
             "maps_dir": str(maps),
             "rom_operator_report_dir": str(operator_report_dir) if operator_report_dir is not None else None,
             "rom_operator_report_index": str(operator_report_index) if operator_report_index is not None else None,
+            "run_reference_dir": str(run_reference_dir),
+            "run_reference_index": str(run_reference_index),
+            "runs_index": str(runs_index),
+            "outputs_index": str(outputs_index),
         },
         "artifacts": [
             entry
@@ -609,6 +631,7 @@ def main() -> None:
             "protocol": "Render ROM native + reprojected (Strategy 2). "
             "Do not assume vertex maps are invertible unless topology is identical.",
             "artifact_levels": "operator = basis/coefficients/envelopes/certificates/report; topology = mesh/cost/seam/render/reprojection artifacts.",
+            "primary_view_surface": "run_reference/index.html is the canonical single-run page; rom_operator/index.html remains a specialized subpage.",
         },
     }
     (manifests / "protocol_strategy2.json").write_text(
@@ -646,6 +669,45 @@ def main() -> None:
             str(bundle),
         ]
     )
+
+    # 5) Build a canonical run-level reference page and refresh the runs index.
+    _run(
+        [
+            python,
+            "scripts/render_run_reference.py",
+            "--run-root",
+            str(bundle),
+            "--out-dir",
+            str(run_reference_dir),
+            "--title",
+            f"Strategy 2 Bundle: {bundle.name}",
+        ]
+    )
+    _run(
+        [
+            python,
+            "scripts/render_run_index.py",
+            "--runs-root",
+            str(bundle.parent),
+            "--out",
+            str(runs_index),
+        ]
+    )
+    comparisons_root = bundle.parent.parent / "comparisons"
+    seams_root = bundle.parent.parent / "seams_run"
+    unified_index_cmd = [
+        python,
+        "scripts/render_run_index.py",
+        "--runs-root",
+        str(bundle.parent),
+    ]
+    if comparisons_root.exists():
+        unified_index_cmd += ["--runs-root", str(comparisons_root)]
+    if seams_root.exists():
+        unified_index_cmd += ["--runs-root", str(seams_root)]
+    unified_index_cmd += ["--out", str(outputs_index)]
+    _run(unified_index_cmd)
+
     print(bundle)
 
 

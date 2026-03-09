@@ -1,6 +1,12 @@
 # TODO
 - Calibrate the `bbox` Afflec fallback against the new diagnostics outputs: raw measurements are now sane again, but refinement still warns on large beta magnitude/shift, so the next step is tuning or constraining the measurement-model handoff rather than debating whether photos are used at all.
 - Thread `afflec_fit_diagnostics.json` status into downstream body/ROM/seam manifests so low-trust Afflec runs are visibly marked outside the body-fit stage.
+- Stop emitting report-generated analytical PNGs from `render_rom_operator_report.py`; render coefficient/norm summaries directly as DOM/SVG in `index.html`, and make the report page embed existing topology media artifacts (`overlay.png`, flex heatmaps, GIF/WebM orbits, map videos) from supplied paths/directories.
+- Add canonical run reference pages and a runs index:
+  - new run page should embed all completed assets under one run root (body, ROM, seams, overlays, heatmaps, GIF/WebM orbits, maps) and link to specialized subpages like `rom_operator/index.html`,
+  - Strategy 2 bundles should emit this run page automatically and refresh both per-root indexes and one unified `outputs/index.html` catalog with timestamps and run-type labels,
+  - ignore transient `*_frames*` directories and legacy operator-report chart PNGs in galleries.
+- Make `render_seam_orbit.py` delete its temporary frame PNG directory after GIF/WebM encoding, matching other orbit renderers; keep deliberate still outputs such as `overlay.png` and front-view PNGs.
 - Extend auto-split strategies (multi-cut, seam-aware) and propagate child-specific issues.
 - Expose outline cleanup parameters (outlier threshold, smoothing iterations, simplify tolerance)
   in the pattern export CLI so garment makers can tune output fidelity.

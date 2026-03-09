@@ -12,10 +12,11 @@ import argparse
 import hashlib
 import json
 import math
+import shutil
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -457,7 +458,7 @@ def _encode_orbit(frames_dir: Path, gif_path: Path, webm_path: Path) -> None:
     )
 
 
-def main() -> None:
+def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mesh", type=Path, required=True, help="NPZ with vertices/faces.")
     parser.add_argument("--seam-report", type=Path, default=None, help="Optional seam_report.json.")
@@ -532,7 +533,7 @@ def main() -> None:
         type=str,
         default=datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S"),
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     mesh_payload = np.load(args.mesh)
     vertices_raw = np.asarray(mesh_payload["vertices"], dtype=float)
@@ -626,6 +627,7 @@ def main() -> None:
     gif_path = out_dir / f"{args.stem}__orbit__{args.timestamp}.gif"
     webm_path = out_dir / f"{args.stem}__orbit__{args.timestamp}.webm"
     _encode_orbit(frames_dir, gif_path, webm_path)
+    shutil.rmtree(frames_dir)
 
     manifest = {
         "timestamp_utc": str(args.timestamp),

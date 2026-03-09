@@ -82,8 +82,23 @@ Date: 2026-02-06
 - Added static operator report CLI:
   - `scripts/render_rom_operator_report.py`
   - inputs: basis + ROM meta, optional coeff samples/envelope/certificate/costs/body
-  - outputs: `index.html`, `report_manifest.json`, `coeff_summary.json`, PNG diagnostics
+  - outputs: `index.html`, `report_manifest.json`, `coeff_summary.json`
+  - intended presentation contract:
+    - analytic report visuals (coefficient bars, norms, summaries) should be DOM-native inside the HTML, not stored as standalone PNGs
+    - topology-level media artifacts that already exist on disk (`overlay.png`, flex heatmaps, GIF/WebM orbits, map orbits) should be embedded/organized inside the report page rather than left as disconnected side files
 - Strategy 2 bundles can now include operator artifacts explicitly:
   - optional ROM inputs on `scripts/protocol_strategy2_bundle.py`
   - manifest entries now declare `artifact_level`, `role`, `topology`, and `domain`
   - bundle can render a ROM operator report under `rom_operator/` when basis + meta are supplied
+  - next alignment step: pass bundle render/map/seam media into the report so the page acts as the primary viewing surface
+
+## Run Reference Pages (2026-03-09)
+- Current output problem:
+  - specialized pages exist (`rom_operator/index.html`), but there is no canonical single-page reference for one run root
+  - compare runs can complete without GIF/WebM orbit media unless a renderer is invoked explicitly
+  - temporary frame PNG directories are cleaned up by `render_variant_orbits.py` and `render_vertex_map_orbits.py`, but `render_seam_orbit.py` still leaves them behind
+- Intended contract moving forward:
+  - each run root should have one canonical HTML reference page that embeds all completed artifacts for that run
+  - a higher-level index page should catalog runs and link to each run page
+  - deliberate stills like `overlay.png` stay; temporary frame PNGs used to encode GIF/WebM should be deleted after encoding
+  - run pages should ignore transient frame directories and legacy operator-report chart PNGs
