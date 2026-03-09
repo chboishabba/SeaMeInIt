@@ -225,6 +225,34 @@ def _merge_payload_metadata(payload: dict[str, Any], metadata: dict[str, Any]) -
     return merged
 
 
+def _raw_regression_parameter_payload(
+    regression: Any,
+    *,
+    model_type: str,
+    gender: str,
+) -> dict[str, Any]:
+    from smii.pipelines.fit_from_measurements import serialise_smplx_parameters
+
+    parameters: dict[str, np.ndarray] = {
+        "betas": np.asarray(regression.betas, dtype=np.float32).reshape(1, -1),
+        "body_pose": np.asarray(regression.body_pose, dtype=np.float32).reshape(1, -1),
+        "global_orient": np.asarray(regression.global_orient, dtype=np.float32).reshape(1, -1),
+        "transl": np.asarray(regression.transl, dtype=np.float32).reshape(1, -1),
+    }
+    for name in ("expression", "jaw_pose", "left_hand_pose", "right_hand_pose"):
+        value = getattr(regression, name, None)
+        if value is None:
+            continue
+        parameters[name] = np.asarray(value, dtype=np.float32).reshape(1, -1)
+
+    return serialise_smplx_parameters(
+        parameters,
+        model_type=model_type,
+        gender=gender,
+        scale=1.0,
+    )
+
+
 def _enforce_fit_quality(
     *,
     detector: str,
@@ -383,31 +411,48 @@ def run_afflec_fixture_demo(
     save_fit(result, output_path)
     print(f"Saved fitted parameters to {output_path}")
 
+    mesh_output: tuple[np.ndarray, np.ndarray] | BodyMeshOutput
+    parameters_payload: dict[str, Any] | None = None
     try:
-        mesh_output = create_body_mesh(
-            result,
-            model_path=asset_root,
-            model_type=model_backend,
-            return_parameters=True,
-        )
-        if not isinstance(mesh_output, BodyMeshOutput):  # pragma: no cover - defensive
-            vertices, faces = mesh_output  # type: ignore[misc]
-            parameters_payload = None
+        if refine_with_measurements:
+            mesh_output = create_body_mesh(
+                result,
+                model_path=asset_root,
+                model_type=model_backend,
+                return_parameters=True,
+            )
+            if not isinstance(mesh_output, BodyMeshOutput):  # pragma: no cover - defensive
+                vertices, faces = mesh_output  # type: ignore[misc]
+            else:
+                parameters_payload = mesh_output.parameter_payload()
         else:
-            parameters_payload = mesh_output.parameter_payload()
+            parameters_payload = _raw_regression_parameter_payload(
+                regression,
+                model_type=model_backend,
+                gender="neutral",
+            )
+            parameters, scale, payload_model_type, gender = load_smplx_parameter_payload(parameters_payload)
+            vertices, faces = generate_vertices_from_smplx_parameters(
+                parameters,
+                scale=scale,
+                model_path=asset_root,
+                model_type=payload_model_type,
+                gender=gender,
+            )
+            mesh_output = (vertices, faces)
     except FileNotFoundError as exc:
         raise FileNotFoundError(
             "SMPL-compatible assets are required to generate the fitted body mesh. "
             f"Provision the '{model_backend}' bundle with `python tools/download_smplx.py --model {model_backend}` "
             "and re-run the command (use --assets-root to supply a custom path)."
         ) from exc
-    if isinstance(mesh_output, BodyMeshOutput):
-        assert parameters_payload is not None  # for type-checkers
+    if parameters_payload is not None:
         parameters_payload = _merge_payload_metadata(parameters_payload, payload_metadata)
         with params_path.open("w", encoding="utf-8") as stream:
             json.dump(parameters_payload, stream, indent=2)
         print(f"Saved SMPL-X parameter payload to {params_path}")
 
+    if isinstance(mesh_output, BodyMeshOutput):
         parameters, scale, payload_model_type, gender = load_smplx_parameter_payload(parameters_payload)
         vertices, faces = generate_vertices_from_smplx_parameters(
             parameters,
