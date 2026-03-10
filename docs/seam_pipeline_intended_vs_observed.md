@@ -48,9 +48,15 @@ Examples:
 - `human_v3240__reprojected_seams_from_ogre_v9438__orbit__<ts>.webm`
 
 Role naming note:
-- `human`/`ogre` are **provenance labels**, not geometry classifiers.
-- Do not infer roles from vertex count or morphology. Require explicit role
-  assignment (CLI flags) and record mesh hashes in manifests.
+- `human`/`ogre` are currently unstable labels and must not be treated as
+  self-justifying truth.
+- They may refer to:
+  - branch/provenance identity in manifests and protocol scripts,
+  - or historically observed morphology outcomes in visual debugging.
+- Those are not the same thing.
+- Do not infer roles from vertex count alone. Require explicit role assignment
+  (CLI flags), record mesh hashes in manifests, and attach a morphology note
+  describing what the output actually looks like.
   - For Strategy 2 bundles: `scripts/protocol_strategy2_bundle.py` requires `--base-role` and `--rom-role`.
 
 ## Orientation invariant (required going forward)
@@ -96,15 +102,18 @@ Additional clarification (2026-03-09):
 Additional clarification (2026-03-10 archive refresh):
 - The archived thread `Seam Graph Generation Debug`
   (`699050a6-e13c-839a-9a66-be7653b4db13`,
-  canonical `6d14ca5f93671d7fb8e923db48654ecb5ef63b42`) sharpens the naming rule:
-  `human` and `ogre` must not be read as geometry descriptors.
-- They are provenance/stage labels only. If the geometry "looks swapped", that
-  means the role naming is misleading or the wiring/provenance is wrong, not
-  that the labels define morphology by themselves.
+  canonical `6d14ca5f93671d7fb8e923db48654ecb5ef63b42`) is useful as a warning:
+  do not let labels stand in for verified morphology.
+- Current repo policy should be:
+  - use stage/provenance labels for identity,
+  - log observed morphology separately.
 - Safer naming preference when possible:
   - `fit_v3240`
   - `base_layer_v9438`
   - `rom_*` only when the artifact is actually operator/ROM-space
+- This does not mean ogre-like or flailing appearances were imaginary. It means
+  those appearances must be recorded as observations tied to a specific stage
+  instead of being assumed from the filename.
 
 Important naming caveat:
 - Run labels like `A_base` and `B_ogre` are workflow labels, not morphology
@@ -162,6 +171,73 @@ Practical implication:
   1) render command `--body`,
   2) seam report provenance (`body_path`, vertex counts),
   3) topology counts/hashes.
+
+## Morphology Taxonomy For Debugging
+
+This repo now needs to distinguish at least three different things:
+
+- artifact identity:
+  stage, topology, body hash, provenance
+- observed morphology:
+  what the body/render actually looks like
+- desired interpretation:
+  whether that morphology is expected, tolerated, or a failure
+
+Current working morphology categories:
+
+- neutral-human:
+  the mesh looks like a normal SMPL-X-style body without dramatic distortion
+- ogre-like:
+  the aggregate appearance becomes stretched, head/face-heavy, compressed, or
+  otherwise non-human-looking
+- flailing:
+  the output looks dominated by unstable or extreme pose/deformation, and is
+  more naturally interpreted as motion/pose behavior than as a settled body
+  shape
+
+Status:
+
+- `ogre-like` and `flailing` are not desired targets.
+- They are observed debug outcomes from prior and current code paths.
+- `flailing` is currently considered more likely to be close to the intended ROM
+  phenomenon than `ogre-like`.
+
+Run-page audit labels:
+
+- `normal_human`:
+  current artifact looks like a normal-human body or render
+- `field_only`:
+  artifact is a scalar/operator field render rather than a morphology artifact
+- `inherits_source_geometry`:
+  artifact changes seams or metadata but should visually inherit the source body
+  geometry
+- `inherits_target_geometry`:
+  reprojected artifact should be read as target geometry plus transfer behavior,
+  not as a native morphology transform
+- `normal_human_with_transfer_artifact`:
+  target geometry still looks normal-human, but the visible issue is transfer
+  error rather than morphology change
+- `summary_only`:
+  artifact is a summary/metrics surface and should not be read morphologically
+- `unclassified`:
+  no confident observation has been recorded yet
+
+Override-file rule:
+
+- `morphology_observations.json` may annotate:
+  - artifacts already auto-detected by the run-page audit, or
+  - artifacts that would not otherwise get an audit row (for example summary PNGs
+    or kernel-diagnostic field images)
+- when no auto-row exists, the run page should still create a manual morphology
+  observation row from the override file
+
+Debugging rule:
+
+- Every morphology claim should answer:
+  1) which artifact shows it,
+  2) whether that artifact is a body mesh, posed sample, scalar field render,
+     seam overlay, or reprojection/render artifact,
+  3) whether the morphology is coming from geometry or just from visualization.
 
 ## Observed Behavior (User)
 

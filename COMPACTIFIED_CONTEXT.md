@@ -100,10 +100,11 @@ Date: 2026-02-06
   - `698d5e21-6d54-839a-a127-088c1dc21227` -> `Seam Walker Troubleshooting` -> `0eff7f41332ca191629d9246ad3677518461fa55`
   - `699050a6-e13c-839a-9a66-be7653b4db13` -> `Seam Graph Generation Debug` -> `6d14ca5f93671d7fb8e923db48654ecb5ef63b42`
 - Highest-value seam/ROM thread takeaways sharpened by the refresh:
-  - `Seam Graph Generation Debug`: `human` / `ogre` are provenance labels, not morphology descriptors; stage/provenance naming is the safer contract.
+  - `Seam Graph Generation Debug`: do not let `human` / `ogre` names stand in for verified morphology; stage/provenance naming is the safer identity contract, but observed morphology still needs to be logged separately because prior runs did produce ogre-like and flailing outcomes.
   - `Pose Sweep Strategy`: when meshes/ROM heatmaps look unchanged, treat it as a no-op until mtimes + content hashes prove otherwise.
   - `Seam Walker Troubleshooting`: solver quality should be improved by structural / flattenability constraints, not ad-hoc anatomy region penalties.
   - distilled roadmap note recorded at `docs/solver_kernel_roadmap_note_20260310.md`.
+  - morphology debugging follow-through recorded in `docs/seam_pipeline_intended_vs_observed.md` under "Morphology Taxonomy For Debugging".
 
 ## ROM Operator Reporting (2026-03-09)
 - Implemented operator-level coefficient export in `smii.rom.sampler_real`:
@@ -133,3 +134,41 @@ Date: 2026-02-06
   - a higher-level index page should catalog runs and link to each run page
   - deliberate stills like `overlay.png` stay; temporary frame PNGs used to encode GIF/WebM should be deleted after encoding
   - run pages should ignore transient frame directories and legacy operator-report chart PNGs
+
+## Morphology Debugging Phase (2026-03-10)
+- Current priority is no longer "make more artifacts"; it is to make morphology changes attributable by stage.
+- Working interpretation:
+  - `ogre-like` and `flailing` are observed debug morphologies, not desired targets.
+  - `flailing` is more likely to be close to the intended ROM phenomenon.
+  - the current ROM aggregate/operator outputs are field-oriented and do not by themselves prove a morphology transform.
+- Latest local formalism cross-check:
+  - consulted `/home/c/Documents/code/ITIR-suite/all_code48.txt` as the newest available `all_code*.txt` snapshot.
+  - useful Dashi-side takeaway: keep the kernel/operator separate from the admissibility lens; do not treat labels or downstream artifacts as the operator itself.
+  - this supports the current morphology plan: observe morphology by stage first, then judge whether the operator field is coherent with those observations.
+- Inverse-transform clarification:
+  - earlier project intent included: fit SMPL-X body -> internalize/deform into an ogre-like or movement-respecting solve domain -> solve seams there -> invert back to the fitted body.
+  - current repo reality is weaker: correspondence/reprojection and transfer diagnostics exist, but no proven inverse ROM/internalization transform exists.
+  - the `all_code44.txt` / `all_code48.txt` formalism supports caution here because projection-style operators are generally not invertible except in trivial cases.
+- Prioritized milestones:
+  1. backfill morphology observations on known reference runs so `run_reference/index.html` pages stop defaulting to `unclassified`,
+  2. emit representative posed/deformed ROM sample artifacts so flailing can be observed directly rather than inferred from neutral-body heatmaps,
+  3. clarify whether "back to body" is an inverse transform or only approximate correspondence/reprojection,
+  4. compare candidate ROM fields on one topology using those morphology artifacts,
+  5. only then return to seam-solver sensitivity / anchor fallback work.
+- Current bounded next step from the orchestrator viewpoint:
+  - `M2.1`: define representative ROM sample selection policy
+  - `M2b.1`: audit current code paths for any actual inverse-transform candidate
+- These are intentionally separated from later implementation so the repo does
+  not jump into artifact emission without first deciding what counts as a
+  representative sample and whether any existing inverse claim is real.
+- Active M1 reference runs:
+  - `outputs/comparisons/afflec_raw_vs_refined_20260309/`
+  - `outputs/comparisons/afflec_same_topology_20260309/`
+  - `outputs/comparisons/afflec_kernel_diagnostic_raw_20260310/`
+  - `outputs/assets_bundles/20260309_062711__afflec_raw_refined_verify/`
+- Planning state for this phase is now tracked in:
+  - `.planning/spec.md`
+  - `.planning/architecture.md`
+  - `.planning/plan.md`
+  - `.planning/status.json`
+  - `.planning/devlog.md`

@@ -28,6 +28,14 @@ The "canonical domain" decision is the Strategy A vs Strategy B question:
 - Strategy A: solve seams on the base (human) domain first, then evaluate/project to ROM.
 - Strategy B: solve seams on the ROM/ogre domain first, then reproject to base.
 
+Important:
+
+- Strategy B is currently a **domain-transfer** workflow, not proof of an
+  invertible ROM deformation.
+- If a future workflow wants "solve on internalized morphology, then invert back
+  to the fitted body", that inverse must be documented separately and cannot be
+  assumed from today's reprojection/correspondence tools.
+
 ### 3) Render Layer (Rotation Normalization)
 
 Orbit renders and overlay PNGs require a stable view frame so comparisons are
@@ -46,4 +54,3 @@ PCA + robust tail statistics (see `docs/seam_overlay_orientation.md`).
 - Within a Strategy 2 bundle, base+ROM renders must share a comparable render
   frame (ROM aligned to base for viewability).
 - Manifests must record mesh hashes so "identity" is defensible.
-

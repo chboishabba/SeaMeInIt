@@ -1,0 +1,13 @@
+{
+  "context": "ready",
+  "docs": "ready",
+  "architecture": "complete",
+  "audit": "unknown",
+  "external_reasoning": "off",
+  "tests": "passing",
+  "milestones_remaining": 3,
+  "current_phase": "morphology_debugging",
+  "current_milestone": "M2_emit_rom_sample_morphology_outputs__and_M2b_inverse_clarification",
+  "current_subtask": "M2.1_define_sample_selection__and_M2b.1_audit_inverse_candidates",
+  "last_action": "Refined M2 and M2b into smaller orchestrator-friendly subtasks so the next bounded step is to define ROM sample selection policy and audit the codebase for any true inverse-transform candidate."
+}

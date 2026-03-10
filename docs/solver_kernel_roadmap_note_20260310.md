@@ -62,12 +62,21 @@ guidance for the ROM kernel and seam solver work:
   - add flattenability-aware scoring,
   - do not accept “low distortion” alone as success.
 
-6. `human` / `ogre` naming must stay provenance-only.
-- These labels are not morphology descriptors.
+6. Morphology outcomes and artifact labels must be separated explicitly.
+- Historical runs produced visually distinct outcomes now described as:
+  - `ogre-like`: stretched/compressed face-heavy or non-human-looking aggregate
+    body appearance,
+  - `flailing`: pose/deformation outputs that look more like unstable or extreme
+    motion than a settled transformed morphology.
+- These are debug observations, not desired targets.
 - Roadmap implication:
-  - when possible, prefer stage/topology labels such as `fit_v3240`,
-    `base_layer_v9438`, `rom_*`,
-  - any workflow docs or reports should state clearly that role labels are provenance.
+  - docs and reports must record where each observed morphology appears:
+    body fit, ROM sample pose, aggregate field render, seam overlay, or
+    cross-topology reprojection,
+  - stage/topology labels such as `fit_v3240`, `base_layer_v9438`, `rom_*`
+    should remain the primary artifact identity,
+  - `human` / `ogre` names should not be trusted without an accompanying
+    morphology note and lineage details.
 
 ## Near-Term Actions
 
@@ -86,6 +95,13 @@ guidance for the ROM kernel and seam solver work:
 3. Sewability track:
 - Add explicit flattenability / fragmentation terms to the seam roadmap.
 - Treat “porcupine seams” as a failure of the objective, not a weird but acceptable output.
+
+4. Morphology debugging track:
+- Add a dedicated note/report section that logs, per run:
+  - whether the output looks neutral-human, ogre-like, or flailing,
+  - whether that appearance comes from body geometry, posed samples, field
+    rendering, or reprojection/render normalization,
+  - which artifact should be treated as authoritative for that observation.
 
 ## Current Practical Conclusion
 

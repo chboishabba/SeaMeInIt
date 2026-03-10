@@ -24,6 +24,33 @@ def test_render_run_reference_embeds_completed_assets_and_ignores_frames(tmp_pat
     np.savez(body_dir / "afflec_body.npz", vertices=np.zeros((3, 3), dtype=float), faces=np.array([[0, 1, 2]], dtype=int))
     (body_dir / "afflec_fit_diagnostics.json").write_text("{}", encoding="utf-8")
     (body_dir / "measurement_report.png").write_bytes(b"png")
+    (run_root / "morphology_observations.json").write_text(
+        json.dumps(
+            {
+                "entries": [
+                    {
+                        "artifact": "body_raw/afflec_body.npz",
+                        "observed_morphology": "normal_human",
+                        "expected_morphology": "base_or_expected",
+                        "diagnostic_note": "Fixture body looks normal-human at body-fit stage.",
+                    },
+                    {
+                        "artifact": "seams_raw/seam_report.json",
+                        "observed_morphology": "inherits_source_geometry",
+                        "diagnostic_note": "Seam changes without geometry change.",
+                    },
+                    {
+                        "artifact": "manual/summary.txt",
+                        "stage": "manifest",
+                        "artifact_kind": "manual_observation",
+                        "observed_morphology": "summary_only",
+                        "diagnostic_note": "Manual note should still appear even without auto-discovery.",
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
 
     rom_dir = run_root / "rom_raw"
     rom_dir.mkdir()
@@ -55,10 +82,20 @@ def test_render_run_reference_embeds_completed_assets_and_ignores_frames(tmp_pat
 
     subpage_names = {entry["parent"] for entry in manifest["sections"]["subpages"]}
     assert "operator_report" in subpage_names
+    assert manifest["summary"]["morphology_audit_count"] >= 3
+    body_entry = next(entry for entry in manifest["morphology_audit"] if entry["artifact"].endswith("body_raw/afflec_body.npz"))
+    seam_entry = next(entry for entry in manifest["morphology_audit"] if entry["artifact"].endswith("seams_raw/seam_report.json"))
+    manual_entry = next(entry for entry in manifest["morphology_audit"] if entry["artifact"] == "manual/summary.txt")
+    assert body_entry["observed_morphology"] == "normal_human"
+    assert body_entry["geometry_changed"] is True
+    assert seam_entry["stage"] == "seam_solution"
+    assert manual_entry["observed_morphology"] == "summary_only"
 
     html_text = (out_dir / "index.html").read_text(encoding="utf-8")
     assert "Run Reference:" in html_text
     assert "Media Gallery" in html_text
+    assert "Morphology Audit" in html_text
+    assert "normal_human" in html_text
     assert "operator_report/index.html" in html_text
 
 

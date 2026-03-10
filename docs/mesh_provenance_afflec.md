@@ -190,6 +190,45 @@ Operationally:
 That still does **not** mean the `v9438` branch is "the ROM invariant". It only
 means ROM-derived quantities were projected into that topology before solving.
 
+## Historical inverse-transform intent (important)
+
+Part of the earlier project intent was stronger than today's repo contract:
+
+1. fit a normal SMPL-X-style human body from photos,
+2. apply a ROM-related internalization/deformation into a different solve domain
+   (historically described as the `ogre` morphology),
+3. solve seams on that internalized morphology because it was assumed to encode
+   movement-respecting geometry,
+4. then bring the solved seam back through an inverse transform to the normal
+   fitted body.
+
+That inverse step is **not implemented or validated** in the current repo.
+
+Current reality:
+
+- seam solving on a different topology/domain is implemented,
+- nearest-neighbour / correspondence-based reprojection is implemented,
+- strict quality diagnostics for reprojection are implemented,
+- but a true inverse of the ROM/internalization transform is not available.
+
+Why this matters:
+
+- if the internalization behaves more like a projection, collapse, or lossy
+  topology/domain transfer than an invertible deformation, then there may be no
+  exact inverse to recover a seam on the original fitted body,
+- the Dashi-side formalism in `all_code44.txt` and `all_code48.txt` reinforces
+  this caution: projection-like operators are not generally invertible, and
+  "kernel" plus "admissibility lens" should not be confused with a reversible
+  geometric transform.
+
+Operational consequence:
+
+- today, any "back to body mesh" step should be treated as correspondence-based
+  transfer / approximation, not as a mathematically justified inverse ROM
+  application.
+- if the project requires a true inverse, that must become an explicit design
+  track with its own contract and acceptance tests.
+
 4. Reprojection bridge
    - commands:
      - `python scripts/build_mesh_vertex_map.py --source-mesh ... --target-mesh ... --out ...`

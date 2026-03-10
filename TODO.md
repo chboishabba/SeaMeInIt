@@ -1,6 +1,22 @@
 # TODO
-- Use `outputs/comparisons/afflec_kernel_diagnostic_raw_20260310/` as the current reference for ROM-kernel interpretation and decide whether `seam_sensitivity = sum_j w_j |disp_hat · dV/dtheta_j|^2` is actually the design signal we want, or whether we should expose an alternate seam objective based on pure displacement magnitude and/or derivative magnitude instead of only the motion-direction-gated field.
-- Investigate shortest-path seam insensitivity under fixed topology: the same-topology comparisons in `outputs/comparisons/afflec_same_topology_20260309/` produced identical seam edge sets even after removing MDL and increasing ROM weights, while seam reports still warn `anchors disconnected; using largest connected component anchors`; next step is debugging anchor/component fallback and comparing shortest-path against `mincut`/`pda` on the same cost pairs.
+- M1. Backfill morphology observations into run roots via `morphology_observations.json` so run-reference pages can state which artifacts are neutral-human, ogre-like, or flailing instead of defaulting to `unclassified` / `inherits_source_geometry`.
+- M2. Add explicit ROM sample morphology outputs so the pipeline can show where flailing occurs: keep the neutral-body operator field, but also emit representative posed/deformed ROM sample artifacts rather than forcing users to infer morphology from seam heatmaps on a neutral body.
+  - M2.1 define representative sample selection policy
+  - M2.2 define artifact contract for sample meshes/renders/metadata
+  - M2.3 emit minimal representative posed/deformed sample artifacts
+  - M2.4 surface those artifacts in run pages and operator reports
+- M2b. Resolve the inverse/back-transfer ambiguity: document whether the current "solve on ogre/internalized domain, then return to fitted body" step is only approximate correspondence/reprojection or a true inverse transform; if no true inverse exists, define the acceptance contract for the approximation explicitly.
+  - M2b.1 audit current code paths for an actual inverse candidate
+  - M2b.2 record current reality as correspondence/reprojection vs inverse
+  - M2b.3 define acceptance criteria for approximate transfer
+  - M2b.4 define what evidence would be required for a future true inverse
+- M3. Use `outputs/comparisons/afflec_kernel_diagnostic_raw_20260310/` as the current reference for ROM-kernel interpretation and decide whether `seam_sensitivity = sum_j w_j |disp_hat · dV/dtheta_j|^2` is actually the design signal we want, or whether we should expose an alternate seam objective based on pure displacement magnitude and/or derivative magnitude instead of only the motion-direction-gated field.
+- M4. Investigate shortest-path seam insensitivity under fixed topology: the same-topology comparisons in `outputs/comparisons/afflec_same_topology_20260309/` produced identical seam edge sets even after removing MDL and increasing ROM weights, while seam reports still warn `anchors disconnected; using largest connected component anchors`; next step is debugging anchor/component fallback and comparing shortest-path against `mincut`/`pda` on the same cost pairs.
+- Milestone framing: keep the product roadmap explicit as
+  1. sewable fitted bodysuit,
+  2. thermal/heat-distribution routing and cooling-loop integration,
+  3. comfortable system packaging,
+  4. later "iron man" hard-function modules.
 - Calibrate the `bbox` Afflec fallback against the new diagnostics outputs: raw measurements are now sane again, but refinement still warns on large beta magnitude/shift, so the next step is tuning or constraining the measurement-model handoff rather than debating whether photos are used at all.
 - Thread `afflec_fit_diagnostics.json` status into downstream body/ROM/seam manifests so low-trust Afflec runs are visibly marked outside the body-fit stage.
 - Stop emitting report-generated analytical PNGs from `render_rom_operator_report.py`; render coefficient/norm summaries directly as DOM/SVG in `index.html`, and make the report page embed existing topology media artifacts (`overlay.png`, flex heatmaps, GIF/WebM orbits, map videos) from supplied paths/directories.

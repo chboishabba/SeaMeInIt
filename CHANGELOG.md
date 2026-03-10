@@ -1,5 +1,28 @@
 ## Unreleased
 
+- Clarified the historical inverse-ROM/internalization intent and current limitation:
+  - documented that an earlier project goal was to solve seams on an internalized/ogre-like morphology and then invert back to the fitted SMPL-X body,
+  - recorded that the current repo does not provide a proven inverse transform for that step; today it provides correspondence/reprojection plus transfer diagnostics,
+  - aligned project docs with the broader milestone framing: sewable bodysuit first, then thermal routing/cooling, then comfortable systems packaging, then later harder "iron man" modules.
+- Refined the morphology roadmap into smaller executable planning steps:
+  - broke `M2` into sample selection, artifact contract, minimal emission, and report integration,
+  - broke `M2b` into code-path audit, current-reality documentation, approximation acceptance, and future inverse requirements,
+  - updated planning state so the next bounded step is `M2.1 + M2b.1`.
+- Added morphology-debugging planning state under `.planning/`:
+  - new `.planning/spec.md`, `.planning/architecture.md`, `.planning/plan.md`, `.planning/status.json`, and `.planning/devlog.md`,
+  - current prioritized milestone order is:
+    1. backfill morphology observations on reference runs,
+    2. emit explicit ROM sample morphology artifacts,
+    3. compare candidate ROM fields on one topology,
+    4. revisit seam-solver sensitivity after morphology attribution is clearer.
+- Backfilled morphology observations on the current reference runs:
+  - added `morphology_observations.json` to the main comparison, same-topology, kernel-diagnostic, and verified bundle runs,
+  - run pages can now distinguish normal-human body/render outputs from operator-only field artifacts and from target-geometry transfer artifacts,
+  - override files now also create manual audit rows for artifacts that are not auto-detected by the run-page audit (for example kernel-diagnostic field images).
+- Added a stage-by-stage morphology audit to run reference pages:
+  - `scripts/render_run_reference.py` now emits a `morphology_audit` ledger in `run_report_manifest.json`,
+  - the run page shows where geometry actually changes versus where only fields, seams, or reprojection/rendering change,
+  - run roots can provide `morphology_observations.json` or `morphology_audit_overrides.json` to record observed categories such as `normal_human`, `ogre_like`, or `flailing` for specific artifacts.
 - Changed ROM report visualization/output policy:
   - `scripts/render_rom_operator_report.py` now renders analytic coefficient visuals directly into `index.html` as DOM/SVG charts instead of emitting report-generated PNG files,
   - the report accepts repeatable `--media-path` inputs and embeds existing topology-level media artifacts such as overlays, heatmaps, GIFs, and WebMs directly in the page,

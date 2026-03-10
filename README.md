@@ -22,7 +22,7 @@ Please see our docs:
 - [Roadmap](ROADMAP.md)
 - [TODOs](TODO.md) (see `CONTEXT.md` lines 1141-1147 for TODO hygiene guidance)
 
-## Current focus: manufacturable panels
+## Current focus: manufacturable panels and morphology attribution
 
 The undersuit pipeline needs an explicit "panel" layer between geometry and export. We should treat paneling and sewability as
 first-class constraints before flattening, then run deterministic boundary regularization so outputs become clean, vector-ready
@@ -32,6 +32,32 @@ Near-term work:
 - Define a Panel abstraction (3D patch + 3D/2D boundaries + seam partners + grain direction + distortion/sewability budgets).
 - Enforce sewability constraints before LSCM/ABF (split panels when thresholds are exceeded).
 - Add boundary regularization stages (resample, clamp curvature/turning, suppress tiny features, spline fit) with structured issues and split suggestions.
+
+In parallel, we are explicitly debugging **where morphology changes happen** in the ROM/seam pipeline. Historically, parts of the team treated an "ogre-like" internalized morphology as a valid deformation domain on which seams could be solved and then mapped back to the fitted SMPL-X body. That inverse step is **not solved in the current repo**. The current codebase is stronger on:
+
+- body fitting,
+- ROM/operator field generation,
+- seam solving on a chosen topology,
+- and lossy reprojection/correspondence diagnostics.
+
+It is not yet proven to support a true inverse ROM-domain deformation back to the original fitted body.
+
+## Product milestone framing
+
+The project should be read as an "iron man suit generator" in staged, practical milestones:
+
+1. **Sewable bodysuit milestone**
+   - produce a manufacturable, sewable fitted bodysuit in practical materials
+   - likely initial target: wetsuit-like stretch material / bodysuit substrate
+2. **Thermal distribution milestone**
+   - solve for heat distribution over the human body under varying exertion / ambient conditions
+   - route thin fluid/tube circuits and thermal zones over the garment
+3. **Comfortable systems-integration milestone**
+   - package thermal loops, pumps, routing, and other modules in a wearable, comfortable form
+4. **"Iron man" systems milestone**
+   - only after the above foundations exist, begin integrating harder functional modules on top of a credible undersuit platform
+
+The ROM/seam work sits mainly inside milestone 1 today, with direct relevance to milestone 2 once thermal zoning and routing become first-class design constraints.
 
 ## 🛡️ License Summary
 
