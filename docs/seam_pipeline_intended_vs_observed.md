@@ -93,6 +93,19 @@ Additional clarification (2026-03-09):
   inspection surface; Strategy 2 bundles may include it under `rom_operator/`
   when ROM basis + meta inputs are provided.
 
+Additional clarification (2026-03-10 archive refresh):
+- The archived thread `Seam Graph Generation Debug`
+  (`699050a6-e13c-839a-9a66-be7653b4db13`,
+  canonical `6d14ca5f93671d7fb8e923db48654ecb5ef63b42`) sharpens the naming rule:
+  `human` and `ogre` must not be read as geometry descriptors.
+- They are provenance/stage labels only. If the geometry "looks swapped", that
+  means the role naming is misleading or the wiring/provenance is wrong, not
+  that the labels define morphology by themselves.
+- Safer naming preference when possible:
+  - `fit_v3240`
+  - `base_layer_v9438`
+  - `rom_*` only when the artifact is actually operator/ROM-space
+
 Important naming caveat:
 - Run labels like `A_base` and `B_ogre` are workflow labels, not morphology
   guarantees. Current visual observations indicate morphology can appear inverted

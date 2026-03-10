@@ -74,6 +74,37 @@ Date: 2026-02-06
   - document "operator-level ROM vs domain-level artifacts" explicitly,
   - add an inspectable ROM artifact path so users can view the ROM object without relying on `ogre` renders.
 
+## Archive Refresh (2026-03-10)
+- Refreshed the canonical chat archive via live pull into `/home/c/chat_archive.sqlite`:
+  - requested online UUIDs: `17`
+  - fetched OK: `17`
+  - failures: `0`
+  - source id: `pull_20260310T014918Z`
+  - verification source after ingest: `db`
+- Pulled/confirmed online UUID -> title -> canonical thread id:
+  - `690c6ad9-c920-8323-8e32-5490f9b0fbd5` -> `PyPI publishing options` -> `f963ccac8381a441603ff2e5658e45990e343138`
+  - `69166b40-4468-8320-8cc5-c7e7c45c576a` -> `Zip extraction hardening` -> `40663b18f8aa5979c71cef8db3eb6b437ecaa510`
+  - `69168cea-d4b4-8323-8b00-27169f5ff22d` -> `Summarise project structure` -> `4869516943aa9ebcc0707e186ad0ffbf6bb3c5cb`
+  - `6916c8e8-9db4-8323-8661-eda505ba0324` -> `Project clarification request` -> `648d9a4a7d4173e282ef988d472fe9c1888e6985`
+  - `6916c180-1080-8320-ae2d-acc2e3ac3c23` -> `UV unwrapping explanation` -> `3562461ee45a9f6eb3b24f0cbd4a233161a7b60e`
+  - `69172671-7330-8322-a28f-969907095ea4` -> `DensePose UV map generation` -> `777f6c8f9af698b336c3fdb3200e52960c4e7f7c`
+  - `691e813e-1c84-8321-90ef-977d3804bb47` -> `UV unwrapping in Blender` -> `a39cc88c9628debdfc07a3b846dd1135230e9059`
+  - `691674c6-1154-8320-bf5a-facef5aa5f81` -> `Watertight mesh repair` -> `6516d5174954dc5b11b1d8cc9e8b0d3b7d777b39`
+  - `6909470b-9250-8324-961f-59559af5c6bd` -> `seameinit` -> `11a134a7c680f9cd5e4fe9d1be468f8cd21c23fd`
+  - `695869e8-9df0-8323-93d4-46b440ba27f8` -> `Wetsuit Design Sources` -> `53051ba8bb7446eaecd960aa7fab50b849c06d7d`
+  - `696ee8ce-4800-8323-a7de-e429c5fcaace` -> `Three-kernel coupling for ROM` -> `cb8859f40d2685674cd23159227e249340de377d`
+  - `696f0c80-f2e0-8322-b8a3-7b59b1ce3835` -> `Branch · Three-kernel coupling for ROM` -> `2732a8b3196238d99153d6dfe71992a95d59bd7e`
+  - `69707049-9248-8323-b22d-efb493470795` -> `Pose Sweep Strategy` -> `5fe149c7b3c1e841ab0f8e6419b9fd225a3f5db9`
+  - `6986c771-a08c-839b-a99f-d052720c31eb` -> `Git submodule corruption fix` -> `de233abaf3133daa385d7e663813a82e36b4d901`
+  - `6985aba5-277c-839e-a8b6-3c4761a66b4a` -> `Repo Goal Summaries` -> `02e657061f13d3ea8002a35a9d500af652de0439`
+  - `698d5e21-6d54-839a-a127-088c1dc21227` -> `Seam Walker Troubleshooting` -> `0eff7f41332ca191629d9246ad3677518461fa55`
+  - `699050a6-e13c-839a-9a66-be7653b4db13` -> `Seam Graph Generation Debug` -> `6d14ca5f93671d7fb8e923db48654ecb5ef63b42`
+- Highest-value seam/ROM thread takeaways sharpened by the refresh:
+  - `Seam Graph Generation Debug`: `human` / `ogre` are provenance labels, not morphology descriptors; stage/provenance naming is the safer contract.
+  - `Pose Sweep Strategy`: when meshes/ROM heatmaps look unchanged, treat it as a no-op until mtimes + content hashes prove otherwise.
+  - `Seam Walker Troubleshooting`: solver quality should be improved by structural / flattenability constraints, not ad-hoc anatomy region penalties.
+  - distilled roadmap note recorded at `docs/solver_kernel_roadmap_note_20260310.md`.
+
 ## ROM Operator Reporting (2026-03-09)
 - Implemented operator-level coefficient export in `smii.rom.sampler_real`:
   - new optional inputs/outputs: `--basis` and `--out-coeff-samples`
