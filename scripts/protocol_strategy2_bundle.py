@@ -176,6 +176,7 @@ def main() -> None:
     parser.add_argument("--rom-envelope", type=Path, default=None)
     parser.add_argument("--rom-certificate", type=Path, default=None)
     parser.add_argument("--rom-coeff-samples", type=Path, default=None)
+    parser.add_argument("--rom-sample-manifest", type=Path, default=None)
     parser.add_argument("--vertex-map", type=Path, default=None, help="Optional NPZ with both map directions.")
     parser.add_argument(
         "--base-role",
@@ -499,6 +500,8 @@ def main() -> None:
         ]
         if args.rom_coeff_samples is not None:
             report_cmd += ["--coeff-samples", str(args.rom_coeff_samples)]
+        if args.rom_sample_manifest is not None:
+            report_cmd += ["--sample-manifest", str(args.rom_sample_manifest)]
         if args.rom_envelope is not None:
             report_cmd += ["--envelope", str(args.rom_envelope)]
         if args.rom_certificate is not None:

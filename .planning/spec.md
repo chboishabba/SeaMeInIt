@@ -48,6 +48,8 @@ That makes it too easy to mistake:
 6. The repo states clearly whether the current "back to body" step is:
    - a true inverse transform,
    - or only an approximate correspondence/reprojection.
+7. Representative ROM sample artifacts are emitted with a deterministic selection policy and explicit lineage.
+8. The repo states the current approximation acceptance contract separately from any future inverse ambition.
 
 ## Non-Goals
 
@@ -56,3 +58,31 @@ That makes it too easy to mistake:
 - Using seam-solver outputs alone to judge ROM correctness.
 - Pretending that today's reprojection/correspondence step is already a proven
   inverse of any ROM/internalization transform.
+
+## Current Contract
+
+Reference note:
+
+- `docs/rom_sample_morphology_and_transfer_contract.md`
+
+This phase now treats the following as fixed implementation targets:
+
+- representative ROM sample selection is deterministic and anchored to actual sampler statistics
+- representative sample artifacts stay on sampler-native topology
+- run pages and operator reports surface sample morphology separately from aggregate fields
+- current back-transfer language is approximate correspondence/reprojection, not inverse
+
+## Next Priority Shift (2026-03-11)
+
+Reference note:
+
+- `docs/body_fit_and_inverse_roadmap_20260311.md`
+
+The next phase is no longer only about kernel interpretation. It now also has to
+answer:
+
+- what exact forward object `B_ogre` actually was
+- why the current Afflec fit is producing an egg-shaped / Green-Goblin-like skull crown
+- what back-transfer contract is required if ROM-domain seam solves must land on the fitted Afflec body
+- how a future video-input fitting path should be staged
+- how SMPL-X fitting policy should handle feminine bodies and other body-shape regimes intentionally rather than implicitly

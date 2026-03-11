@@ -67,6 +67,33 @@ def test_render_rom_operator_report_generates_html_and_manifest(tmp_path):
     )
     costs_path = tmp_path / "costs.npz"
     save_seam_cost_field(costs, costs_path)
+    sample_dir = tmp_path / "rom_samples"
+    sample_dir.mkdir()
+    sample_mesh = sample_dir / "sample_01__pose_a.npz"
+    np.savez_compressed(
+        sample_mesh,
+        vertices=np.array([[0.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=float),
+        faces=np.array([[0, 1, 1]], dtype=int),
+    )
+    sample_manifest = sample_dir / "rom_sample_manifest.json"
+    sample_manifest.write_text(
+        json.dumps(
+            {
+                "meta": {"source_vertex_count": 2},
+                "samples": [
+                    {
+                        "pose_id": "pose_a",
+                        "selection_reasons": ["max_field_l2_norm"],
+                        "field_l2_norm": 3.0,
+                        "displacement_mean_norm": 1.2,
+                        "mesh_name": sample_mesh.name,
+                        "mesh_path": str(sample_mesh),
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
 
     out_dir = tmp_path / "report"
     media_dir = tmp_path / "media"
@@ -84,6 +111,8 @@ def test_render_rom_operator_report_generates_html_and_manifest(tmp_path):
             str(meta_path),
             "--coeff-samples",
             str(coeff_path),
+            "--sample-manifest",
+            str(sample_manifest),
             "--certificate",
             str(cert_path),
             "--costs",
@@ -107,10 +136,13 @@ def test_render_rom_operator_report_generates_html_and_manifest(tmp_path):
     assert any(entry["artifact_level"] == "operator" for entry in manifest["artifacts"])
     assert any(entry["artifact_level"] == "topology" for entry in manifest["artifacts"])
     assert len(manifest["embedded_media"]) == 2
+    assert manifest["sample_morphology"]["samples"][0]["pose_id"] == "pose_a"
     html_text = (out_dir / "index.html").read_text(encoding="utf-8")
     assert "<svg" in html_text
     assert "<img " in html_text
     assert "<video" in html_text
+    assert "Representative ROM Sample Morphologies" in html_text
+    assert "sample_01__pose_a.npz" in html_text
 
 
 def test_render_rom_operator_report_flags_topology_mismatch(tmp_path):

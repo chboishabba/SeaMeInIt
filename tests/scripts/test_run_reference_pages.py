@@ -59,6 +59,25 @@ def test_render_run_reference_embeds_completed_assets_and_ignores_frames(tmp_pat
     operator_dir.mkdir()
     (operator_dir / "index.html").write_text("<html>operator</html>", encoding="utf-8")
     (operator_dir / "coeff_top_variance.png").write_bytes(b"legacy")
+    sample_dir = run_root / "rom_samples"
+    sample_dir.mkdir()
+    np.savez(sample_dir / "sample_01__pose_a.npz", vertices=np.ones((3, 3), dtype=float), faces=np.array([[0, 1, 2]], dtype=int))
+    (sample_dir / "rom_sample_manifest.json").write_text(
+        json.dumps(
+            {
+                "meta": {"source_vertex_count": 3},
+                "samples": [
+                    {
+                        "pose_id": "pose_a",
+                        "selection_reasons": ["max_field_l2_norm"],
+                        "mesh_name": "sample_01__pose_a.npz",
+                        "mesh_path": str(sample_dir / "sample_01__pose_a.npz"),
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
 
     seam_dir = run_root / "seams_raw"
     seam_dir.mkdir()
@@ -85,10 +104,13 @@ def test_render_run_reference_embeds_completed_assets_and_ignores_frames(tmp_pat
     assert manifest["summary"]["morphology_audit_count"] >= 3
     body_entry = next(entry for entry in manifest["morphology_audit"] if entry["artifact"].endswith("body_raw/afflec_body.npz"))
     seam_entry = next(entry for entry in manifest["morphology_audit"] if entry["artifact"].endswith("seams_raw/seam_report.json"))
+    sample_entry = next(entry for entry in manifest["morphology_audit"] if entry["artifact"].endswith("rom_samples/sample_01__pose_a.npz"))
     manual_entry = next(entry for entry in manifest["morphology_audit"] if entry["artifact"] == "manual/summary.txt")
     assert body_entry["observed_morphology"] == "normal_human"
     assert body_entry["geometry_changed"] is True
     assert seam_entry["stage"] == "seam_solution"
+    assert sample_entry["stage"] == "rom_sample_pose"
+    assert sample_entry["geometry_changed"] is True
     assert manual_entry["observed_morphology"] == "summary_only"
 
     html_text = (out_dir / "index.html").read_text(encoding="utf-8")

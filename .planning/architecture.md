@@ -34,38 +34,45 @@ These files allow a run to carry explicit human-judged morphology observations.
 The run page should consume them rather than forcing morphology to remain
 `unclassified`.
 
-### 4. Future ROM sample morphology outputs
+### 4. ROM sample morphology outputs
 
-These are not implemented yet, but they are the next architectural dependency.
-They should emit representative posed/deformed sample meshes or renders so the
-pipeline can show where flailing appears.
+This surface now exists in a minimal implemented form.
 
-Required sub-surfaces:
+Current implementation:
 
-- sample selection policy:
-  which poses become "representative" artifacts
-- sample artifact contract:
-  mesh, render, metadata, and lineage expectations
-- run/report integration:
-  where those artifacts appear in `run_reference/index.html` and related pages
+- `smii.rom.sampler_real --out-rom-samples-dir`
+- `rom_samples/rom_sample_manifest.json`
+- sampler-native posed sample `.npz` meshes
+
+Current contract:
+
+- representative poses are selected deterministically from sampler statistics
+- emitted samples stay on the sampler-native topology
+- run/reference and operator-report surfaces display them as morphology-stage artifacts, not as operator-only fields
+
+Remaining extension space:
+
+- richer rendered previews of the sample meshes
+- tighter integration with later kernel-comparison pages
 
 ### 5. Inverse/back-transfer contract
 
-This is also not implemented as a true inverse today, but the architecture now
-needs an explicit distinction between:
+This is now documented explicitly, even though a true inverse still does not exist.
+The architecture must distinguish between:
 
 - exact inverse transform,
 - approximate reconstruction,
 - correspondence/reprojection transfer.
 
-Required sub-surfaces:
+Current state:
 
-- current capability audit:
-  what the codebase can actually do today
-- acceptance contract:
-  when approximate transfer is considered good enough for interpretation
-- future inverse track:
-  what would have to be true before calling a transform "invertible"
+- current capability audit completed
+- acceptance contract documented
+- future inverse requirements documented
+
+Reference note:
+
+- `docs/rom_sample_morphology_and_transfer_contract.md`
 
 ## Dependency Order
 
@@ -75,6 +82,19 @@ Required sub-surfaces:
 4. Inverse/back-transfer contract is clarified.
 5. Candidate ROM fields are judged against those artifacts.
 6. Seam solver sensitivity is revisited.
+
+## Orchestration Note
+
+For the current morphology-debugging phase, generic repo-audit work is not the
+active gating step. The active gate is whether morphology attribution and
+inverse/back-transfer semantics are clear enough to support implementation.
+
+Operationally:
+
+- the orchestrator state should not keep routing to `repo-auditor` while the
+  phase is already executing against an approved morphology roadmap,
+- the next bounded steps should route into implementation-oriented work on
+  `M2.1` and `M2b.1` instead.
 
 ## Failure Modes
 

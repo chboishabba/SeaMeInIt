@@ -47,6 +47,16 @@ def _load_coeff_samples(path: Path | None) -> Mapping[str, Any] | None:
     return payload
 
 
+def _load_sample_manifest(path: Path | None) -> Mapping[str, Any] | None:
+    payload = _load_json(path)
+    if payload is None:
+        return None
+    samples = payload.get("samples")
+    if not isinstance(samples, Sequence):
+        raise TypeError("ROM sample manifest must contain a 'samples' list.")
+    return payload
+
+
 def _load_body_vertex_count(path: Path | None) -> int | None:
     if path is None or not path.exists():
         return None
@@ -327,6 +337,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--basis", type=Path, required=True)
     parser.add_argument("--rom-meta", type=Path, required=True)
     parser.add_argument("--coeff-samples", type=Path, default=None)
+    parser.add_argument("--sample-manifest", type=Path, default=None)
     parser.add_argument("--envelope", type=Path, default=None)
     parser.add_argument("--certificate", type=Path, default=None)
     parser.add_argument("--costs", type=Path, default=None)
@@ -348,6 +359,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     basis = load_basis(args.basis)
     meta_payload = _load_json(args.rom_meta) or {}
     coeff_payload = _load_coeff_samples(args.coeff_samples)
+    sample_manifest = _load_sample_manifest(args.sample_manifest)
     envelope_payload = _load_json(args.envelope)
     certificate_payload = _load_json(args.certificate)
     costs_payload = load_seam_cost_field(args.costs) if args.costs is not None and args.costs.exists() else None
@@ -386,6 +398,19 @@ def main(argv: Sequence[str] | None = None) -> None:
         _artifact_entry(path=args.basis, artifact_level="operator"),
         _artifact_entry(path=args.rom_meta, artifact_level="operator"),
         _artifact_entry(path=args.coeff_samples, artifact_level="operator"),
+        _artifact_entry(
+            path=args.sample_manifest,
+            artifact_level="topology",
+            role="none",
+            topology=_safe_topology_label(
+                int(sample_manifest.get("meta", {}).get("source_vertex_count"))
+                if sample_manifest
+                and isinstance(sample_manifest.get("meta"), Mapping)
+                and sample_manifest.get("meta", {}).get("source_vertex_count") is not None
+                else None
+            ),
+            domain="operator_native_pose",
+        ),
         _artifact_entry(path=args.envelope, artifact_level="operator"),
         _artifact_entry(path=args.certificate, artifact_level="operator"),
         _artifact_entry(
@@ -424,6 +449,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         "embedded_media": embedded_media,
         "generated_files": generated_files,
         "warnings": warnings_list,
+        "sample_morphology": sample_manifest,
     }
     report_manifest_path = out_dir / "report_manifest.json"
     report_manifest_path.write_text(json.dumps(report_manifest, indent=2), encoding="utf-8")
@@ -461,7 +487,20 @@ def main(argv: Sequence[str] | None = None) -> None:
         "Sample coefficient norms",
     )
     media_html = _embedded_media_html(embedded_media)
-    html = f"""<!doctype html>
+    sample_rows = ""
+    if sample_manifest is not None:
+        sample_rows = "".join(
+            "<tr>"
+            f"<td><code>{html.escape(str(entry.get('pose_id', 'unknown')))}</code></td>"
+            f"<td>{html.escape(', '.join(str(item) for item in entry.get('selection_reasons', [])))}</td>"
+            f"<td>{float(entry.get('field_l2_norm', 0.0)):.6g}</td>"
+            f"<td>{float(entry.get('displacement_mean_norm', 0.0)):.6g}</td>"
+            f"<td><a href=\"{html.escape(os.path.relpath(str(entry.get('mesh_path')), out_dir)) if entry.get('mesh_path') else ''}\"><code>{html.escape(str(entry.get('mesh_name', 'mesh')))}</code></a></td>"
+            "</tr>"
+            for entry in sample_manifest.get("samples", [])
+            if isinstance(entry, Mapping)
+        )
+    html_text = f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -493,6 +532,9 @@ def main(argv: Sequence[str] | None = None) -> None:
   <h2>Operator Charts</h2>
   {top_chart_html}
   {norm_chart_html}
+  <h2>Representative ROM Sample Morphologies</h2>
+  <p class="callout">These are sampler-native posed/deformed meshes chosen to show where morphology changes, including flailing, actually appear. They are not inverse-mapped back to the fitted body topology.</p>
+  <table><tr><th>Pose</th><th>Selection reasons</th><th>Field L2</th><th>Disp mean</th><th>Mesh</th></tr>{sample_rows or '<tr><td colspan="5">No representative ROM sample manifest provided.</td></tr>'}</table>
   <h2>Embedded Media</h2>
   {media_html}
   <h2>Source Artifacts</h2>
@@ -504,7 +546,7 @@ def main(argv: Sequence[str] | None = None) -> None:
 </html>
 """
     html_path = out_dir / "index.html"
-    html_path.write_text(html, encoding="utf-8")
+    html_path.write_text(html_text, encoding="utf-8")
     print(f"Wrote ROM operator report to {html_path}")
 
 

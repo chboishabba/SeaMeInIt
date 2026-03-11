@@ -9,10 +9,12 @@ from smii.rom.sampler_real import (
     ParameterLayout,
     PoseSample,
     _save_coeff_samples,
+    _save_rom_sample_artifacts,
     _load_smplx_parameter_payload,
     _expand_weight_block,
     _nearest_neighbor_map,
     _remap_costs,
+    _select_representative_samples,
     _save_vertex_correspondence,
     _stream_diagonal_costs,
     parse_args,
@@ -201,3 +203,107 @@ def test_save_coeff_samples_exports_operator_payload(tmp_path):
     assert payload["meta"]["basis_component_count"] == 2
     assert payload["samples"][0]["pose_id"] == "pose_a"
     assert payload["samples"][0]["coeffs"]["seam_sensitivity"] == [0.5, 1.5]
+
+
+def test_select_representative_samples_uses_anchor_policy():
+    sampled_fields = [
+        {
+            "pose_id": "pose_a",
+            "weight": 1.0,
+            "vertices": np.zeros((3, 3), dtype=float),
+            "observations": {
+                "field_l2_norm": 10.0,
+                "field_max": 5.0,
+                "displacement_mean_norm": 1.0,
+                "displacement_max_norm": 2.0,
+            },
+            "metadata": {},
+        },
+        {
+            "pose_id": "pose_b",
+            "weight": 5.0,
+            "vertices": np.ones((3, 3), dtype=float),
+            "observations": {
+                "field_l2_norm": 5.0,
+                "field_max": 4.0,
+                "displacement_mean_norm": 3.0,
+                "displacement_max_norm": 3.5,
+            },
+            "metadata": {},
+        },
+        {
+            "pose_id": "pose_c",
+            "weight": 0.5,
+            "vertices": np.full((3, 3), 2.0, dtype=float),
+            "observations": {
+                "field_l2_norm": 7.0,
+                "field_max": 3.0,
+                "displacement_mean_norm": 2.0,
+                "displacement_max_norm": 2.5,
+            },
+            "metadata": {},
+        },
+    ]
+
+    selected = _select_representative_samples(sampled_fields, max_samples=4)
+
+    assert [entry.pose_id for entry in selected] == ["pose_a", "pose_b", "pose_c"]
+    reasons = {entry.pose_id: set(entry.selection_reasons) for entry in selected}
+    assert "max_field_l2_norm" in reasons["pose_a"]
+    assert "max_displacement_mean_norm" in reasons["pose_b"]
+    assert "max_weight" in reasons["pose_b"]
+    assert "median_field_l2_norm" in reasons["pose_c"]
+
+
+def test_save_rom_sample_artifacts_writes_manifest_and_meshes(tmp_path):
+    out_dir = tmp_path / "rom_samples"
+    sampled_fields = (
+        {
+            "pose_id": "pose_a",
+            "weight": 1.0,
+            "vertices": np.zeros((3, 3), dtype=float),
+            "observations": {
+                "field_l2_norm": 10.0,
+                "field_max": 5.0,
+                "displacement_mean_norm": 1.0,
+                "displacement_max_norm": 2.0,
+            },
+            "metadata": {"tag": "peak"},
+        },
+        {
+            "pose_id": "pose_b",
+            "weight": 2.0,
+            "vertices": np.ones((3, 3), dtype=float),
+            "observations": {
+                "field_l2_norm": 4.0,
+                "field_max": 2.0,
+                "displacement_mean_norm": 3.0,
+                "displacement_max_norm": 4.0,
+            },
+            "metadata": {"tag": "disp"},
+        },
+    )
+
+    manifest_path = _save_rom_sample_artifacts(
+        out_dir,
+        sampled_fields=sampled_fields,
+        source_faces=np.array([[0, 1, 2]], dtype=np.int64),
+        body_path=tmp_path / "body.npz",
+        body_hash="bodyhash",
+        params_path=tmp_path / "params.json",
+        sweep_path=tmp_path / "poses.json",
+        schedule_path=None,
+        source_vertex_count=3,
+        target_vertex_count=3,
+        mapping_info={"mode": "identity"},
+        requested_sample_count=4,
+    )
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["meta"]["selection_policy"]["anchors"][0] == "max_field_l2_norm"
+    assert manifest["meta"]["inverse_assessment"]["true_inverse_available"] is False
+    assert len(manifest["samples"]) == 2
+    mesh_path = out_dir / manifest["samples"][0]["mesh_name"]
+    payload = np.load(mesh_path, allow_pickle=False)
+    assert payload["vertices"].shape == (3, 3)
+    assert payload["faces"].shape == (1, 3)

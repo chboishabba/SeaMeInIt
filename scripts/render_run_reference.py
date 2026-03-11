@@ -294,6 +294,27 @@ def _morphology_audit(files: list[Path], *, run_root: Path, out_dir: Path) -> li
                     else "Reprojection changes seam placement across topologies; apparent morphology may reflect transfer artifacts rather than geometry change.",
                 }
             )
+        elif path.suffix.lower() in BODY_EXTS and path.parent.name == "rom_samples" and path.name.startswith("sample_"):
+            mesh = _npz_mesh_summary(path)
+            entries.append(
+                {
+                    "artifact": rel,
+                    "artifact_kind": "rom_sample_mesh",
+                    "stage": "rom_sample_pose",
+                    "topology": mesh["vertex_count"],
+                    "geometry_sha256": mesh["geometry_sha256"],
+                    "geometry_changed": True,
+                    "observed_morphology": "unclassified",
+                    "expected_morphology": _expected_morphology(
+                        "rom_sample_pose",
+                        geometry_changed=True,
+                        artifact_kind="rom_sample_mesh",
+                    ),
+                    "source_mesh": None,
+                    "related_artifact": None,
+                    "diagnostic_note": "Representative ROM-native posed/deformed sample mesh; inspect this stage directly when judging flailing or other morphology changes.",
+                }
+            )
         elif path.name in {"rom_run.json", "afflec_coeff_samples.json", "coeff_summary.json", "report_manifest.json"} or path.name == "seam_costs.npz":
             parent = path.parent.name
             if parent == "rom_operator" or "operator" in parent or path.name in {"coeff_summary.json", "report_manifest.json"}:
@@ -409,8 +430,9 @@ def _group_files(files: list[Path], *, run_root: Path, out_dir: Path) -> dict[st
         [
             path
             for path in files
-            if path.name in {"rom_run.json", "afflec_basis.npz", "afflec_coeff_samples.json", "seam_costs.npz"}
+            if path.name in {"rom_run.json", "afflec_basis.npz", "afflec_coeff_samples.json", "seam_costs.npz", "rom_sample_manifest.json"}
             or path.parent.name.startswith("rom_")
+            or path.parent.name == "rom_samples"
         ],
         out_dir=out_dir,
     )

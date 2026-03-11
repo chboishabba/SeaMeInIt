@@ -81,6 +81,19 @@ class PoseSample:
 
 
 @dataclass(frozen=True, slots=True)
+class RepresentativeSample:
+    pose_id: str
+    weight: float
+    selection_reasons: tuple[str, ...]
+    field_l2_norm: float
+    field_max: float
+    displacement_mean_norm: float
+    displacement_max_norm: float
+    vertices: np.ndarray
+    metadata: Mapping[str, Any] | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ParameterBlock:
     name: str
     length: int
@@ -145,6 +158,20 @@ def _sha256_array(array: np.ndarray) -> str:
     digest = hashlib.sha256()
     digest.update(np.ascontiguousarray(array).tobytes())
     return digest.hexdigest()
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, Mapping):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        return [_json_safe(item) for item in value]
+    return str(value)
 
 
 def _find_params_path(body_path: Path, override: Path | None) -> Path:
@@ -386,6 +413,17 @@ class SmplxPoseBackend:
                 joint_map[name] = np.asarray(joints[idx], dtype=float)
         return np.asarray(vertices, dtype=float), joint_map
 
+    def native_faces(self) -> np.ndarray | None:
+        raw = getattr(self.model, "faces", None)
+        if raw is None:
+            raw = getattr(self.model, "f", None)
+        if raw is None:
+            return None
+        faces = np.asarray(raw, dtype=np.int64)
+        if faces.ndim != 2 or faces.shape[1] != 3:
+            return None
+        return faces
+
 
 def _central_difference(
     backend: SmplxPoseBackend,
@@ -494,6 +532,13 @@ def _stream_diagonal_costs(
                     "pose_id": sample.pose_id,
                     "weight": float(sample.weight),
                     "field": np.asarray(weighted_field, dtype=float),
+                    "vertices": np.asarray(vt, dtype=float),
+                    "observations": {
+                        "field_l2_norm": float(np.linalg.norm(weighted_field)),
+                        "field_max": float(np.max(weighted_field)) if weighted_field.size else 0.0,
+                        "displacement_mean_norm": float(np.mean(np.linalg.norm(disp, axis=1))),
+                        "displacement_max_norm": float(np.max(np.linalg.norm(disp, axis=1))),
+                    },
                     "metadata": dict(meta),
                 }
             )
@@ -796,8 +841,8 @@ def _save_coeff_samples(
                 "pose_id": str(entry["pose_id"]),
                 "weight": float(entry["weight"]),
                 "coeffs": {"seam_sensitivity": coeffs.tolist()},
-                "observations": None,
-                "metadata": dict(entry.get("metadata") or {}),
+                "observations": _json_safe(entry.get("observations")),
+                "metadata": _json_safe(entry.get("metadata") or {}),
             }
         )
 
@@ -825,6 +870,171 @@ def _save_coeff_samples(
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _select_representative_samples(
+    sampled_fields: Sequence[Mapping[str, Any]], *, max_samples: int
+) -> list[RepresentativeSample]:
+    if max_samples <= 0 or not sampled_fields:
+        return []
+
+    entries: list[RepresentativeSample] = []
+    for entry in sampled_fields:
+        obs = entry.get("observations") or {}
+        vertices = np.asarray(entry.get("vertices"), dtype=float)
+        if vertices.ndim != 2 or vertices.shape[1] != 3:
+            continue
+        entries.append(
+            RepresentativeSample(
+                pose_id=str(entry["pose_id"]),
+                weight=float(entry["weight"]),
+                selection_reasons=tuple(),
+                field_l2_norm=float(obs.get("field_l2_norm", 0.0)),
+                field_max=float(obs.get("field_max", 0.0)),
+                displacement_mean_norm=float(obs.get("displacement_mean_norm", 0.0)),
+                displacement_max_norm=float(obs.get("displacement_max_norm", 0.0)),
+                vertices=vertices,
+                metadata=entry.get("metadata"),
+            )
+        )
+    if not entries:
+        return []
+
+    selected: list[RepresentativeSample] = []
+    selected_index: dict[str, int] = {}
+
+    def _add(sample: RepresentativeSample, reason: str) -> None:
+        existing_idx = selected_index.get(sample.pose_id)
+        if existing_idx is not None:
+            existing = selected[existing_idx]
+            if reason not in existing.selection_reasons:
+                selected[existing_idx] = RepresentativeSample(
+                    pose_id=existing.pose_id,
+                    weight=existing.weight,
+                    selection_reasons=existing.selection_reasons + (reason,),
+                    field_l2_norm=existing.field_l2_norm,
+                    field_max=existing.field_max,
+                    displacement_mean_norm=existing.displacement_mean_norm,
+                    displacement_max_norm=existing.displacement_max_norm,
+                    vertices=existing.vertices,
+                    metadata=existing.metadata,
+                )
+            return
+        selected_index[sample.pose_id] = len(selected)
+        selected.append(
+            RepresentativeSample(
+                pose_id=sample.pose_id,
+                weight=sample.weight,
+                selection_reasons=(reason,),
+                field_l2_norm=sample.field_l2_norm,
+                field_max=sample.field_max,
+                displacement_mean_norm=sample.displacement_mean_norm,
+                displacement_max_norm=sample.displacement_max_norm,
+                vertices=sample.vertices,
+                metadata=sample.metadata,
+            )
+        )
+
+    by_field = sorted(entries, key=lambda item: (-item.field_l2_norm, item.pose_id))
+    by_disp = sorted(entries, key=lambda item: (-item.displacement_mean_norm, item.pose_id))
+    by_weight = sorted(entries, key=lambda item: (-item.weight, item.pose_id))
+    median_candidates = sorted(entries, key=lambda item: (item.field_l2_norm, item.pose_id))
+    median_target = median_candidates[len(median_candidates) // 2].field_l2_norm
+    median_sample = min(
+        entries,
+        key=lambda item: (abs(item.field_l2_norm - median_target), -item.field_l2_norm, item.pose_id),
+    )
+
+    _add(by_field[0], "max_field_l2_norm")
+    _add(by_disp[0], "max_displacement_mean_norm")
+    _add(median_sample, "median_field_l2_norm")
+    _add(by_weight[0], "max_weight")
+
+    for sample in by_field:
+        if len(selected) >= max_samples:
+            break
+        _add(sample, "fill_by_field_l2_norm")
+    return selected[:max_samples]
+
+
+def _save_rom_sample_artifacts(
+    out_dir: Path,
+    *,
+    sampled_fields: Sequence[Mapping[str, Any]],
+    source_faces: np.ndarray | None,
+    body_path: Path,
+    body_hash: str,
+    params_path: Path,
+    sweep_path: Path | None,
+    schedule_path: Path | None,
+    source_vertex_count: int,
+    target_vertex_count: int,
+    mapping_info: Mapping[str, Any],
+    requested_sample_count: int,
+) -> Path:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    selected = _select_representative_samples(sampled_fields, max_samples=requested_sample_count)
+    manifest_entries: list[dict[str, Any]] = []
+    for rank, sample in enumerate(selected, start=1):
+        mesh_name = f"sample_{rank:02d}__{sample.pose_id}.npz"
+        mesh_path = out_dir / mesh_name
+        payload: dict[str, Any] = {"vertices": np.asarray(sample.vertices, dtype=float)}
+        if source_faces is not None:
+            payload["faces"] = np.asarray(source_faces, dtype=np.int64)
+        np.savez_compressed(mesh_path, **payload)
+        manifest_entries.append(
+            {
+                "pose_id": sample.pose_id,
+                "weight": float(sample.weight),
+                "selection_reasons": list(sample.selection_reasons),
+                "field_l2_norm": float(sample.field_l2_norm),
+                "field_max": float(sample.field_max),
+                "displacement_mean_norm": float(sample.displacement_mean_norm),
+                "displacement_max_norm": float(sample.displacement_max_norm),
+                "topology": f"v{int(sample.vertices.shape[0])}",
+                "mesh_path": str(mesh_path),
+                "mesh_name": mesh_name,
+                "geometry_sha256": _sha256_array(np.asarray(sample.vertices, dtype=float)),
+                "metadata": _json_safe(sample.metadata or {}),
+            }
+        )
+
+    manifest = {
+        "meta": {
+            "body_path": str(body_path),
+            "body_hash": body_hash,
+            "params_path": str(params_path),
+            "sweep_path": str(sweep_path) if sweep_path else None,
+            "schedule_path": str(schedule_path) if schedule_path else None,
+            "source_vertex_count": int(source_vertex_count),
+            "target_vertex_count": int(target_vertex_count),
+            "source_topology": f"v{int(source_vertex_count)}",
+            "target_topology": f"v{int(target_vertex_count)}",
+            "selection_policy": {
+                "anchors": [
+                    "max_field_l2_norm",
+                    "max_displacement_mean_norm",
+                    "median_field_l2_norm",
+                    "max_weight",
+                ],
+                "fill_policy": "descending_field_l2_norm_after_dedup",
+                "requested_sample_count": int(requested_sample_count),
+            },
+            "inverse_assessment": {
+                "true_inverse_available": False,
+                "current_transfer_mode": "correspondence_or_reprojection_only",
+                "acceptance_note": (
+                    "Current back-transfer is approximate only and must be judged with lineage and quality diagnostics."
+                ),
+            },
+            "mapping": _json_safe(mapping_info),
+            "faces_available": bool(source_faces is not None),
+        },
+        "samples": manifest_entries,
+    }
+    manifest_path = out_dir / "rom_sample_manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    return manifest_path
 
 
 def _build_seam_cost_field(
@@ -902,6 +1112,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=Path,
         default=None,
         help="Optional JSON export of per-pose operator coefficients derived from the sampled sensitivity fields.",
+    )
+    parser.add_argument(
+        "--out-rom-samples-dir",
+        type=Path,
+        default=None,
+        help="Optional directory for representative posed/deformed ROM sample meshes plus rom_sample_manifest.json.",
+    )
+    parser.add_argument(
+        "--rom-sample-count",
+        type=int,
+        default=4,
+        help="Maximum number of representative ROM sample meshes to emit when --out-rom-samples-dir is set.",
     )
     parser.add_argument(
         "--vertex-map",
@@ -1092,7 +1314,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         weights=weights,
         fd_step=args.fd_step,
         epsilon=args.epsilon,
-        sample_field_sink=sampled_fields if args.out_coeff_samples is not None else None,
+        sample_field_sink=sampled_fields
+        if (args.out_coeff_samples is not None or args.out_rom_samples_dir is not None)
+        else None,
     )
 
     source_vertex_count = len(costs)
@@ -1139,6 +1363,23 @@ def main(argv: Sequence[str] | None = None) -> None:
         mapping_info["correspondence_artifact"] = str(args.out_correspondence)
         mapping_info["correspondence_meta"] = dict(correspondence_meta)
         print(f"Wrote transform-native correspondence to {args.out_correspondence}")
+
+    if args.out_rom_samples_dir is not None:
+        sample_manifest_path = _save_rom_sample_artifacts(
+            args.out_rom_samples_dir,
+            sampled_fields=sampled_fields,
+            source_faces=backend.native_faces(),
+            body_path=body_path,
+            body_hash=body_hash,
+            params_path=params_path,
+            sweep_path=sweep_path,
+            schedule_path=schedule_path,
+            source_vertex_count=source_vertex_count,
+            target_vertex_count=target_vertex_count,
+            mapping_info=mapping_info,
+            requested_sample_count=int(args.rom_sample_count),
+        )
+        print(f"Wrote ROM sample morphology artifacts to {sample_manifest_path}")
 
     if args.out_coeff_samples is not None:
         basis = load_basis(args.basis)

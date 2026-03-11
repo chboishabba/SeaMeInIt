@@ -1,13 +1,16 @@
 {
-  "context": "ready",
-  "docs": "ready",
   "architecture": "complete",
-  "audit": "unknown",
-  "external_reasoning": "off",
-  "tests": "passing",
-  "milestones_remaining": 3,
+  "audit": "complete",
+  "context": "ready",
+  "current_milestone": "M5_B_ogre_forward_object_audit__and_M6_afflec_crown_diagnosis",
   "current_phase": "morphology_debugging",
-  "current_milestone": "M2_emit_rom_sample_morphology_outputs__and_M2b_inverse_clarification",
-  "current_subtask": "M2.1_define_sample_selection__and_M2b.1_audit_inverse_candidates",
-  "last_action": "Refined M2 and M2b into smaller orchestrator-friendly subtasks so the next bounded step is to define ROM sample selection policy and audit the codebase for any true inverse-transform candidate."
+  "current_subtask": "add_afflec_export_stage_checkpoints__define_skull_gate__and_write_back_transfer_spec_against_B_ogre_9438",
+  "docs": "ready",
+  "external_reasoning": "off",
+  "last_action": "long-running-development",
+  "last_cycle_finished_at": "2026-03-11T05:06:13Z",
+  "last_cycle_started_at": "2026-03-11T05:06:13Z",
+  "last_exit_code": 0,
+  "milestones_remaining": 6,
+  "tests": "passing"
 }

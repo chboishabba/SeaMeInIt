@@ -2,16 +2,56 @@
 - M1. Backfill morphology observations into run roots via `morphology_observations.json` so run-reference pages can state which artifacts are neutral-human, ogre-like, or flailing instead of defaulting to `unclassified` / `inherits_source_geometry`.
 - M2. Add explicit ROM sample morphology outputs so the pipeline can show where flailing occurs: keep the neutral-body operator field, but also emit representative posed/deformed ROM sample artifacts rather than forcing users to infer morphology from seam heatmaps on a neutral body.
   - M2.1 define representative sample selection policy
+    - fixed anchors: `max_field_l2_norm`, `max_displacement_mean_norm`, `median_field_l2_norm`, `max_weight`
+    - default sample count: `4`
+    - fill remaining slots by descending `field_l2_norm` after deduplication
   - M2.2 define artifact contract for sample meshes/renders/metadata
+    - emit sampler-native posed mesh `.npz` files plus `rom_sample_manifest.json`
+    - keep native topology; do not pretend these are inverse-mapped back to the fitted body
   - M2.3 emit minimal representative posed/deformed sample artifacts
+    - baseline complete: `smii.rom.sampler_real --out-rom-samples-dir`
   - M2.4 surface those artifacts in run pages and operator reports
+    - baseline complete: run pages auto-classify `rom_sample_pose`; operator report accepts `--sample-manifest`
 - M2b. Resolve the inverse/back-transfer ambiguity: document whether the current "solve on ogre/internalized domain, then return to fitted body" step is only approximate correspondence/reprojection or a true inverse transform; if no true inverse exists, define the acceptance contract for the approximation explicitly.
   - M2b.1 audit current code paths for an actual inverse candidate
+    - current audit says no geometry inverse exists; only basis-space encoding and mesh correspondence/reprojection
   - M2b.2 record current reality as correspondence/reprojection vs inverse
+    - complete in docs/contract notes
   - M2b.3 define acceptance criteria for approximate transfer
+    - require lineage, explicit transfer labeling, and quality metrics/gates
   - M2b.4 define what evidence would be required for a future true inverse
 - M3. Use `outputs/comparisons/afflec_kernel_diagnostic_raw_20260310/` as the current reference for ROM-kernel interpretation and decide whether `seam_sensitivity = sum_j w_j |disp_hat · dV/dtheta_j|^2` is actually the design signal we want, or whether we should expose an alternate seam objective based on pure displacement magnitude and/or derivative magnitude instead of only the motion-direction-gated field.
 - M4. Investigate shortest-path seam insensitivity under fixed topology: the same-topology comparisons in `outputs/comparisons/afflec_same_topology_20260309/` produced identical seam edge sets even after removing MDL and increasing ROM weights, while seam reports still warn `anchors disconnected; using largest connected component anchors`; next step is debugging anchor/component fallback and comparing shortest-path against `mincut`/`pda` on the same cost pairs.
+- M5. Audit the exact historical forward object behind `B_ogre` before doing any more inverse/back-transfer design work.
+  - M5.1 collect the historical seam/render/mesh artifacts for `B_ogre` — complete
+  - M5.2 identify the exact mesh path/hash/topology behind `B_ogre` — complete
+    - current forward object: `outputs/suits/afflec_body/base_layer.npz` (`9438`, SHA256 `b122dc2cf8b075a5a5bcc0c124a075247268332203df7873c36de65e4027695c`)
+    - paired ROM costs: `outputs/rom/seam_costs_afflec_realshape_edges.npz` (`9438`, SHA256 `750e0472648fff6a4f324cd4b34e78648dd8c878a1b2acbd85a0c3a3c57f50d8`)
+  - M5.3 determine whether `B_ogre` was real transformed geometry or mainly a render/domain artifact
+    - narrowed but not closed: native `B_ogre` is a real `9438` solve object, but old ogre-like visuals still appear mixed with transfer/render artifacts
+  - M5.4 record the forward-object decision note — complete in `docs/b_ogre_and_afflec_crown_audit_20260311.md`
+- M6. Diagnose the current Afflec crown/head-shape failure.
+  - M6.1 reproduce the egg-shaped / Green-Goblin-like skull crown on the latest current Afflec run — complete
+  - M6.2 compare raw reprojection fit, refined fit, and repaired/exported mesh — partially complete
+    - diagnostics/params are stable between calibrated `complete2` and `complete3`, but the repo still lacks enough pre-export mesh checkpoints
+  - M6.3 decide whether the distortion comes from sparse input views, reprojection optimization, refinement, or repair/export
+    - narrowed to late mesh generation / repair / export, or a latent fitted-geometry issue only visible there
+  - M6.4 define a skull/head plausibility acceptance gate
+    - next bounded implementation target
+- M7. Define the Afflec-facing back-transfer requirement around the exact forward object from M5, not around generic nearest-neighbor reprojection.
+  - M7.1 decide true inverse vs strict approximate transfer requirement
+  - M7.2 define topology, round-trip, retention, collision, and morphology-preservation criteria
+  - M7.3 design the implementation track tied to that exact forward object
+- M8. Add a video-input fitting path, but only after M6 defines why the current photo path fails.
+  - M8.1 define accepted video/frame workflow
+  - M8.2 define frame selection/aggregation policy
+  - M8.3 define provenance contract for video-derived fits
+  - M8.4 implement CLI/path later
+- M9. Audit SMPL-X body-shape coverage, especially feminine-body fitting behavior.
+  - M9.1 audit current provider/config/model-selection behavior
+  - M9.2 document current assumptions and limitations
+  - M9.3 define intended fit-policy expectations for feminine bodies
+  - M9.4 add fixtures/tests later
 - Milestone framing: keep the product roadmap explicit as
   1. sewable fitted bodysuit,
   2. thermal/heat-distribution routing and cooling-loop integration,
@@ -44,6 +84,7 @@
 - Add stage-level edge divergence report (`source edges` -> `mapped edges` -> `collapsed` -> `deduped`) to simplify root-cause triage for cross-topology seams.
 - Make seam reprojection consume sampler-native `--out-correspondence` artifacts by default (and only fall back to ad-hoc NN map generation when missing).
 - Add transform-native correspondence export for the ogre domain (`9438`) itself; current sampler-native map is `10475 -> 3240` and cannot be applied directly to `B_ogre (9438) -> base (3240)` seam transfer.
+- Add export-stage Afflec body checkpoints (`raw reprojection mesh`, `refined pre-repair mesh`, `repaired/export-ready mesh`) so the skull/crown distortion can be localized before any further fit-policy or video-input changes.
 - Decide canonical seam solve domain and freeze policy:
   - Option A: solve on `afflec_body` then evaluate/project to ROM.
   - Option B: solve on ROM/ogre domain then reproject to base.

@@ -1,5 +1,28 @@
 ## Unreleased
 
+- Added a first-pass audit note for the two new blocking morphology issues:
+  - new `docs/b_ogre_and_afflec_crown_audit_20260311.md`
+  - pinned the historical `B_ogre` forward object to `outputs/suits/afflec_body/base_layer.npz` (`9438`) plus `outputs/rom/seam_costs_afflec_realshape_edges.npz`
+  - recorded that the old `9438 -> 3240` control transfer is too lossy to count as an inverse/back-transfer
+  - narrowed the current Afflec crown pathology away from parameter drift and toward late mesh generation / repair / export or a latent fitted-geometry issue revealed there
+
+- Added a prioritized body-fit / inverse roadmap note:
+  - new `docs/body_fit_and_inverse_roadmap_20260311.md`
+  - priority order now starts with auditing the exact historical `B_ogre` object and diagnosing the current Afflec crown/head-shape failure
+  - video-input fitting and SMPL-X feminine-body coverage are now explicitly queued after those blocking audits
+- Added an explicit ROM sample morphology and transfer contract:
+  - documented deterministic representative-sample anchors and fill policy,
+  - documented the sample artifact contract as sampler-native posed meshes plus `rom_sample_manifest.json`,
+  - recorded the current inverse audit result: no true geometry inverse exists today, only basis-space encoding and correspondence/reprojection transfer,
+  - documented acceptance criteria for approximate transfer and requirements for any future true inverse.
+- Implemented the baseline ROM sample morphology output path:
+  - `smii.rom.sampler_real` now accepts `--out-rom-samples-dir` and `--rom-sample-count`,
+  - the sampler can emit representative sampler-native posed sample meshes plus `rom_samples/rom_sample_manifest.json`,
+  - coefficient exports now retain per-pose observation stats alongside the encoded field samples.
+- Integrated representative sample morphology artifacts into the viewing/reporting surfaces:
+  - `scripts/render_run_reference.py` classifies exported sample meshes as `rom_sample_pose` in the morphology audit,
+  - `scripts/render_rom_operator_report.py` accepts `--sample-manifest` and renders a dedicated representative-sample section,
+  - `scripts/protocol_strategy2_bundle.py` can pass a sample manifest through to the operator report.
 - Clarified the historical inverse-ROM/internalization intent and current limitation:
   - documented that an earlier project goal was to solve seams on an internalized/ogre-like morphology and then invert back to the fitted SMPL-X body,
   - recorded that the current repo does not provide a proven inverse transform for that step; today it provides correspondence/reprojection plus transfer diagnostics,

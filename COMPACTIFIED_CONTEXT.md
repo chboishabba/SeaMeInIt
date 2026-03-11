@@ -161,6 +161,41 @@ Date: 2026-02-06
 - These are intentionally separated from later implementation so the repo does
   not jump into artifact emission without first deciding what counts as a
   representative sample and whether any existing inverse claim is real.
+- Contract now written at `docs/rom_sample_morphology_and_transfer_contract.md`:
+  - representative sample anchors are `max_field_l2_norm`, `max_displacement_mean_norm`, `median_field_l2_norm`, and `max_weight`, with deterministic fill by descending field norm
+  - emitted sample meshes stay on sampler-native topology and exist to show flailing/pose deformation directly
+  - current back-transfer audit found no true geometry inverse in the repo; only basis-space encoding plus nearest-neighbor correspondence/reprojection
+  - approximate transfer is acceptable only with explicit lineage, transfer labeling, and quality gates
+- Baseline M2/M2b implementation is now landed:
+  - `smii.rom.sampler_real` accepts `--out-rom-samples-dir` and `--rom-sample-count`
+  - representative samples are exported as sampler-native posed mesh `.npz` files plus `rom_samples/rom_sample_manifest.json`
+  - `render_run_reference.py` classifies those meshes as `rom_sample_pose`
+  - `render_rom_operator_report.py` can display the representative sample manifest in a dedicated section
+- Orchestrator next step is now M3:
+  - compare `seam_sensitivity` against displacement magnitude and derivative magnitude on one topology using the new sample-morphology outputs as the visual/morphology reference
+- New priority shift on 2026-03-11:
+  1. audit the exact forward object behind historical `B_ogre`
+  2. isolate the current Afflec crown/head-shape failure stage
+  3. define the Afflec-facing back-transfer requirement around that exact forward object
+  4. specify a video-input fitting path only after the crown failure is isolated
+  5. audit SMPL-X body-shape coverage, especially feminine-body fitting behavior
+- Why the shift happened:
+  - current Afflec outputs are showing an egg-shaped / Green-Goblin-like skull crown
+  - the historical `B_ogre` object is still not pinned down as geometry vs render/domain artifact
+  - the user’s intended production path still requires ROM-domain seam work to land back on the fitted Afflec mesh
+- Reference note for this shift:
+  - `docs/body_fit_and_inverse_roadmap_20260311.md`
+- First audit pass recorded at:
+  - `docs/b_ogre_and_afflec_crown_audit_20260311.md`
+- Current audit conclusions:
+  - historical `B_ogre` was a real native solve object on `outputs/suits/afflec_body/base_layer.npz` (`9438` vertices, SHA256 `b122dc2cf8b075a5a5bcc0c124a075247268332203df7873c36de65e4027695c`) with paired ROM costs `outputs/rom/seam_costs_afflec_realshape_edges.npz` (SHA256 `750e0472648fff6a4f324cd4b34e78648dd8c878a1b2acbd85a0c3a3c57f50d8`)
+  - old `9438 -> 3240` control transfer is not a valid inverse or production back-transfer:
+    - `edge_retention_ratio = 0.0526`
+    - `target_vertex_collision_ratio = 0.85`
+    - `quality_ok = false`
+  - current Afflec crown / egg-skull pathology is now narrowed away from parameter drift between the calibrated `complete2` and `complete3` runs
+  - the likely remaining problem locus is late body generation / repair / export, or a latent fitted-geometry issue only visible there
+  - the missing debugging surface is export-stage mesh checkpointing before and after repair/export
 - Active M1 reference runs:
   - `outputs/comparisons/afflec_raw_vs_refined_20260309/`
   - `outputs/comparisons/afflec_same_topology_20260309/`
