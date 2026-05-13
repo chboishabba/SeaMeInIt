@@ -78,8 +78,13 @@ they:
 ## Usage invariants (seam-cost path)
 
 1. Build basis on the target mesh with component count `K` matching the sampler.
-2. Aggregate sampler → seam costs; lengths should equal the mesh vertex count.
-3. Run undersuit with `--seam-costs` pointing to the aggregated NPZ.
+   Production promotion requires `scripts/generate_canonical_basis.py` to load a
+   promoted `body_carrier_receipt.json` and emit `basis_receipt.json`.
+2. Treat ROM aggregation as diagnostic-only unless `basis_receipt.json` promotes
+   and its `basis_vertex_count`/`basis_dimension` match the basis NPZ and
+   sampler coefficients.
+3. Aggregate sampler → seam costs; lengths should equal the mesh vertex count.
+4. Run undersuit with `--seam-costs` pointing to the aggregated NPZ.
 
 Violating K/vertex alignment should fail loudly rather than broadcast/truncate.
 

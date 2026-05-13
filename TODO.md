@@ -17,8 +17,11 @@
     transfer failures remain traceable instead of reintroducing metric-regime
     confusion through code.
   - R0.3 Field basis: `BasisReceipt` is implemented for canonical `B_0`
-    provenance on a promoted physical carrier; next, wire it to canonical
-    basis generation and block ROM field aggregation without it.
+    provenance on a promoted physical carrier; `scripts/generate_canonical_basis.py`
+    now emits `basis_receipt.json` when given a promoted body-carrier receipt
+    and hard-blocks non-promoted carriers. Next, replace the bootstrap
+    sinusoidal-QR basis with a cotangent Laplace-Beltrami eigenbasis and wire
+    ROM field aggregation to require the promoted receipt.
   - R0.3a Orchestrator reader: `smii.orchestrator.read_receipt_dag` reads
     body/correspondence/basis receipts from a run directory and reports the
     first blocker plus seam-solver eligibility. Next, wire existing CLIs to
@@ -135,7 +138,7 @@
 - Improve strict loop feasibility diagnostics/actionability: per-panel loop-feasibility score and clearer reasons for `no path`/`loop closure unavailable` under `--sp-loop-strict`.
 - Execute and record the A-vs-B protocol defined in `docs/seam_pipeline_intended_vs_observed.md` and freeze canonical solve policy (A or B) with dated decision rationale.
 - Add quantitative A/B comparison metrics to Strategy 2 bundles and use them as acceptance gates (edge retention/collision, mesh-edge validity, length collapse).
-- Regenerate canonical ROM basis via `python scripts/generate_canonical_basis.py --vertices <production mesh npy/npz> --components <K> --harmonics 5 --output outputs/rom/canonical_basis.npz`
+- Regenerate canonical ROM basis via `python scripts/generate_canonical_basis.py --vertices <production mesh npy/npz> --body-receipt <run-root>/body_carrier_receipt.json --components <K> --harmonics 5 --output outputs/rom/canonical_basis.npz --receipt-output outputs/rom/basis_receipt.json`
   (do not commit the resulting NPZ; keep outputs/rom/ ignored), then run the sampler aggregator with real payloads:
   `PYTHONPATH=src python examples/rom_aggregate_from_samples.py --samples outputs/rom/afflec_sampler.json --basis outputs/rom/canonical_basis.npz --save-costs outputs/rom/seam_costs.npz`
   and pass `--seam-costs outputs/rom/seam_costs.npz` into `generate_undersuit` to annotate seams. When no real sampler is available, generate a plumbing-only one via `scripts/generate_synthetic_rom_sampler.py --body outputs/afflec_demo/afflec_body.npz --components <K> --samples 8 --out outputs/rom/afflec_sampler.json` (meta.synthetic=true) and swap in a real sampler at the same path when ready.

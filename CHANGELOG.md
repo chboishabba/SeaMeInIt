@@ -1,5 +1,13 @@
 ## Unreleased
 
+- Wired basis receipt emission into canonical basis generation:
+  - `scripts/generate_canonical_basis.py` now accepts `--body-receipt` and
+    emits `basis_receipt.json` when the body carrier is promoted,
+  - unpromoted body carriers hard-block basis construction before artifact
+    emission,
+  - emitted receipts hash both the carrier receipt file and generated basis
+    artifact, record the bootstrap construction method, and gate promotion on
+    relative reconstruction error against a static contact-pressure proxy.
 - Wired correspondence receipt emission into seam reprojection:
   - `scripts/reproject_seam_report.py` can now write
     `correspondence_receipt.json` after quality metrics are computed,

@@ -60,6 +60,13 @@ def _coerce_str_value(value: object, key: str) -> str:
     return value
 
 
+def _coerce_optional_str(payload: Mapping[str, Any], key: str) -> str | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    return _coerce_str_value(value, key)
+
+
 def _coerce_positive_int(payload: Mapping[str, Any], key: str) -> int:
     try:
         value = payload[key]
@@ -104,6 +111,15 @@ def _coerce_non_negative_finite_float_value(value: object, key: str) -> float:
     return coerced
 
 
+def _coerce_optional_non_negative_finite_float(
+    payload: Mapping[str, Any], key: str
+) -> float | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    return _coerce_non_negative_finite_float_value(value, key)
+
+
 def _coerce_promotion(payload: Mapping[str, Any]) -> Promotion:
     try:
         value = payload["promotion"]
@@ -142,6 +158,8 @@ class BasisReceipt:
     reconstruction_error: float
     promotion: Promotion
     blocked_consumers: list[str]
+    basis_hash: str | None = None
+    promotion_threshold: float | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -179,6 +197,21 @@ class BasisReceipt:
             "blocked_consumers",
             _blocked_consumers_for_promotion(self.promotion, blocked_consumers),
         )
+        if self.basis_hash is not None:
+            object.__setattr__(
+                self,
+                "basis_hash",
+                _coerce_str_value(self.basis_hash, "basis_hash"),
+            )
+        if self.promotion_threshold is not None:
+            object.__setattr__(
+                self,
+                "promotion_threshold",
+                _coerce_non_negative_finite_float_value(
+                    self.promotion_threshold,
+                    "promotion_threshold",
+                ),
+            )
 
     @classmethod
     def from_mapping(cls, payload: Mapping[str, Any]) -> "BasisReceipt":
@@ -195,6 +228,11 @@ class BasisReceipt:
             ),
             promotion=_coerce_promotion(payload),
             blocked_consumers=_coerce_blocked_consumers(payload),
+            basis_hash=_coerce_optional_str(payload, "basis_hash"),
+            promotion_threshold=_coerce_optional_non_negative_finite_float(
+                payload,
+                "promotion_threshold",
+            ),
         )
 
     @classmethod
@@ -210,7 +248,7 @@ class BasisReceipt:
     def to_dict(self) -> dict[str, object]:
         """Return a JSON-serialisable receipt payload."""
 
-        return {
+        payload: dict[str, object] = {
             "carrier_receipt_hash": self.carrier_receipt_hash,
             "basis_vertex_count": int(self.basis_vertex_count),
             "basis_dimension": int(self.basis_dimension),
@@ -219,6 +257,11 @@ class BasisReceipt:
             "promotion": int(self.promotion),
             "blocked_consumers": list(self.blocked_consumers),
         }
+        if self.basis_hash is not None:
+            payload["basis_hash"] = self.basis_hash
+        if self.promotion_threshold is not None:
+            payload["promotion_threshold"] = float(self.promotion_threshold)
+        return payload
 
     def to_json(self, path: str | Path) -> Path:
         """Write the receipt as stable JSON and return the target path."""

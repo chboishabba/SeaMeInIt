@@ -57,9 +57,11 @@ Regenerate seam costs aligned to the afflec body:
 # Build basis on afflec body with K components from your sampler
 PYTHONPATH=src python scripts/generate_canonical_basis.py \
   --vertices outputs/afflec_demo/afflec_body.npz \
+  --body-receipt outputs/afflec_demo/body_carrier_receipt.json \
   --components <K> \
   --harmonics 5 \
-  --output outputs/rom/canonical_afflec_basis.npz
+  --output outputs/rom/canonical_afflec_basis.npz \
+  --receipt-output outputs/rom/basis_receipt.json
 
 # Aggregate sampler into seam cost field sized to afflec mesh
 PYTHONPATH=src python examples/rom_aggregate_from_samples.py \
@@ -102,7 +104,9 @@ in real sampler data when available; no code changes are required.
 
 > Note: `generate_canonical_basis.py` with the default `--harmonics 3` emits
 > 23 features. For component counts above 23 (e.g., `K=32`), pass `--harmonics 5`
-> so the basis can span the requested width.
+> so the basis can span the requested width. Passing `--body-receipt` emits a
+> hash-linked `basis_receipt.json`; without it, the basis artifact remains
+> diagnostic-only for the receipt orchestrator.
 
 This command writes the following artefacts:
 

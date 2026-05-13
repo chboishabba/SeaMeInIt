@@ -41,10 +41,12 @@ BodyCarrierReceipt
   -> ManufacturingReceipt
 ```
 
-The first gate is now enforced through `BodyCarrierReceipt`: unpromoted body
-carriers block `generate_undersuit` before artifact emission and carry explicit
-downstream consumer blocks. The next implementation lanes are correspondence
-receipts and canonical field-basis receipts.
+The first three emitted gates now cover body trust, correspondence, and the
+bootstrap field basis. `BodyCarrierReceipt` blocks untrusted bodies,
+`CorrespondenceReceipt` records transfer collapse or admissibility, and
+`BasisReceipt` is emitted by canonical basis generation only when the body
+carrier is promoted. The next implementation lane is receipted ROM field
+aggregation.
 
 ## Current focus: manufacturable panels and morphology attribution
 

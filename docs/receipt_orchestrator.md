@@ -120,6 +120,24 @@ distance, full-surface load where available, seam-local collapse, edge retention
 and `A_T`. Collapsed nearest-neighbor transfers are explicit `A_T=-1`
 diagnostic-only receipts rather than silently consumable seam topology.
 
+## Field-Basis Policy
+
+`scripts/generate_canonical_basis.py` is the first `BasisReceipt` emitter. It
+can write `basis_receipt.json` next to the generated basis artifact when called
+with a promoted `body_carrier_receipt.json`. The emitted receipt hashes the
+carrier receipt file itself, records the generated basis hash, vertex count,
+basis width, construction method, relative reconstruction error on a static
+contact-pressure proxy, the 5% relative-error promotion threshold, `A_field_basis`,
+and downstream consumer blocks.
+
+Basis generation without a carrier receipt remains available for diagnostics
+and legacy plumbing, but it is unreceipted and therefore cannot promote ROM
+field aggregation. A non-promoted body carrier is a hard basis-lane blocker.
+
+The current bootstrap basis is the existing sinusoidal-feature QR basis. It is
+labelled as such in `construction_method`; replacing it with a cotangent
+Laplace-Beltrami eigenbasis remains the next field-basis fidelity upgrade.
+
 ## Scheduling
 
 Carrier trust, correspondence, and field basis can be developed in parallel
