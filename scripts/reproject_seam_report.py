@@ -4,11 +4,105 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+from smii.meshing import CorrespondenceReceipt
+
+
+TRANSFER_REJECTION_MAX_MEAN_DISTANCE = 0.01
+TRANSFER_REJECTION_MAX_FULL_SURFACE_COLLISION = 0.75
+CORRESPONDENCE_BLOCKED_CONSUMERS = [
+    "seam_cost_field",
+    "solver_promotion",
+    "panel_unwrap",
+]
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _finite_float_or_none(value: object) -> float | None:
+    try:
+        coerced = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return coerced if np.isfinite(coerced) else None
+
+
+def _full_surface_collision_ratio(reprojection: dict[str, Any]) -> float:
+    meta = reprojection.get("vertex_map_meta", {})
+    if isinstance(meta, dict):
+        raw_ratio = meta.get("source_to_target_collision_ratio")
+        ratio = _finite_float_or_none(raw_ratio)
+        if ratio is not None and 0.0 <= ratio <= 1.0:
+            return ratio
+    return float(reprojection.get("target_vertex_collision_ratio", 0.0))
+
+
+def emit_correspondence_receipt(
+    *,
+    source_mesh: Path,
+    target_mesh: Path,
+    reprojection: dict[str, Any],
+    output_path: Path,
+) -> CorrespondenceReceipt:
+    """Emit a hash-bound correspondence receipt from a seam reprojection report."""
+
+    mean_distance = float(reprojection.get("mean_distance", 0.0))
+    max_distance = float(reprojection.get("max_distance", 0.0))
+    full_surface_collision = _full_surface_collision_ratio(reprojection)
+    seam_transfer_collapse = float(reprojection.get("target_vertex_collision_ratio", 0.0))
+    edge_retention = float(reprojection.get("edge_retention_ratio", 0.0))
+    quality_ok = bool(reprojection.get("quality_ok", False))
+    violations = list(reprojection.get("quality_violations", []))
+
+    if (
+        mean_distance > TRANSFER_REJECTION_MAX_MEAN_DISTANCE
+        or full_surface_collision > TRANSFER_REJECTION_MAX_FULL_SURFACE_COLLISION
+    ):
+        promotion = -1
+        notes = [
+            "NN collapse: "
+            f"mean_dist={mean_distance:.3f}m, "
+            f"collision_ratio={full_surface_collision:.4f}. "
+            "Strategy B diagnostic only. Use A_v3240 native solve."
+        ]
+    elif not quality_ok:
+        promotion = 0
+        notes = [f"Quality violations: {violations}"]
+    else:
+        promotion = 1
+        notes = ["Transfer within bounds."]
+
+    receipt = CorrespondenceReceipt(
+        source_mesh_hash=_sha256_file(source_mesh),
+        target_mesh_hash=_sha256_file(target_mesh),
+        transform_type=str(reprojection.get("mapping_mode", "nearest_neighbour")),
+        mean_distance=mean_distance,
+        max_distance=max_distance,
+        collision_ratio=full_surface_collision,
+        seam_transfer_collapse=seam_transfer_collapse,
+        retention_ratio=edge_retention,
+        unique_targets_used=int(reprojection.get("unique_target_vertices", 0)),
+        total_target_vertices=int(reprojection.get("target_vertex_count", 0)),
+        edge_retention_ratio=edge_retention,
+        promotion=promotion,  # type: ignore[arg-type]
+        notes=notes,
+        blocked_consumers=[] if promotion == 1 else list(CORRESPONDENCE_BLOCKED_CONSUMERS),
+    )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    receipt.to_json(output_path)
+    return receipt
 
 
 def _load_vertices(path: Path) -> np.ndarray:
@@ -417,6 +511,12 @@ def main() -> None:
         default=0.2,
         help="Maximum allowed many-to-one source->target vertex collision ratio (default: 0.2).",
     )
+    parser.add_argument(
+        "--out-correspondence-receipt",
+        type=Path,
+        default=None,
+        help="Optional path for a CorrespondenceReceipt JSON emitted from reprojection metrics.",
+    )
     args = parser.parse_args()
 
     report = json.loads(args.report.read_text(encoding="utf-8"))
@@ -463,6 +563,20 @@ def main() -> None:
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(out_report, indent=2), encoding="utf-8")
+    if args.out_correspondence_receipt is not None:
+        receipt = emit_correspondence_receipt(
+            source_mesh=args.source_mesh,
+            target_mesh=args.target_mesh,
+            reprojection=repro,
+            output_path=args.out_correspondence_receipt,
+        )
+        print(
+            "Wrote correspondence receipt: "
+            f"A_T={receipt.promotion}, "
+            f"collision_ratio={receipt.collision_ratio:.6g}, "
+            f"seam_transfer_collapse={receipt.seam_transfer_collapse:.6g}, "
+            f"{args.out_correspondence_receipt}"
+        )
     print(
         "Reprojected seam report: "
         f"mapped {repro.get('mapped_vertex_count', 0)} vertices, "

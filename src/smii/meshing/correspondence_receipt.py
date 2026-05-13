@@ -190,6 +190,7 @@ class CorrespondenceReceipt:
     mean_distance: float
     max_distance: float
     collision_ratio: float
+    seam_transfer_collapse: float
     retention_ratio: float
     unique_targets_used: int
     total_target_vertices: int
@@ -228,6 +229,14 @@ class CorrespondenceReceipt:
             self,
             "collision_ratio",
             _coerce_ratio_value(self.collision_ratio, "collision_ratio"),
+        )
+        object.__setattr__(
+            self,
+            "seam_transfer_collapse",
+            _coerce_ratio_value(
+                self.seam_transfer_collapse,
+                "seam_transfer_collapse",
+            ),
         )
         object.__setattr__(
             self,
@@ -279,6 +288,12 @@ class CorrespondenceReceipt:
             mean_distance=_coerce_non_negative_float(payload, "mean_distance"),
             max_distance=_coerce_non_negative_float(payload, "max_distance"),
             collision_ratio=_coerce_ratio(payload, "collision_ratio"),
+            seam_transfer_collapse=_coerce_ratio(
+                payload,
+                "seam_transfer_collapse",
+            )
+            if "seam_transfer_collapse" in payload
+            else _coerce_ratio(payload, "collision_ratio"),
             retention_ratio=_coerce_ratio(payload, "retention_ratio"),
             unique_targets_used=_coerce_non_negative_int(
                 payload,
@@ -314,6 +329,7 @@ class CorrespondenceReceipt:
             "mean_distance": float(self.mean_distance),
             "max_distance": float(self.max_distance),
             "collision_ratio": float(self.collision_ratio),
+            "seam_transfer_collapse": float(self.seam_transfer_collapse),
             "retention_ratio": float(self.retention_ratio),
             "unique_targets_used": int(self.unique_targets_used),
             "total_target_vertices": int(self.total_target_vertices),

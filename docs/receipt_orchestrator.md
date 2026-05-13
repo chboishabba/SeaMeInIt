@@ -107,8 +107,18 @@ when a receipted transform or correspondence passes its residual gates.
 Full-surface map load/collision metrics and seam-transfer collapse metrics must
 remain separate. A dense full-surface map can have unavoidable many-to-one load
 when vertex counts differ, while a seam-transfer collapse ratio measures whether
-the seam topology survives reprojection. Both are useful, but they gate different
-claims.
+the seam topology survives reprojection. `CorrespondenceReceipt.collision_ratio`
+records the full-surface map load ratio when a sampler-native map provides it;
+`CorrespondenceReceipt.seam_transfer_collapse` records the seam-local collapse
+ratio from `scripts/reproject_seam_report.py`. Both are useful, but they gate
+different claims.
+
+`scripts/reproject_seam_report.py` is the first correspondence emitter. When
+requested, it writes `correspondence_receipt.json` after quality metrics are
+known. The receipt binds source and target mesh hashes, mean/max transfer
+distance, full-surface load where available, seam-local collapse, edge retention,
+and `A_T`. Collapsed nearest-neighbor transfers are explicit `A_T=-1`
+diagnostic-only receipts rather than silently consumable seam topology.
 
 ## Scheduling
 

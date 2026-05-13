@@ -11,8 +11,11 @@
   - R0.2 Correspondence: `TransformReceipt` / `CorrespondenceReceipt` is
     implemented with source/target hashes, residual metrics,
     collision/load metrics, retention, edge loss, explicit downstream blocks,
-    and `A_T`; next, wire it to sampler-native correspondence export and seam
-    reprojection consumers.
+    and `A_T`; next, wire it to sampler-native correspondence export. Seam
+    reprojection should emit receipts with separate full-surface load
+    (`collision_ratio`) and seam-local collapse (`seam_transfer_collapse`) so
+    transfer failures remain traceable instead of reintroducing metric-regime
+    confusion through code.
   - R0.3 Field basis: `BasisReceipt` is implemented for canonical `B_0`
     provenance on a promoted physical carrier; next, wire it to canonical
     basis generation and block ROM field aggregation without it.

@@ -1,5 +1,13 @@
 ## Unreleased
 
+- Wired correspondence receipt emission into seam reprojection:
+  - `scripts/reproject_seam_report.py` can now write
+    `correspondence_receipt.json` after quality metrics are computed,
+  - emitted receipts bind source/target mesh hashes, mean/max distance,
+    full-surface load ratio, seam-local transfer collapse, edge retention, and
+    `A_T`,
+  - collapsed nearest-neighbor transfers now become explicit `A_T=-1`
+    diagnostic-only receipts with downstream solver/panel blocks.
 - Wired Gate 0 into the Afflec export path:
   - `smii.app afflec-demo` now emits `afflec_body_raw_reprojection.npz`,
     `afflec_body_refined_pre_repair.npz`, and `body_carrier_receipt.json`,

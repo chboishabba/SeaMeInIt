@@ -21,6 +21,7 @@ def _receipt_payload() -> dict[str, object]:
         "mean_distance": 0.42,
         "max_distance": 1.8,
         "collision_ratio": 0.01,
+        "seam_transfer_collapse": 0.02,
         "retention_ratio": 0.98,
         "unique_targets_used": 9400,
         "total_target_vertices": 10000,
@@ -41,6 +42,7 @@ def test_correspondence_receipt_from_mapping_coerces_json_scalars() -> None:
     receipt = CorrespondenceReceipt.from_mapping(payload)
 
     assert receipt.mean_distance == 0.42
+    assert receipt.seam_transfer_collapse == 0.02
     assert receipt.unique_targets_used == 9400
     assert receipt.promotion == 1
     assert receipt.notes == ["single note"]
