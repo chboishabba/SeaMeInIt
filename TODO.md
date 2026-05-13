@@ -1,4 +1,28 @@
 # TODO
+- R0. Build the receipt orchestrator as a promotion DAG, not a task list:
+  `BodyCarrierReceipt -> Transform/CorrespondenceReceipt -> BasisReceipt ->
+  ROMFieldReceipt -> SeamCostReceipt -> SolverPromotionReceipt ->
+  PanelUnwrapReceipt -> ManufacturingReceipt`.
+  - R0.1 Carrier trust: `BodyCarrierReceipt` is implemented and
+    `generate_undersuit` now blocks unpromoted carriers before artifact
+    emission; next, wire export-stage body checkpoints and skull/head
+    plausibility into receipt creation.
+  - R0.2 Correspondence: `TransformReceipt` / `CorrespondenceReceipt` is
+    implemented with source/target hashes, residual metrics,
+    collision/load metrics, retention, edge loss, explicit downstream blocks,
+    and `A_T`; next, wire it to sampler-native correspondence export and seam
+    reprojection consumers.
+  - R0.3 Field basis: `BasisReceipt` is implemented for canonical `B_0`
+    provenance on a promoted physical carrier; next, wire it to canonical
+    basis generation and block ROM field aggregation without it.
+  - R0.4 ROM aggregation: add `ROMFieldReceipt` for vertex-aligned pressure,
+    shear, tension, thermal, and cooling-demand summaries.
+  - R0.5 Topology/solver: add `SeamCostReceipt` and solver promotion gating so
+    solver outputs promote only when `A_body=+1`, `A_field=+1`, and either
+    `A_T=+1` or the solve domain is `A_v3240`.
+  - R0.6 Panel/manufacture: unwrap only promoted seam topology and emit
+    panel/manufacturing receipts; failed flattening must produce explicit
+    non-promotion boundaries.
 - M1. Backfill morphology observations into run roots via `morphology_observations.json` so run-reference pages can state which artifacts are neutral-human, ogre-like, or flailing instead of defaulting to `unclassified` / `inherits_source_geometry`.
 - M2. Add explicit ROM sample morphology outputs so the pipeline can show where flailing occurs: keep the neutral-body operator field, but also emit representative posed/deformed ROM sample artifacts rather than forcing users to infer morphology from seam heatmaps on a neutral body.
   - M2.1 define representative sample selection policy

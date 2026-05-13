@@ -11,6 +11,7 @@ Please see our docs:
 - [Measurement Inference](docs/measurement_inference.md)
 - [Afflec Mesh Provenance](docs/mesh_provenance_afflec.md)
 - [Body Lineage Protocol](docs/body_lineage_protocol.md)
+- [Receipt Orchestrator](docs/receipt_orchestrator.md)
 - [Seam Pipeline: Intended vs Observed](docs/seam_pipeline_intended_vs_observed.md)
 - [ROM Latent Space Notes](CONTEXT.md) (see lines 1-120 for the validity and latent-space framing)
 - [Schemas](docs/schemas.md)
@@ -21,6 +22,29 @@ Please see our docs:
 - [Contributing](CONTRIBUTING.md)
 - [Roadmap](ROADMAP.md)
 - [TODOs](TODO.md) (see `CONTEXT.md` lines 1141-1147 for TODO hygiene guidance)
+
+## Current focus: receipted promotion pipeline
+
+The near-term engineering goal is to make SMII behave as a gated
+transport-realisation pipeline rather than a mesh-first CAD workflow.
+Promoted seam, panel, and manufacturing artifacts must consume receipted
+upstream carriers in order:
+
+```text
+BodyCarrierReceipt
+  -> TransformReceipt / CorrespondenceReceipt
+  -> BasisReceipt
+  -> ROMFieldReceipt
+  -> SeamCostReceipt
+  -> SolverPromotionReceipt
+  -> PanelUnwrapReceipt
+  -> ManufacturingReceipt
+```
+
+The first gate is now enforced through `BodyCarrierReceipt`: unpromoted body
+carriers block `generate_undersuit` before artifact emission and carry explicit
+downstream consumer blocks. The next implementation lanes are correspondence
+receipts and canonical field-basis receipts.
 
 ## Current focus: manufacturable panels and morphology attribution
 

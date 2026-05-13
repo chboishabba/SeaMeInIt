@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
@@ -32,7 +33,12 @@ from suit.panel_payload import PanelPayload
 from suit.seam_generator import SeamGenerator
 from suit.seam_metadata import normalize_seam_metadata
 from suit.thermal_zones import DEFAULT_THERMAL_ZONE_SPEC
-from smii.meshing import load_body_record
+from smii.meshing import (
+    BodyCarrierReceipt,
+    can_consume_receipt,
+    load_body_carrier_receipt,
+    load_body_record,
+)
 
 if TYPE_CHECKING:  # pragma: no cover
     from smii.rom.seam_costs import SeamCostField
@@ -41,7 +47,16 @@ OUTPUT_ROOT = Path("outputs/suits")
 COOLING_OUTPUT_ROOT = Path("outputs/modules/cooling")
 
 
-__all__ = ["generate_undersuit", "load_body_record", "main"]
+__all__ = ["DiagnosticResult", "generate_undersuit", "load_body_record", "main"]
+
+
+@dataclass(frozen=True, slots=True)
+class DiagnosticResult:
+    """Diagnostic-only result returned when a promoted body carrier is unavailable."""
+
+    status: int
+    reason: str
+    blocked_by: dict[str, object] | None = None
 
 
 def _load_measurements(path: Path | None) -> Mapping[str, float] | None:
@@ -360,10 +375,27 @@ def generate_undersuit(
     auto_split: bool = False,
     pdf_page_size: str = "a4",
     seam_cost_field: "SeamCostField | None" = None,
-) -> None:
+    body_receipt: BodyCarrierReceipt | None = None,
+    require_body_receipt: bool = False,
+) -> DiagnosticResult | None:
     """Run the undersuit generation pipeline and persist all artefacts."""
 
     body_path = _resolve_body_path(body_path)
+    if body_receipt is None and require_body_receipt:
+        return DiagnosticResult(
+            status=0,
+            reason="BodyCarrierReceipt is required for promoted undersuit generation.",
+            blocked_by=None,
+        )
+    if body_receipt is not None and not can_consume_receipt(
+        body_receipt, "generate_undersuit"
+    ):
+        return DiagnosticResult(
+            status=0,
+            reason="BodyCarrierReceipt not promoted for undersuit generation.",
+            blocked_by=body_receipt.to_dict(),
+        )
+
     record = load_body_record(body_path)
     measurement_pairs = _compose_measurement_map(record, measurements)
     measurement_values = {name: pair[0] for name, pair in measurement_pairs.items()}
@@ -424,6 +456,8 @@ def generate_undersuit(
     metadata = dict(result.metadata)
     metadata["output_directory"] = str(target_dir)
     metadata["body_record"] = str(body_path)
+    if body_receipt is not None:
+        metadata["body_carrier_receipt"] = body_receipt.to_dict()
     metadata["layers"] = {
         layer.name: {
             "thickness": layer.thickness,
@@ -736,6 +770,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Optional NPZ produced by save_seam_cost_field to annotate seams with ROM costs.",
     )
     parser.add_argument(
+        "--body-receipt",
+        type=Path,
+        help="Optional BodyCarrierReceipt JSON used to gate promoted undersuit generation.",
+    )
+    parser.add_argument(
+        "--require-body-receipt",
+        action="store_true",
+        help="Block generation unless a promoted BodyCarrierReceipt is provided.",
+    )
+    parser.add_argument(
         "--auto-split",
         action="store_true",
         help="Automatically split panels when SUGGEST_SPLIT is emitted.",
@@ -757,8 +801,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         from smii.rom.seam_costs import load_seam_cost_field
 
         seam_cost_field = load_seam_cost_field(args.seam_costs)
+    body_receipt = (
+        load_body_carrier_receipt(args.body_receipt) if args.body_receipt is not None else None
+    )
 
-    generate_undersuit(
+    result = generate_undersuit(
         args.body,
         output_dir=args.output,
         measurements=measurements,
@@ -773,7 +820,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         auto_split=args.auto_split,
         pdf_page_size=args.pdf_page_size,
         seam_cost_field=seam_cost_field,
+        body_receipt=body_receipt,
+        require_body_receipt=args.require_body_receipt,
     )
+    if isinstance(result, DiagnosticResult):
+        print(result.reason)
+        return 2
 
     return 0
 

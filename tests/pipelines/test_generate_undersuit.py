@@ -17,6 +17,7 @@ if not hasattr(suit_pkg, "UnderSuitGenerator"):
     suit_pkg.UnderSuitOptions = undersuit_mod.UnderSuitOptions
 
 import smii.pipelines.generate_undersuit as cli
+from smii.meshing import BodyCarrierReceipt
 
 
 def _write_json(path: Path, payload: dict) -> None:
@@ -57,6 +58,23 @@ def _build_cylinder_body() -> tuple[list[list[float]], list[list[int]]]:
         faces.append([bottom_center, bottom_ring + next_segment, bottom_ring + segment])
         faces.append([top_center, top_ring + segment, top_ring + next_segment])
     return vertices, faces
+
+
+def _receipt_payload(promotion: int = 1, blocked_consumers: list[str] | None = None) -> dict:
+    return {
+        "source_hash": "source-abc",
+        "raw_reprojection_hash": "raw-def",
+        "refined_pre_repair_hash": "refined-ghi",
+        "repaired_export_hash": "repaired-jkl",
+        "vertex_count": 110,
+        "face_count": 216,
+        "topology_label": "A_v3240",
+        "landmark_residuals": {"nose": 0.8},
+        "skull_rigidity_residual": 0.03,
+        "body_fit_confidence": 0.91,
+        "promotion": promotion,
+        "blocked_consumers": blocked_consumers or [],
+    }
 
 
 def test_cli_exports_pattern_files(tmp_path: Path) -> None:
@@ -108,3 +126,61 @@ def test_cli_exports_pattern_files(tmp_path: Path) -> None:
     assert "measurement_loops" in pattern_meta
     assert "seams" in pattern_meta
     assert pattern_meta["auto_split"]["enabled"] is True
+
+
+def test_generate_undersuit_blocks_unpromoted_body_receipt(tmp_path: Path) -> None:
+    body_path = tmp_path / "body.json"
+    base_vertices, base_faces = _build_cylinder_body()
+    _write_json(body_path, {"vertices": base_vertices, "faces": base_faces})
+    output_dir = tmp_path / "undersuit"
+
+    result = cli.generate_undersuit(
+        body_path,
+        output_dir=output_dir,
+        body_receipt=BodyCarrierReceipt.from_mapping(_receipt_payload(promotion=0)),
+    )
+
+    assert isinstance(result, cli.DiagnosticResult)
+    assert result.status == 0
+    assert result.blocked_by is not None
+    assert result.blocked_by["promotion"] == 0
+    assert not output_dir.exists()
+
+
+def test_generate_undersuit_requires_body_receipt_when_requested(tmp_path: Path) -> None:
+    body_path = tmp_path / "body.json"
+    base_vertices, base_faces = _build_cylinder_body()
+    _write_json(body_path, {"vertices": base_vertices, "faces": base_faces})
+
+    result = cli.generate_undersuit(
+        body_path,
+        output_dir=tmp_path / "undersuit",
+        require_body_receipt=True,
+    )
+
+    assert isinstance(result, cli.DiagnosticResult)
+    assert result.status == 0
+    assert result.reason == "BodyCarrierReceipt is required for promoted undersuit generation."
+
+
+def test_cli_blocks_with_unpromoted_body_receipt(tmp_path: Path, capsys) -> None:
+    body_path = tmp_path / "body.json"
+    base_vertices, base_faces = _build_cylinder_body()
+    _write_json(body_path, {"vertices": base_vertices, "faces": base_faces})
+    receipt_path = tmp_path / "receipt.json"
+    BodyCarrierReceipt.from_mapping(_receipt_payload(promotion=-1)).to_json(receipt_path)
+    output_dir = tmp_path / "undersuit"
+
+    exit_code = cli.main(
+        [
+            str(body_path),
+            "--output",
+            str(output_dir),
+            "--body-receipt",
+            str(receipt_path),
+        ]
+    )
+
+    assert exit_code == 2
+    assert "BodyCarrierReceipt not promoted" in capsys.readouterr().out
+    assert not output_dir.exists()

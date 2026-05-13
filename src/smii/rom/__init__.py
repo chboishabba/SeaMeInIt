@@ -1,6 +1,12 @@
 """ROM-aligned helpers for seam-aware kernels and constraints."""
 
 from .basis import BasisMetadata, KernelBasis, KernelProjector, load_basis
+from .basis_receipt import (
+    BasisReceipt,
+    DEFAULT_BASIS_BLOCKED_CONSUMERS,
+    can_consume_basis_receipt,
+    load_basis_receipt,
+)
 from .constraints import ConstraintRegistry, ConstraintSet, load_constraints
 from .gates import (
     CouplingManifest,
@@ -33,9 +39,13 @@ from .seam_costs import (
 
 __all__ = [
     "BasisMetadata",
+    "BasisReceipt",
+    "DEFAULT_BASIS_BLOCKED_CONSUMERS",
     "KernelBasis",
     "KernelProjector",
+    "can_consume_basis_receipt",
     "load_basis",
+    "load_basis_receipt",
     "ConstraintRegistry",
     "ConstraintSet",
     "load_constraints",

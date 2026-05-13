@@ -24,7 +24,7 @@ fabric design quality or final garment aesthetics.
   lived at `outputs/afflec_demo/afflec_body.npz` (`3240` verts), but that path is
   not stable provenance (it can be overwritten).
 - `suit_base_layer` (derived mesh):
-  a watertight “undersuit layer” mesh emitted by `smii.pipelines.generate_undersuit`.
+  a watertight "undersuit layer" mesh emitted by `smii.pipelines.generate_undersuit`.
   A historical artifact exists at `outputs/suits/afflec_body/base_layer.npz`
   (`9438` verts). This is not itself proof of image-ingest topology.
 - `afflec_canonical_basis`:
@@ -158,8 +158,8 @@ Code-level ownership:
   body geometry.
 - ROM costs affect coloring/intensity only; they do not change mesh vertices.
 - `scripts/render_variant_orbits.py` historically applied `_canonicalize_vertices(...)`
-  which inferred “up axis” by max coordinate span. On T-pose meshes, arm span can
-  exceed height, so this can rotate the body and create an “ogre-like” silhouette
+  which inferred "up axis" by max coordinate span. On T-pose meshes, arm span can
+  exceed height, so this can rotate the body and create an "ogre-like" silhouette
   even when the underlying mesh is normal. Protocol moving forward: renderer must
   use an explicit axis convention (or record the chosen convention in its manifest)
   to make morphology comparisons meaningful.
@@ -460,7 +460,9 @@ Gate B1:
 Gate B2:
 - No severe seam collapse on transfer.
 - `edge_retention_ratio >= 0.5`.
-- `target_vertex_collision_ratio <= 0.2` (many-to-one vertex collapse gate).
+- `target_vertex_collision_ratio <= 0.2` (seam-transfer many-to-one collapse gate).
+  This gate is evaluated on the transferred seam vertices/edges, not on the
+  full-surface mesh map by itself.
 
 Gate V1 (manual qualitative check):
 - Visual seam/pathing must be interpretable and mesh-conforming in:
@@ -607,6 +609,24 @@ Gate V1 (manual qualitative check):
 
 This is the explicit failure mechanism for Strategy B reprojection.
 
+Metric scope:
+- Full-surface map load/collision ratios describe how all vertices in one mesh
+  distribute onto the other mesh during correspondence construction.
+- Seam-transfer collapse ratios describe only the seam vertices/edges that
+  survive or collapse during `scripts/reproject_seam_report.py`.
+- The current quality gate `target_vertex_collision_ratio <= 0.2` is a
+  seam-transfer quality gate. Preserve it as the pass/fail threshold for
+  reprojected seam usability.
+- A `9438 -> 3240` full-surface map has a different baseline because the source
+  mesh has about `2.91x` as many vertices as the target. Some many-to-one load
+  is therefore unavoidable even for a plausible map. That expected load is not
+  the same metric as seam collapse.
+- A full-surface collision ratio near `0.9842` is still pathological: it means
+  almost all source vertices are competing for already-used target vertices,
+  far beyond the mild collision pressure expected from the vertex-count ratio.
+  It is strong evidence that the map is not close enough to support reliable
+  semantic seam transfer.
+
 When:
 - Divergence happens in reprojection step, not during the native ROM-domain
   solve. Native solve output can still be coherent on `B_ogre`.
@@ -690,7 +710,9 @@ Additional render confirmations (same failure signature as smoke bundle):
 
 Map-quality facts (from `map_manifest.json` in the same bundle):
 - The correspondence is not close to bijective.
-- `source_to_target_collision_ratio=0.9842` (9438 -> 3240 collapses heavily).
+- `source_to_target_collision_ratio=0.9842` (full-surface `9438 -> 3240` map
+  load/collision, not the seam-transfer gate metric; this is pathological
+  collapse despite the lower `3240` target count).
 - `target_to_source_collision_ratio=0.9997` (3240 -> 9438 collapses nearly entirely).
 - Distance saturation: `mean_distance=0.491m` with `clip=0.15m`, so most points hit the
   max colormap intensity (consistent with the \"yellow\" report).
@@ -779,9 +801,9 @@ Pending: choose a single canonical rotation that aligns both base/ROM fronts. Ne
 - Solver: `smii.seams.solver.solve_seams` (mst, edge_mode=mean).
 - Output: `outputs/seams_run/base_only_20260214_092147/seam_report.json`
 - Orbit renders:
-  - `outputs/seams_run/base_only_20260214_092147/base_only__orbit__20260214_092204.webm` (yaw_offset=90, axis_width=x) — body faced up.
-  - `outputs/seams_run/base_only_20260214_092147/base_only_faceforward__orbit__20260214_092559.webm` (axis_width=x, rotate_x=90, rotate_z=180) — face-forward orientation fix.
-- Notes: solver emitted “No edges intersect seam vertices; edge costs default to empty mapping” warning; panels=8; uses default MDL prior.
+  - `outputs/seams_run/base_only_20260214_092147/base_only__orbit__20260214_092204.webm` (yaw_offset=90, axis_width=x) - body faced up.
+  - `outputs/seams_run/base_only_20260214_092147/base_only_faceforward__orbit__20260214_092559.webm` (axis_width=x, rotate_x=90, rotate_z=180) - face-forward orientation fix.
+- Notes: solver emitted "No edges intersect seam vertices; edge costs default to empty mapping" warning; panels=8; uses default MDL prior.
 
 ## 2026-02-14 Multi-loop seam solve on human (v3240)
 

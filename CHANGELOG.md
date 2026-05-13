@@ -1,5 +1,23 @@
 ## Unreleased
 
+- Added the receipt-orchestrator control surface:
+  - new `docs/receipt_orchestrator.md` defines the carrier -> correspondence
+    -> basis -> ROM field -> seam cost -> solver -> panel -> manufacturing
+    receipt DAG,
+  - README and TODO now foreground the receipted promotion order,
+  - `BodyCarrierReceipt` now defaults non-promoted receipts to explicit
+    downstream consumer blocks (`generate_undersuit`, `seam_cost_field`,
+    `panel_unwrap`),
+  - `generate_undersuit` now checks the concrete `generate_undersuit` consumer
+    gate on body receipts.
+- Added first-class correspondence and basis receipt primitives:
+  - `CorrespondenceReceipt` / `TransformReceipt` records source/target mesh
+    hashes, transfer residuals, load/collision and retention metrics,
+    downstream blocks, and diagnostic NN-collapse gating,
+  - `BasisReceipt` records `B_0` provenance over a carrier receipt with vertex
+    count, basis dimension, construction method, reconstruction error,
+    downstream blocks, and promotion state.
+
 - Added a first-pass audit note for the two new blocking morphology issues:
   - new `docs/b_ogre_and_afflec_crown_audit_20260311.md`
   - pinned the historical `B_ogre` forward object to `outputs/suits/afflec_body/base_layer.npz` (`9438`) plus `outputs/rom/seam_costs_afflec_realshape_edges.npz`
