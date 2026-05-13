@@ -26,8 +26,11 @@
     body/correspondence/basis receipts from a run directory and reports the
     first blocker plus seam-solver eligibility. Next, wire existing CLIs to
     consult this reader before promotion.
-  - R0.4 ROM aggregation: add `ROMFieldReceipt` for vertex-aligned pressure,
-    shear, tension, thermal, and cooling-demand summaries.
+  - R0.4 ROM aggregation: `ROMFieldReceipt` is wired into
+    `examples/rom_aggregate_from_samples.py` for vertex-aligned ROM field
+    summaries, with `field_uniformity` gating and synthetic promotion requiring
+    an explicit flag. Next, make `SeamCostReceipt` consume promoted
+    `ROMFieldReceipt` before solver promotion.
   - R0.5 Topology/solver: add `SeamCostReceipt` and solver promotion gating so
     solver outputs promote only when `A_body=+1`, `A_field=+1`, and either
     `A_T=+1` or the solve domain is `A_v3240`.
@@ -140,7 +143,7 @@
 - Add quantitative A/B comparison metrics to Strategy 2 bundles and use them as acceptance gates (edge retention/collision, mesh-edge validity, length collapse).
 - Regenerate canonical ROM basis via `python scripts/generate_canonical_basis.py --vertices <production mesh npy/npz> --body-receipt <run-root>/body_carrier_receipt.json --components <K> --harmonics 5 --output outputs/rom/canonical_basis.npz --receipt-output outputs/rom/basis_receipt.json`
   (do not commit the resulting NPZ; keep outputs/rom/ ignored), then run the sampler aggregator with real payloads:
-  `PYTHONPATH=src python examples/rom_aggregate_from_samples.py --samples outputs/rom/afflec_sampler.json --basis outputs/rom/canonical_basis.npz --save-costs outputs/rom/seam_costs.npz`
+  `PYTHONPATH=src python examples/rom_aggregate_from_samples.py --samples outputs/rom/afflec_sampler.json --basis outputs/rom/canonical_basis.npz --basis-receipt outputs/rom/basis_receipt.json --out-rom-field-receipt outputs/rom/rom_field_receipt.json --save-costs outputs/rom/seam_costs.npz`
   and pass `--seam-costs outputs/rom/seam_costs.npz` into `generate_undersuit` to annotate seams. When no real sampler is available, generate a plumbing-only one via `scripts/generate_synthetic_rom_sampler.py --body outputs/afflec_demo/afflec_body.npz --components <K> --samples 8 --out outputs/rom/afflec_sampler.json` (meta.synthetic=true) and swap in a real sampler at the same path when ready.
 - Standardize per-body ROM dataset naming/versioning and add a caching policy/CLI so `sampler_real` outputs can be reused without reruns; document the refresh path alongside the cache location.
 - Add a streaming MoCap ROM envelope pass (AMASS/contact/dance/clinical) that projects poses to ROM coefficients, emits per-dimension envelopes/density, tags rare/contact-only regimes, and optionally probes boundary poses with the FD kernel to flag mechanically hostile regions; keep outputs as JSON “ROM certificate” artifacts.

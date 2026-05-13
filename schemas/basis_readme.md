@@ -30,6 +30,7 @@ Production basis artifacts should be paired with `basis_receipt.json` emitted by
 - `blocked_consumers`
 
 Without a promoted receipt, the basis NPZ is diagnostic-only for downstream ROM
-field aggregation.
+field aggregation. The next required sidecar is `rom_field_receipt.json`; see
+`schemas/rom_field_receipt_readme.md`.
 
 This aligns with Sprint 1 exit criteria (CONTEXT.md:421-425).

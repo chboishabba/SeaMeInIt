@@ -138,6 +138,22 @@ The current bootstrap basis is the existing sinusoidal-feature QR basis. It is
 labelled as such in `construction_method`; replacing it with a cotangent
 Laplace-Beltrami eigenbasis remains the next field-basis fidelity upgrade.
 
+## ROM-Field Policy
+
+`examples/rom_aggregate_from_samples.py` is the first `ROMFieldReceipt` emitter.
+When called with a promoted `basis_receipt.json`, it writes `rom_fields.npz`
+plus `rom_field_receipt.json`. The fields artifact stores per-vertex mean,
+peak, and variance arrays for every projected ROM field. The receipt hashes the
+basis receipt file, the sample payload, the aggregation summary, and the fields
+artifact; records sample counts, pose source, field names, vertex count, peak
+pressure diagnostics, and `field_uniformity`; and gates `A_field`.
+
+`field_uniformity` is a flat-field diagnostic: values near `1.0` mean the field
+is too uniform to drive meaningful seam differentiation. Promotion requires
+`field_uniformity < 0.95`. Synthetic sample payloads remain diagnostic-only by
+default and can promote only when the caller passes an explicit synthetic
+promotion flag.
+
 ## Scheduling
 
 Carrier trust, correspondence, and field basis can be developed in parallel

@@ -1,5 +1,13 @@
 ## Unreleased
 
+- Wired ROM field receipt emission into sample aggregation:
+  - `examples/rom_aggregate_from_samples.py` now accepts `--basis-receipt` and
+    can emit `rom_fields.npz` plus `rom_field_receipt.json`,
+  - aggregation hard-gates on promoted `BasisReceipt` before emitting Gate 3
+    receipts,
+  - emitted receipts bind basis/sample/summary/field hashes, sample counts,
+    field names, pressure peak diagnostics, `field_uniformity`, and synthetic
+    promotion boundaries.
 - Wired basis receipt emission into canonical basis generation:
   - `scripts/generate_canonical_basis.py` now accepts `--body-receipt` and
     emits `basis_receipt.json` when the body carrier is promoted,

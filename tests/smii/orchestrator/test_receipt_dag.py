@@ -6,6 +6,7 @@ from smii.meshing.body_carrier_receipt import BodyCarrierReceipt
 from smii.meshing.correspondence_receipt import CorrespondenceReceipt
 from smii.orchestrator.receipt_dag import read_receipt_dag
 from smii.rom.basis_receipt import BasisReceipt
+from smii.rom.rom_field_receipt import ROMFieldReceipt
 
 
 def _body_payload(promotion: int = 1) -> dict[str, object]:
@@ -55,6 +56,26 @@ def _basis_payload(promotion: int = 1) -> dict[str, object]:
     }
 
 
+def _rom_field_payload(promotion: int = 1) -> dict[str, object]:
+    return {
+        "basis_receipt_hash": "basis-receipt-sha256",
+        "samples_hash": "samples-sha256",
+        "aggregation_summary_hash": "aggregation-sha256",
+        "fields_hash": "fields-sha256",
+        "pose_count": 6,
+        "total_samples": 6,
+        "pose_source": "rom_corpus_aggregated",
+        "fields_computed": ["pressure", "shear"],
+        "vertex_count": 10475,
+        "peak_pressure_max": 1.0,
+        "peak_pressure_percentile95": 0.8,
+        "field_uniformity": 0.4,
+        "synthetic": False,
+        "promotion": promotion,
+        "blocked_consumers": [],
+    }
+
+
 def _write_known_receipts(run_dir: Path) -> None:
     BodyCarrierReceipt.from_mapping(_body_payload()).to_json(
         run_dir / "body_carrier_receipt.json"
@@ -89,11 +110,28 @@ def test_solver_eligibility_requires_body_basis_rom_and_correspondence(
     tmp_path: Path,
 ) -> None:
     _write_known_receipts(tmp_path)
+    ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(
+        tmp_path / "rom_field_receipt.json"
+    )
 
-    state = read_receipt_dag(tmp_path, rom_field=1)
+    state = read_receipt_dag(tmp_path)
 
     assert state.is_solver_eligible()
     assert state.first_blocker == "seam_cost"
+    assert state.rom_field_receipt is not None
+
+
+def test_rom_field_receipt_overrides_manual_rom_field_gate(tmp_path: Path) -> None:
+    _write_known_receipts(tmp_path)
+    ROMFieldReceipt.from_mapping(_rom_field_payload(promotion=0)).to_json(
+        tmp_path / "rom_field_receipt.json"
+    )
+
+    state = read_receipt_dag(tmp_path, rom_field=1)
+
+    assert state.rom_field == 0
+    assert state.first_blocker == "rom_field"
+    assert not state.is_solver_eligible()
 
 
 def test_missing_receipts_are_unpromoted_and_record_first_blocker(
@@ -116,8 +154,11 @@ def test_transform_receipt_is_used_as_correspondence_fallback(tmp_path: Path) ->
         tmp_path / "transform_receipt.json"
     )
     BasisReceipt.from_mapping(_basis_payload()).to_json(tmp_path / "basis_receipt.json")
+    ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(
+        tmp_path / "rom_field_receipt.json"
+    )
 
-    state = read_receipt_dag(tmp_path, rom_field=1)
+    state = read_receipt_dag(tmp_path)
 
     assert state.correspondence == 1
     assert state.correspondence_receipt is not None
@@ -129,8 +170,11 @@ def test_a_v3240_solver_domain_bypasses_correspondence_gate(tmp_path: Path) -> N
         tmp_path / "body_carrier_receipt.json"
     )
     BasisReceipt.from_mapping(_basis_payload()).to_json(tmp_path / "basis_receipt.json")
+    ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(
+        tmp_path / "rom_field_receipt.json"
+    )
 
-    state = read_receipt_dag(tmp_path, solve_domain="A_v3240", rom_field=1)
+    state = read_receipt_dag(tmp_path, solve_domain="A_v3240")
 
     assert state.correspondence == 0
     assert state.first_blocker == "seam_cost"

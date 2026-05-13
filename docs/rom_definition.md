@@ -82,9 +82,13 @@ they:
    promoted `body_carrier_receipt.json` and emit `basis_receipt.json`.
 2. Treat ROM aggregation as diagnostic-only unless `basis_receipt.json` promotes
    and its `basis_vertex_count`/`basis_dimension` match the basis NPZ and
-   sampler coefficients.
+   sampler coefficients. `examples/rom_aggregate_from_samples.py` can emit
+   `rom_field_receipt.json` from that promoted basis receipt.
 3. Aggregate sampler → seam costs; lengths should equal the mesh vertex count.
-4. Run undersuit with `--seam-costs` pointing to the aggregated NPZ.
+4. Promote field consumers only when `rom_field_receipt.json` has `A_field=+1`;
+   synthetic sample payloads require an explicit promotion flag and
+   `field_uniformity < 0.95`.
+5. Run undersuit with `--seam-costs` pointing to the aggregated NPZ.
 
 Violating K/vertex alignment should fail loudly rather than broadcast/truncate.
 

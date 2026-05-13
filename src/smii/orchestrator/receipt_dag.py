@@ -15,6 +15,7 @@ from smii.meshing.correspondence_receipt import (
     load_correspondence_receipt,
 )
 from smii.rom.basis_receipt import BasisReceipt, load_basis_receipt
+from smii.rom.rom_field_receipt import ROMFieldReceipt, load_rom_field_receipt
 
 Promotion = Literal[-1, 0, 1]
 
@@ -22,9 +23,9 @@ BODY_RECEIPT = "body_carrier_receipt.json"
 CORRESPONDENCE_RECEIPT = "correspondence_receipt.json"
 TRANSFORM_RECEIPT = "transform_receipt.json"
 BASIS_RECEIPT = "basis_receipt.json"
+ROM_FIELD_RECEIPT = "rom_field_receipt.json"
 
 FUTURE_GATES = (
-    "rom_field",
     "seam_cost",
     "solver",
     "panel",
@@ -48,6 +49,7 @@ __all__ = [
     "CORRESPONDENCE_RECEIPT",
     "FUTURE_GATES",
     "ReceiptDagState",
+    "ROM_FIELD_RECEIPT",
     "TRANSFORM_RECEIPT",
     "read_receipt_dag",
 ]
@@ -71,6 +73,7 @@ class ReceiptDagState:
     body_receipt: BodyCarrierReceipt | None = None
     correspondence_receipt: CorrespondenceReceipt | None = None
     basis_receipt: BasisReceipt | None = None
+    rom_field_receipt: ROMFieldReceipt | None = None
 
     def is_solver_eligible(self) -> bool:
         """Return whether the state satisfies the solver promotion precondition."""
@@ -100,12 +103,13 @@ def read_receipt_dag(
     body_receipt = _load_body_receipt(root)
     correspondence_receipt = _load_correspondence_receipt(root)
     basis_receipt = _load_basis_receipt(root)
+    rom_field_receipt = _load_rom_field_receipt(root)
 
     promotions = {
         "body": _promotion_or_zero(body_receipt),
         "correspondence": _promotion_or_zero(correspondence_receipt),
         "basis": _promotion_or_zero(basis_receipt),
-        "rom_field": rom_field,
+        "rom_field": _promotion_or_override(rom_field_receipt, rom_field),
         "seam_cost": seam_cost,
         "solver": solver,
         "panel": panel,
@@ -127,6 +131,7 @@ def read_receipt_dag(
         body_receipt=body_receipt,
         correspondence_receipt=correspondence_receipt,
         basis_receipt=basis_receipt,
+        rom_field_receipt=rom_field_receipt,
     )
 
 
@@ -153,12 +158,28 @@ def _load_basis_receipt(run_dir: Path) -> BasisReceipt | None:
     return load_basis_receipt(path)
 
 
+def _load_rom_field_receipt(run_dir: Path) -> ROMFieldReceipt | None:
+    path = run_dir / ROM_FIELD_RECEIPT
+    if not path.exists():
+        return None
+    return load_rom_field_receipt(path)
+
+
 def _promotion_or_zero(
-    receipt: BodyCarrierReceipt | CorrespondenceReceipt | BasisReceipt | None,
+    receipt: BodyCarrierReceipt | CorrespondenceReceipt | BasisReceipt | ROMFieldReceipt | None,
 ) -> Promotion:
     if receipt is None:
         return 0
     return receipt.promotion
+
+
+def _promotion_or_override(
+    receipt: ROMFieldReceipt | None,
+    override: Promotion,
+) -> Promotion:
+    if receipt is not None:
+        return receipt.promotion
+    return override
 
 
 def _first_blocker(

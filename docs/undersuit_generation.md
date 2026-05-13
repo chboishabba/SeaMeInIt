@@ -67,7 +67,10 @@ PYTHONPATH=src python scripts/generate_canonical_basis.py \
 PYTHONPATH=src python examples/rom_aggregate_from_samples.py \
   --samples outputs/rom/afflec_sampler.json \
   --basis outputs/rom/canonical_afflec_basis.npz \
+  --basis-receipt outputs/rom/basis_receipt.json \
   --field shear \
+  --out-rom-fields outputs/rom/rom_fields.npz \
+  --out-rom-field-receipt outputs/rom/rom_field_receipt.json \
   --save-costs outputs/rom/seam_costs_afflec.npz
 
 # Use the derived seam costs when generating the undersuit
@@ -101,6 +104,8 @@ PYTHONPATH=src python scripts/generate_synthetic_rom_sampler.py \
 The synthetic sampler is deterministic, keeps coeff length aligned to the body
 basis, and is marked `meta.synthetic=true` so outputs are clearly labeled. Swap
 in real sampler data when available; no code changes are required.
+Synthetic ROM field receipts remain non-promoted unless the aggregation command
+is run with the explicit synthetic promotion flag.
 
 > Note: `generate_canonical_basis.py` with the default `--harmonics 3` emits
 > 23 features. For component counts above 23 (e.g., `K=32`), pass `--harmonics 5`

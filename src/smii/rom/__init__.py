@@ -7,6 +7,12 @@ from .basis_receipt import (
     can_consume_basis_receipt,
     load_basis_receipt,
 )
+from .rom_field_receipt import (
+    DEFAULT_ROM_FIELD_BLOCKED_CONSUMERS,
+    ROMFieldReceipt,
+    can_consume_rom_field_receipt,
+    load_rom_field_receipt,
+)
 from .constraints import ConstraintRegistry, ConstraintSet, load_constraints
 from .gates import (
     CouplingManifest,
@@ -41,11 +47,15 @@ __all__ = [
     "BasisMetadata",
     "BasisReceipt",
     "DEFAULT_BASIS_BLOCKED_CONSUMERS",
+    "DEFAULT_ROM_FIELD_BLOCKED_CONSUMERS",
     "KernelBasis",
     "KernelProjector",
+    "ROMFieldReceipt",
     "can_consume_basis_receipt",
+    "can_consume_rom_field_receipt",
     "load_basis",
     "load_basis_receipt",
+    "load_rom_field_receipt",
     "ConstraintRegistry",
     "ConstraintSet",
     "load_constraints",
