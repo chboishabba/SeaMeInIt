@@ -7,11 +7,12 @@ from importlib import util as importlib_util
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
+import hashlib
 import json
 import numpy as np
 import shutil
 
-from smii.meshing import repair_body_mesh_for_export
+from smii.meshing import BodyCarrierReceipt, repair_body_mesh_for_export
 
 __all__ = [
     "InteractiveSession",
@@ -225,6 +226,87 @@ def _merge_payload_metadata(payload: dict[str, Any], metadata: dict[str, Any]) -
     return merged
 
 
+def _sha256_path(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _sha256_paths(paths: Sequence[Path]) -> str:
+    digest = hashlib.sha256()
+    for path in sorted(paths, key=lambda item: str(item)):
+        digest.update(str(path).encode("utf-8"))
+        digest.update(b"\0")
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def _save_mesh_checkpoint(path: Path, vertices: np.ndarray, faces: np.ndarray) -> Path:
+    np.savez(path, vertices=vertices.astype(np.float32), faces=faces.astype(np.int32))
+    return path
+
+
+def _crown_eccentricity_residual(vertices: np.ndarray) -> float:
+    points = np.asarray(vertices, dtype=float)
+    if points.ndim != 2 or points.shape[0] < 4 or points.shape[1] < 3:
+        return 0.0
+    y_values = points[:, 1]
+    threshold = float(np.quantile(y_values, 0.95))
+    crown = points[y_values >= threshold]
+    if crown.shape[0] < 3:
+        return 0.0
+    xy = crown[:, [0, 2]]
+    spread = np.ptp(xy, axis=0)
+    major = float(np.max(spread))
+    minor = float(np.min(spread))
+    if major <= 1e-9:
+        return 0.0
+    return float((major - minor) / major)
+
+
+def _body_fit_confidence(regression: Any) -> float:
+    frames = tuple(getattr(regression, "frames", ()) or ())
+    if not frames:
+        return 1.0 if getattr(regression, "consistency_status", "") == "PASS" else 0.0
+    values = [float(getattr(frame, "confidence", 0.0)) for frame in frames]
+    return float(np.mean(values)) if values else 0.0
+
+
+def _body_landmark_residuals(result: Any) -> dict[str, float]:
+    residuals: dict[str, float] = {}
+    residual = getattr(result, "residual", None)
+    if residual is not None:
+        residuals["measurement_fit_residual"] = float(residual)
+    report = getattr(result, "measurement_report", None)
+    if report is not None:
+        for item in report.visualization_payload():
+            name = str(item.get("name", "measurement"))
+            residuals[f"{name}_variance"] = float(item.get("variance", 0.0))
+    return residuals
+
+
+def _body_receipt_promotion(
+    *,
+    regression: Any,
+    skull_rigidity_residual: float,
+    body_fit_confidence: float,
+) -> int:
+    if getattr(regression, "trust_level", "") != "high":
+        return 0
+    if getattr(regression, "consistency_status", "") != "PASS":
+        return 0
+    if body_fit_confidence < 0.75:
+        return 0
+    if skull_rigidity_residual > 0.35:
+        return 0
+    return 1
+
+
 def _raw_regression_parameter_payload(
     regression: Any,
     *,
@@ -413,7 +495,27 @@ def run_afflec_fixture_demo(
 
     mesh_output: tuple[np.ndarray, np.ndarray] | BodyMeshOutput
     parameters_payload: dict[str, Any] | None = None
+    raw_checkpoint_mesh: tuple[np.ndarray, np.ndarray] | None = None
     try:
+        try:
+            raw_parameters_payload = _raw_regression_parameter_payload(
+                regression,
+                model_type=model_backend,
+                gender="neutral",
+            )
+            raw_parameters, raw_scale, raw_model_type, raw_gender = load_smplx_parameter_payload(
+                raw_parameters_payload
+            )
+            raw_checkpoint_mesh = generate_vertices_from_smplx_parameters(
+                raw_parameters,
+                scale=raw_scale,
+                model_path=asset_root,
+                model_type=raw_model_type,
+                gender=raw_gender,
+            )
+        except (AttributeError, TypeError, ValueError):
+            raw_checkpoint_mesh = None
+
         if refine_with_measurements:
             mesh_output = create_body_mesh(
                 result,
@@ -461,6 +563,8 @@ def run_afflec_fixture_demo(
             model_type=payload_model_type,
             gender=gender,
         )
+        refined_pre_repair_vertices = np.asarray(vertices).copy()
+        refined_pre_repair_faces = np.asarray(faces).copy()
 
         if trimesh is None:
             print(
@@ -480,9 +584,48 @@ def run_afflec_fixture_demo(
                 )
     else:  # pragma: no cover - fallback path without parameter record
         vertices, faces = mesh_output
+        refined_pre_repair_vertices = np.asarray(vertices).copy()
+        refined_pre_repair_faces = np.asarray(faces).copy()
 
+    raw_vertices, raw_faces = raw_checkpoint_mesh or (
+        refined_pre_repair_vertices,
+        refined_pre_repair_faces,
+    )
+    raw_checkpoint_path = _save_mesh_checkpoint(
+        target_dir / "afflec_body_raw_reprojection.npz",
+        raw_vertices,
+        raw_faces,
+    )
+    refined_checkpoint_path = _save_mesh_checkpoint(
+        target_dir / "afflec_body_refined_pre_repair.npz",
+        refined_pre_repair_vertices,
+        refined_pre_repair_faces,
+    )
     np.savez(mesh_path, vertices=vertices.astype(np.float32), faces=faces.astype(np.int32))
     print(f"Saved fitted body mesh to {mesh_path}")
+    skull_rigidity_residual = _crown_eccentricity_residual(vertices)
+    body_fit_confidence = _body_fit_confidence(regression)
+    promotion = _body_receipt_promotion(
+        regression=regression,
+        skull_rigidity_residual=skull_rigidity_residual,
+        body_fit_confidence=body_fit_confidence,
+    )
+    body_receipt = BodyCarrierReceipt(
+        source_hash=_sha256_paths(image_paths),
+        raw_reprojection_hash=_sha256_path(raw_checkpoint_path),
+        refined_pre_repair_hash=_sha256_path(refined_checkpoint_path),
+        repaired_export_hash=_sha256_path(mesh_path),
+        vertex_count=int(np.asarray(vertices).shape[0]),
+        face_count=int(np.asarray(faces).shape[0]),
+        topology_label=f"A_v{int(np.asarray(vertices).shape[0])}",
+        landmark_residuals=_body_landmark_residuals(result),
+        skull_rigidity_residual=skull_rigidity_residual,
+        body_fit_confidence=body_fit_confidence,
+        promotion=promotion,
+        blocked_consumers=[],
+    )
+    receipt_path = body_receipt.to_json(target_dir / "body_carrier_receipt.json")
+    print(f"Saved body carrier receipt to {receipt_path}")
     plot_path = plot_measurement_report(result, target_dir)
     if plot_path is not None:
         print(f"Generated measurement report plot at {plot_path}")

@@ -74,6 +74,28 @@ panel_unwrap
 This makes body trust a property of the receipt itself, not only of one local
 pipeline gate.
 
+`smii.app afflec-demo` also emits the first real body receipt from the export
+path. Each run writes:
+
+```text
+afflec_body_raw_reprojection.npz
+afflec_body_refined_pre_repair.npz
+afflec_body.npz
+body_carrier_receipt.json
+```
+
+The receipt is conservative: `bbox` and warning-status runs remain diagnostic,
+while only high-trust `PASS` runs with acceptable confidence and crown
+eccentricity can promote.
+
+## Minimal Reader
+
+`smii.orchestrator.read_receipt_dag(run_dir)` reads known receipt files without
+running tasks. It reports lane promotions, the first blocker, and seam-solver
+eligibility under the strict rule above. This is intentionally a reader, not a
+task scheduler; existing CLIs can use it to decide whether their outputs may
+promote.
+
 ## Correspondence Policy
 
 The repo currently has correspondence/reprojection tooling, not a proven true

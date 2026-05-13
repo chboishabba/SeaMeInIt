@@ -5,8 +5,9 @@
   PanelUnwrapReceipt -> ManufacturingReceipt`.
   - R0.1 Carrier trust: `BodyCarrierReceipt` is implemented and
     `generate_undersuit` now blocks unpromoted carriers before artifact
-    emission; next, wire export-stage body checkpoints and skull/head
-    plausibility into receipt creation.
+    emission; `afflec-demo` now emits export-stage checkpoints plus
+    `body_carrier_receipt.json` from the body fit/export path. Next, tighten
+    skull/head plausibility thresholds against real Afflec runs.
   - R0.2 Correspondence: `TransformReceipt` / `CorrespondenceReceipt` is
     implemented with source/target hashes, residual metrics,
     collision/load metrics, retention, edge loss, explicit downstream blocks,
@@ -15,6 +16,10 @@
   - R0.3 Field basis: `BasisReceipt` is implemented for canonical `B_0`
     provenance on a promoted physical carrier; next, wire it to canonical
     basis generation and block ROM field aggregation without it.
+  - R0.3a Orchestrator reader: `smii.orchestrator.read_receipt_dag` reads
+    body/correspondence/basis receipts from a run directory and reports the
+    first blocker plus seam-solver eligibility. Next, wire existing CLIs to
+    consult this reader before promotion.
   - R0.4 ROM aggregation: add `ROMFieldReceipt` for vertex-aligned pressure,
     shear, tension, thermal, and cooling-demand summaries.
   - R0.5 Topology/solver: add `SeamCostReceipt` and solver promotion gating so

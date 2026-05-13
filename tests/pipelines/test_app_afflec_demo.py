@@ -229,6 +229,17 @@ def test_afflec_demo_announces_plot(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     assert payload["fit_mode"] == "image_regression_plus_measurement_refinement"
     assert payload["consistency_status"] == "WARN"
     assert mesh_path.exists()
+    receipt_path = output_dir / "body_carrier_receipt.json"
+    assert receipt_path.exists()
+    assert (output_dir / "afflec_body_raw_reprojection.npz").exists()
+    assert (output_dir / "afflec_body_refined_pre_repair.npz").exists()
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    assert receipt["promotion"] == 0
+    assert receipt["topology_label"] == "A_v3"
+    assert receipt["vertex_count"] == 3
+    assert receipt["face_count"] == 1
+    assert "generate_undersuit" in receipt["blocked_consumers"]
+    assert receipt["landmark_residuals"]["measurement_fit_residual"] == pytest.approx(0.0)
     archive = np.load(mesh_path)
     try:
         np.testing.assert_allclose(
@@ -437,3 +448,9 @@ def test_afflec_demo_skip_measurement_refinement_exports_raw_regression_mesh(
         )
     finally:
         archive.close()
+    receipt = json.loads((output_dir / "body_carrier_receipt.json").read_text(encoding="utf-8"))
+    assert receipt["promotion"] == 1
+    assert receipt["blocked_consumers"] == []
+    assert receipt["topology_label"] == "A_v3"
+    assert (output_dir / "afflec_body_raw_reprojection.npz").exists()
+    assert (output_dir / "afflec_body_refined_pre_repair.npz").exists()

@@ -1,5 +1,14 @@
 ## Unreleased
 
+- Wired Gate 0 into the Afflec export path:
+  - `smii.app afflec-demo` now emits `afflec_body_raw_reprojection.npz`,
+    `afflec_body_refined_pre_repair.npz`, and `body_carrier_receipt.json`,
+  - the receipt binds source image hashes, checkpoint hashes, final mesh hash,
+    mesh counts, measurement residuals, confidence, and a conservative
+    skull/crown plausibility residual,
+  - added `smii.orchestrator.read_receipt_dag` as a minimal run-directory
+    promotion-state reader with first-blocker and seam-solver eligibility
+    helpers.
 - Added the receipt-orchestrator control surface:
   - new `docs/receipt_orchestrator.md` defines the carrier -> correspondence
     -> basis -> ROM field -> seam cost -> solver -> panel -> manufacturing
