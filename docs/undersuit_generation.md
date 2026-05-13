@@ -63,15 +63,24 @@ PYTHONPATH=src python scripts/generate_canonical_basis.py \
   --output outputs/rom/canonical_afflec_basis.npz \
   --receipt-output outputs/rom/basis_receipt.json
 
-# Aggregate sampler into seam cost field sized to afflec mesh
+# Aggregate sampler into receipted ROM fields sized to afflec mesh
 PYTHONPATH=src python examples/rom_aggregate_from_samples.py \
   --samples outputs/rom/afflec_sampler.json \
   --basis outputs/rom/canonical_afflec_basis.npz \
   --basis-receipt outputs/rom/basis_receipt.json \
   --field shear \
   --out-rom-fields outputs/rom/rom_fields.npz \
-  --out-rom-field-receipt outputs/rom/rom_field_receipt.json \
-  --save-costs outputs/rom/seam_costs_afflec.npz
+  --out-rom-field-receipt outputs/rom/rom_field_receipt.json
+
+# Promote seam costs from the receipted fields
+PYTHONPATH=src python scripts/compute_seam_costs.py \
+  --body-receipt outputs/afflec_demo/body_carrier_receipt.json \
+  --rom-field-receipt outputs/rom/rom_field_receipt.json \
+  --rom-fields outputs/rom/rom_fields.npz \
+  --mesh outputs/afflec_demo/afflec_body.npz \
+  --solve-domain A_v3240 \
+  --out-costs outputs/rom/seam_costs_afflec.npz \
+  --out-seam-cost-receipt outputs/rom/seam_cost_receipt.json
 
 # Use the derived seam costs when generating the undersuit
 PYTHONPATH=src python -m smii.pipelines.generate_undersuit \
@@ -87,6 +96,10 @@ shear/pressure hotspots and hard seam invalidations (forbidden hits or
 self-intersections), then blocks high-risk samples. It also tracks
 `seam_tear_risk_dynamic` as a fatigue-style accumulated risk across the ROM
 stream and blocks when sustained stress exceeds threshold.
+
+Unreceipted `seam_costs.npz` artifacts remain diagnostic-only. Promoted solver
+work should consume a `seam_cost_receipt.json` emitted by
+`scripts/compute_seam_costs.py`.
 
 #### Synthetic sampler (plumbing-only)
 

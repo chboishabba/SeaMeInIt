@@ -41,13 +41,15 @@ BodyCarrierReceipt
   -> ManufacturingReceipt
 ```
 
-The first four emitted gates now cover body trust, correspondence, the
-bootstrap field basis, and ROM field aggregation. `BodyCarrierReceipt` blocks
-untrusted bodies, `CorrespondenceReceipt` records transfer collapse or
-admissibility, `BasisReceipt` is emitted by canonical basis generation only when
-the body carrier is promoted, and `ROMFieldReceipt` records field uniformity and
-synthetic-promotion boundaries. The next implementation lane is receipted seam
-cost emission plus the full solver promotion rule.
+The first five emitted gates now cover body trust, correspondence, the
+bootstrap field basis, ROM field aggregation, and seam-cost promotion.
+`BodyCarrierReceipt` blocks untrusted bodies, `CorrespondenceReceipt` records
+transfer collapse or admissibility, `BasisReceipt` is emitted by canonical basis
+generation only when the body carrier is promoted, `ROMFieldReceipt` records
+field uniformity and synthetic-promotion boundaries, and `SeamCostReceipt`
+records finite/non-flat edge costs under the native-or-transfer solve-domain
+gate. The next implementation lane is solver promotion receipt emission plus
+anchor/component debugging.
 
 ## Current focus: manufacturable panels and morphology attribution
 

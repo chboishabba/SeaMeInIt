@@ -40,7 +40,7 @@ inspection, reporting, or comparison, but may not silently promote from it.
 | Correspondence | `TransformReceipt` / `CorrespondenceReceipt` | source and target mesh hashes exist | `A_T=+1` for transfer-backed claims; collapsed NN maps remain diagnostic |
 | Field basis | `BasisReceipt` | promoted physical carrier | `A_field_basis=+1` with stable vertex-aligned basis `B_0` |
 | ROM aggregation | `ROMFieldReceipt` | basis plus ROM samples | `A_field=+1` with fields aligned to the seam graph vertex count |
-| Topology/solver | `SeamCostReceipt`, `SolverPromotionReceipt` | body and field gates pass | `A_seam=+1` only under the solver promotion rule |
+| Topology/solver | `SeamCostReceipt`, `SolverPromotionReceipt` | body and field gates pass | `A_seam_cost=+1`, then `A_seam=+1` only under the solver promotion rule |
 | Panel/manufacture | `PanelUnwrapReceipt`, `ManufacturingReceipt` | promoted seam topology | manufacturable artifacts, or explicit non-promotion boundary |
 
 The solver promotion rule is deliberately strict:
@@ -48,10 +48,13 @@ The solver promotion rule is deliberately strict:
 ```text
 A_body = +1
 A_field = +1
+A_seam_cost = +1
 and (A_T = +1 or solve_domain = A_v3240)
 ```
 
-If that rule is not satisfied, solver outputs are diagnostic-only.
+If that rule is not satisfied, solver outputs are diagnostic-only. Gate 4
+therefore enforces the body, field, and solve-domain rule while computing seam
+costs, not only at solver invocation time.
 
 ## Current Gate 0
 
@@ -90,8 +93,9 @@ eccentricity can promote.
 
 ## Minimal Reader
 
-`smii.orchestrator.read_receipt_dag(run_dir)` reads known receipt files without
-running tasks. It reports lane promotions, the first blocker, and seam-solver
+`smii.orchestrator.read_receipt_dag(run_dir)` reads known body,
+correspondence, basis, ROM-field, and seam-cost receipt files without running
+tasks. It reports lane promotions, the first blocker, and seam-solver
 eligibility under the strict rule above. This is intentionally a reader, not a
 task scheduler; existing CLIs can use it to decide whether their outputs may
 promote.
@@ -154,6 +158,24 @@ is too uniform to drive meaningful seam differentiation. Promotion requires
 default and can promote only when the caller passes an explicit synthetic
 promotion flag.
 
+## Seam-Cost Policy
+
+`scripts/compute_seam_costs.py` is the first `SeamCostReceipt` emitter. It
+loads a promoted `body_carrier_receipt.json` and `rom_field_receipt.json`,
+optionally loads a `correspondence_receipt.json` for transfer-backed domains,
+and writes `seam_costs.npz` plus `seam_cost_receipt.json`.
+
+Native `A_v3240` solves may promote without a correspondence receipt because
+the costs live on the promoted physical carrier. Transfer-backed `B_v9438`
+solves must carry `A_T=+1`; rejected or diagnostic correspondence receipts
+block cost promotion and force the caller back to native solving or transfer
+repair.
+
+`cost_uniformity` is the seam-solver insensitivity diagnostic. Values near
+`1.0` mean the edge costs are effectively flat and cannot produce meaningful
+solver differentiation. Promotion requires `finite_cost_coverage > 0.99` and
+`cost_uniformity < 0.95`.
+
 ## Scheduling
 
 Carrier trust, correspondence, and field basis can be developed in parallel
@@ -164,8 +186,9 @@ order:
 2. establish transfer admissibility or freeze native solve-domain policy
 3. build `B_0` and promote a field basis on the promoted carrier
 4. aggregate ROM fields from the receipted basis
-5. compute seam costs and solver promotion from receipted fields
-6. unwrap and manufacture only promoted topology
+5. compute promoted seam costs from receipted fields and solve-domain receipts
+6. promote solver outputs from promoted seam costs
+7. unwrap and manufacture only promoted topology
 
 The orchestrator is complete when seam artifacts no longer promote from an
 untrusted body, transfer-backed claims are hash- and residual-bound, seam costs

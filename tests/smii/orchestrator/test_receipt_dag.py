@@ -7,6 +7,7 @@ from smii.meshing.correspondence_receipt import CorrespondenceReceipt
 from smii.orchestrator.receipt_dag import read_receipt_dag
 from smii.rom.basis_receipt import BasisReceipt
 from smii.rom.rom_field_receipt import ROMFieldReceipt
+from smii.seams.seam_cost_receipt import SeamCostReceipt
 
 
 def _body_payload(promotion: int = 1) -> dict[str, object]:
@@ -76,6 +77,25 @@ def _rom_field_payload(promotion: int = 1) -> dict[str, object]:
     }
 
 
+def _seam_cost_payload(promotion: int = 1) -> dict[str, object]:
+    return {
+        "rom_field_receipt_hash": "rom-field-receipt-sha256",
+        "body_receipt_hash": "body-receipt-sha256",
+        "correspondence_receipt_hash": None,
+        "solve_domain": "A_v3240",
+        "vertex_count": 10475,
+        "edge_count": 20908,
+        "finite_cost_coverage": 1.0,
+        "cost_uniformity": 0.4,
+        "peak_cost": 2.0,
+        "mean_cost": 1.0,
+        "weight_vector": {"w_P": 1.0, "w_S": 0.8},
+        "costs_hash": "costs-sha256",
+        "promotion": promotion,
+        "blocked_consumers": [],
+    }
+
+
 def _write_known_receipts(run_dir: Path) -> None:
     BodyCarrierReceipt.from_mapping(_body_payload()).to_json(
         run_dir / "body_carrier_receipt.json"
@@ -106,9 +126,26 @@ def test_reads_known_receipts_and_defaults_future_gates_to_zero(tmp_path: Path) 
     assert not state.is_solver_eligible()
 
 
-def test_solver_eligibility_requires_body_basis_rom_and_correspondence(
+def test_solver_eligibility_requires_body_basis_rom_seam_cost_and_correspondence(
     tmp_path: Path,
 ) -> None:
+    _write_known_receipts(tmp_path)
+    ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(
+        tmp_path / "rom_field_receipt.json"
+    )
+    SeamCostReceipt.from_mapping(_seam_cost_payload()).to_json(
+        tmp_path / "seam_cost_receipt.json"
+    )
+
+    state = read_receipt_dag(tmp_path)
+
+    assert state.is_solver_eligible()
+    assert state.first_blocker == "solver"
+    assert state.rom_field_receipt is not None
+    assert state.seam_cost_receipt is not None
+
+
+def test_solver_eligibility_blocks_without_seam_cost_receipt(tmp_path: Path) -> None:
     _write_known_receipts(tmp_path)
     ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(
         tmp_path / "rom_field_receipt.json"
@@ -116,9 +153,24 @@ def test_solver_eligibility_requires_body_basis_rom_and_correspondence(
 
     state = read_receipt_dag(tmp_path)
 
-    assert state.is_solver_eligible()
     assert state.first_blocker == "seam_cost"
-    assert state.rom_field_receipt is not None
+    assert not state.is_solver_eligible()
+
+
+def test_seam_cost_receipt_overrides_manual_seam_cost_gate(tmp_path: Path) -> None:
+    _write_known_receipts(tmp_path)
+    ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(
+        tmp_path / "rom_field_receipt.json"
+    )
+    SeamCostReceipt.from_mapping(_seam_cost_payload(promotion=0)).to_json(
+        tmp_path / "seam_cost_receipt.json"
+    )
+
+    state = read_receipt_dag(tmp_path, seam_cost=1)
+
+    assert state.seam_cost == 0
+    assert state.first_blocker == "seam_cost"
+    assert not state.is_solver_eligible()
 
 
 def test_rom_field_receipt_overrides_manual_rom_field_gate(tmp_path: Path) -> None:
@@ -157,6 +209,9 @@ def test_transform_receipt_is_used_as_correspondence_fallback(tmp_path: Path) ->
     ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(
         tmp_path / "rom_field_receipt.json"
     )
+    SeamCostReceipt.from_mapping(_seam_cost_payload()).to_json(
+        tmp_path / "seam_cost_receipt.json"
+    )
 
     state = read_receipt_dag(tmp_path)
 
@@ -173,9 +228,12 @@ def test_a_v3240_solver_domain_bypasses_correspondence_gate(tmp_path: Path) -> N
     ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(
         tmp_path / "rom_field_receipt.json"
     )
+    SeamCostReceipt.from_mapping(_seam_cost_payload()).to_json(
+        tmp_path / "seam_cost_receipt.json"
+    )
 
     state = read_receipt_dag(tmp_path, solve_domain="A_v3240")
 
     assert state.correspondence == 0
-    assert state.first_blocker == "seam_cost"
+    assert state.first_blocker == "solver"
     assert state.is_solver_eligible()

@@ -207,3 +207,21 @@ Date: 2026-02-06
   - `.planning/plan.md`
   - `.planning/status.json`
   - `.planning/devlog.md`
+
+## Receipt Orchestrator Gate 4 Snapshot (2026-05-13)
+- Active implementation direction: SMII's receipt DAG is now the production
+  promotion contract, not only documentation.
+- Gates 0-3 currently emit real artifacts:
+  - `BodyCarrierReceipt` from Afflec export checkpoints,
+  - `CorrespondenceReceipt` from seam reprojection quality metrics,
+  - `BasisReceipt` from canonical basis generation on a promoted carrier,
+  - `ROMFieldReceipt` from sample aggregation with field-uniformity gating.
+- Gate 4 target:
+  - emit `SeamCostReceipt` from receipted ROM fields and existing
+    `SeamCostField` artifacts,
+  - enforce `A_body=+1`, `A_field=+1`, and either `A_T=+1` or
+    `solve_domain=A_v3240` before seam costs can promote,
+  - record `cost_uniformity` so flat edge costs remain diagnostic-only instead
+    of producing promoted but insensitive solver inputs,
+  - update the orchestrator reader so seam solver eligibility requires
+    `seam_cost=+1`.

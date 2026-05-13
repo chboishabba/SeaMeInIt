@@ -84,11 +84,17 @@ they:
    and its `basis_vertex_count`/`basis_dimension` match the basis NPZ and
    sampler coefficients. `examples/rom_aggregate_from_samples.py` can emit
    `rom_field_receipt.json` from that promoted basis receipt.
-3. Aggregate sampler → seam costs; lengths should equal the mesh vertex count.
+3. Aggregate sampler → `rom_fields.npz`; lengths should equal the mesh vertex
+   count.
 4. Promote field consumers only when `rom_field_receipt.json` has `A_field=+1`;
    synthetic sample payloads require an explicit promotion flag and
    `field_uniformity < 0.95`.
-5. Run undersuit with `--seam-costs` pointing to the aggregated NPZ.
+5. Compute seam costs only through `scripts/compute_seam_costs.py`, which
+   requires promoted body and ROM-field receipts plus either native
+   `solve_domain=A_v3240` or a promoted correspondence receipt.
+6. Promote solver consumers only when `seam_cost_receipt.json` has
+   `A_seam_cost=+1`; flat costs (`cost_uniformity >= 0.95`) remain
+   diagnostic-only.
 
 Violating K/vertex alignment should fail loudly rather than broadcast/truncate.
 
@@ -120,7 +126,7 @@ outputs exist.
 ```
 SMPL-X poses → sampler_real → ROM samples (coeffs)
            → aggregate_rom_for_task (task-weighted measure)
-           → SeamCostField → seam solvers (kernel/PDA/MDL)
+           → ROMFieldReceipt → SeamCostReceipt → seam solvers (kernel/PDA/MDL)
 ```
 
 ## ROM is computed, not premade: progressive admissibility levels

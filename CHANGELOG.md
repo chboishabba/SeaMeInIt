@@ -1,5 +1,14 @@
 ## Unreleased
 
+- Wired seam-cost receipt emission into the topology lane:
+  - added `SeamCostReceipt` for hash-linked `seam_costs.npz` artifacts,
+  - added `scripts/compute_seam_costs.py` to enforce promoted body and ROM-field
+    receipts plus the native-or-promoted-correspondence solve-domain rule before
+    cost promotion,
+  - promoted seam costs now record finite coverage, cost uniformity, cost
+    summary diagnostics, weight vectors, and downstream solver/panel blocks,
+  - the receipt DAG reader now requires promoted seam costs for seam-solver
+    eligibility.
 - Wired ROM field receipt emission into sample aggregation:
   - `examples/rom_aggregate_from_samples.py` now accepts `--basis-receipt` and
     can emit `rom_fields.npz` plus `rom_field_receipt.json`,

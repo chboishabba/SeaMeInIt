@@ -25,3 +25,7 @@ payload or explicit synthetic promotion.
 
 Without a promoted receipt, ROM field outputs are diagnostic-only for seam-cost
 promotion.
+
+The next sidecar in the DAG is `seam_cost_receipt.json`, emitted by
+`scripts/compute_seam_costs.py` after it validates this receipt, the referenced
+`rom_fields.npz` hash, and the promoted body/correspondence solve-domain gates.
