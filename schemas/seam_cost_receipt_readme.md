@@ -39,3 +39,7 @@ Promotion requires:
 
 Unpromoted receipts default to blocking `solver_promotion`, `panel_unwrap`, and
 `manufacturing`.
+
+The next sidecar in the DAG is `solver_promotion_receipt.json`, emitted by
+`scripts/solve_seams.py` after it validates this receipt and the referenced
+`seam_costs.npz` hash.

@@ -8,6 +8,7 @@ from smii.orchestrator.receipt_dag import read_receipt_dag
 from smii.rom.basis_receipt import BasisReceipt
 from smii.rom.rom_field_receipt import ROMFieldReceipt
 from smii.seams.seam_cost_receipt import SeamCostReceipt
+from smii.seams.solver_promotion_receipt import SolverPromotionReceipt
 
 
 def _body_payload(promotion: int = 1) -> dict[str, object]:
@@ -96,6 +97,25 @@ def _seam_cost_payload(promotion: int = 1) -> dict[str, object]:
     }
 
 
+def _solver_payload(promotion: int = 1) -> dict[str, object]:
+    return {
+        "seam_cost_receipt_hash": "seam-cost-receipt-sha256",
+        "solver_mode": "shortest_path",
+        "anchor_count": 8,
+        "anchor_source": "field_minima",
+        "connected_component_count": 1,
+        "anchor_fallback_used": False,
+        "seam_edge_count": 32,
+        "seam_vertex_count": 40,
+        "total_seam_cost": 12.0,
+        "panel_count": 4,
+        "panels_are_disks": True,
+        "seam_hash": "seam-sha256",
+        "promotion": promotion,
+        "blocked_consumers": [],
+    }
+
+
 def _write_known_receipts(run_dir: Path) -> None:
     BodyCarrierReceipt.from_mapping(_body_payload()).to_json(
         run_dir / "body_carrier_receipt.json"
@@ -143,6 +163,46 @@ def test_solver_eligibility_requires_body_basis_rom_seam_cost_and_correspondence
     assert state.first_blocker == "solver"
     assert state.rom_field_receipt is not None
     assert state.seam_cost_receipt is not None
+    assert not state.can_unwrap_panels()
+
+
+def test_solver_receipt_enables_panel_unwrap_gate(tmp_path: Path) -> None:
+    _write_known_receipts(tmp_path)
+    ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(
+        tmp_path / "rom_field_receipt.json"
+    )
+    SeamCostReceipt.from_mapping(_seam_cost_payload()).to_json(
+        tmp_path / "seam_cost_receipt.json"
+    )
+    SolverPromotionReceipt.from_mapping(_solver_payload()).to_json(
+        tmp_path / "solver_promotion_receipt.json"
+    )
+
+    state = read_receipt_dag(tmp_path)
+
+    assert state.solver == 1
+    assert state.solver_promotion_receipt is not None
+    assert state.first_blocker == "panel"
+    assert state.can_unwrap_panels()
+
+
+def test_solver_receipt_overrides_manual_solver_gate(tmp_path: Path) -> None:
+    _write_known_receipts(tmp_path)
+    ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(
+        tmp_path / "rom_field_receipt.json"
+    )
+    SeamCostReceipt.from_mapping(_seam_cost_payload()).to_json(
+        tmp_path / "seam_cost_receipt.json"
+    )
+    SolverPromotionReceipt.from_mapping(_solver_payload(promotion=0)).to_json(
+        tmp_path / "solver_promotion_receipt.json"
+    )
+
+    state = read_receipt_dag(tmp_path, solver=1)
+
+    assert state.solver == 0
+    assert state.first_blocker == "solver"
+    assert not state.can_unwrap_panels()
 
 
 def test_solver_eligibility_blocks_without_seam_cost_receipt(tmp_path: Path) -> None:

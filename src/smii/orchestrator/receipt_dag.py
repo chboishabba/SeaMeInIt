@@ -17,6 +17,10 @@ from smii.meshing.correspondence_receipt import (
 from smii.rom.basis_receipt import BasisReceipt, load_basis_receipt
 from smii.rom.rom_field_receipt import ROMFieldReceipt, load_rom_field_receipt
 from smii.seams.seam_cost_receipt import SeamCostReceipt, load_seam_cost_receipt
+from smii.seams.solver_promotion_receipt import (
+    SolverPromotionReceipt,
+    load_solver_promotion_receipt,
+)
 
 Promotion = Literal[-1, 0, 1]
 
@@ -26,9 +30,9 @@ TRANSFORM_RECEIPT = "transform_receipt.json"
 BASIS_RECEIPT = "basis_receipt.json"
 ROM_FIELD_RECEIPT = "rom_field_receipt.json"
 SEAM_COST_RECEIPT = "seam_cost_receipt.json"
+SOLVER_PROMOTION_RECEIPT = "solver_promotion_receipt.json"
 
 FUTURE_GATES = (
-    "solver",
     "panel",
     "manufacture",
 )
@@ -52,6 +56,7 @@ __all__ = [
     "ReceiptDagState",
     "ROM_FIELD_RECEIPT",
     "SEAM_COST_RECEIPT",
+    "SOLVER_PROMOTION_RECEIPT",
     "TRANSFORM_RECEIPT",
     "read_receipt_dag",
 ]
@@ -77,6 +82,7 @@ class ReceiptDagState:
     basis_receipt: BasisReceipt | None = None
     rom_field_receipt: ROMFieldReceipt | None = None
     seam_cost_receipt: SeamCostReceipt | None = None
+    solver_promotion_receipt: SolverPromotionReceipt | None = None
 
     def is_solver_eligible(self) -> bool:
         """Return whether the state satisfies the solver promotion precondition."""
@@ -88,6 +94,11 @@ class ReceiptDagState:
             and self.seam_cost == 1
             and (self.correspondence == 1 or self.solve_domain == "A_v3240")
         )
+
+    def can_unwrap_panels(self) -> bool:
+        """Return whether promoted seam topology is available for panel unwrap."""
+
+        return self.is_solver_eligible() and self.solver == 1
 
 
 def read_receipt_dag(
@@ -109,6 +120,7 @@ def read_receipt_dag(
     basis_receipt = _load_basis_receipt(root)
     rom_field_receipt = _load_rom_field_receipt(root)
     seam_cost_receipt = _load_seam_cost_receipt(root)
+    solver_promotion_receipt = _load_solver_promotion_receipt(root)
 
     promotions = {
         "body": _promotion_or_zero(body_receipt),
@@ -116,7 +128,7 @@ def read_receipt_dag(
         "basis": _promotion_or_zero(basis_receipt),
         "rom_field": _promotion_or_override(rom_field_receipt, rom_field),
         "seam_cost": _promotion_or_override(seam_cost_receipt, seam_cost),
-        "solver": solver,
+        "solver": _promotion_or_solver_override(solver_promotion_receipt, solver),
         "panel": panel,
         "manufacture": manufacture,
     }
@@ -138,6 +150,7 @@ def read_receipt_dag(
         basis_receipt=basis_receipt,
         rom_field_receipt=rom_field_receipt,
         seam_cost_receipt=seam_cost_receipt,
+        solver_promotion_receipt=solver_promotion_receipt,
     )
 
 
@@ -178,12 +191,20 @@ def _load_seam_cost_receipt(run_dir: Path) -> SeamCostReceipt | None:
     return load_seam_cost_receipt(path)
 
 
+def _load_solver_promotion_receipt(run_dir: Path) -> SolverPromotionReceipt | None:
+    path = run_dir / SOLVER_PROMOTION_RECEIPT
+    if not path.exists():
+        return None
+    return load_solver_promotion_receipt(path)
+
+
 def _promotion_or_zero(
     receipt: BodyCarrierReceipt
     | CorrespondenceReceipt
     | BasisReceipt
     | ROMFieldReceipt
     | SeamCostReceipt
+    | SolverPromotionReceipt
     | None,
 ) -> Promotion:
     if receipt is None:
@@ -193,6 +214,15 @@ def _promotion_or_zero(
 
 def _promotion_or_override(
     receipt: ROMFieldReceipt | SeamCostReceipt | None,
+    override: Promotion,
+) -> Promotion:
+    if receipt is not None:
+        return receipt.promotion
+    return override
+
+
+def _promotion_or_solver_override(
+    receipt: SolverPromotionReceipt | None,
     override: Promotion,
 ) -> Promotion:
     if receipt is not None:

@@ -23,7 +23,7 @@
     sinusoidal-QR basis with a cotangent Laplace-Beltrami eigenbasis and wire
     ROM field aggregation to require the promoted receipt.
   - R0.3a Orchestrator reader: `smii.orchestrator.read_receipt_dag` reads
-    body/correspondence/basis/ROM-field/seam-cost receipts from a run directory
+    body/correspondence/basis/ROM-field/seam-cost/solver receipts from a run directory
     and reports the first blocker plus seam-solver eligibility. Next, wire
     existing CLIs to consult this reader before promotion.
   - R0.4 ROM aggregation: `ROMFieldReceipt` is wired into
@@ -35,8 +35,11 @@
     `scripts/compute_seam_costs.py` emits `seam_cost_receipt.json` only after
     enforcing `A_body=+1`, `A_field=+1`, and either `A_T=+1` or
     `solve_domain=A_v3240`; `cost_uniformity` and finite coverage block flat or
-    incomplete costs. Next, emit `SolverPromotionReceipt` and debug the
-    anchor/component fallback.
+    incomplete costs. `SolverPromotionReceipt` is implemented and
+    `scripts/solve_seams.py` emits `solver_promotion_receipt.json` only from a
+    promoted seam-cost receipt; it records field-minima anchors, component
+    fallback usage, seam hashes, and panel-topology promotion state. Next, wire
+    the legacy solver examples to consume the solver receipt when promoting.
   - R0.6 Panel/manufacture: unwrap only promoted seam topology and emit
     panel/manufacturing receipts; failed flattening must produce explicit
     non-promotion boundaries.
@@ -150,6 +153,8 @@
   `PYTHONPATH=src python examples/rom_aggregate_from_samples.py --samples outputs/rom/afflec_sampler.json --basis outputs/rom/canonical_basis.npz --basis-receipt outputs/rom/basis_receipt.json --out-rom-fields outputs/rom/rom_fields.npz --out-rom-field-receipt outputs/rom/rom_field_receipt.json`
   followed by
   `PYTHONPATH=src python scripts/compute_seam_costs.py --body-receipt <run-root>/body_carrier_receipt.json --rom-field-receipt outputs/rom/rom_field_receipt.json --rom-fields outputs/rom/rom_fields.npz --mesh <production mesh npz> --solve-domain A_v3240 --out-costs outputs/rom/seam_costs.npz --out-seam-cost-receipt outputs/rom/seam_cost_receipt.json`,
+  followed by
+  `PYTHONPATH=src python scripts/solve_seams.py --seam-cost-receipt outputs/rom/seam_cost_receipt.json --costs outputs/rom/seam_costs.npz --mesh <production mesh npz> --out-dir outputs/seams --out-solver-receipt outputs/seams/solver_promotion_receipt.json`,
   then pass the receipted `--seam-costs outputs/rom/seam_costs.npz` into
   `generate_undersuit` to annotate seams. When no real sampler is available,
   generate a plumbing-only one via `scripts/generate_synthetic_rom_sampler.py

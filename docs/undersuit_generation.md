@@ -82,6 +82,14 @@ PYTHONPATH=src python scripts/compute_seam_costs.py \
   --out-costs outputs/rom/seam_costs_afflec.npz \
   --out-seam-cost-receipt outputs/rom/seam_cost_receipt.json
 
+# Promote seam topology from receipted seam costs
+PYTHONPATH=src python scripts/solve_seams.py \
+  --seam-cost-receipt outputs/rom/seam_cost_receipt.json \
+  --costs outputs/rom/seam_costs_afflec.npz \
+  --mesh outputs/afflec_demo/afflec_body.npz \
+  --out-dir outputs/seams \
+  --out-solver-receipt outputs/seams/solver_promotion_receipt.json
+
 # Use the derived seam costs when generating the undersuit
 PYTHONPATH=src python -m smii.pipelines.generate_undersuit \
   outputs/afflec_demo/afflec_body.npz \
@@ -99,7 +107,9 @@ stream and blocks when sustained stress exceeds threshold.
 
 Unreceipted `seam_costs.npz` artifacts remain diagnostic-only. Promoted solver
 work should consume a `seam_cost_receipt.json` emitted by
-`scripts/compute_seam_costs.py`.
+`scripts/compute_seam_costs.py`. Promoted panel unwrap work should consume a
+`solver_promotion_receipt.json` emitted by `scripts/solve_seams.py`; seam
+artifacts without that receipt remain diagnostic-only.
 
 #### Synthetic sampler (plumbing-only)
 

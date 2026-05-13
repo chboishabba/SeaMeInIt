@@ -17,6 +17,11 @@ from .seam_cost_receipt import (
     can_consume_seam_cost_receipt,
     load_seam_cost_receipt,
 )
+from .solver_promotion_receipt import (
+    SolverPromotionReceipt,
+    can_consume_solver_promotion_receipt,
+    load_solver_promotion_receipt,
+)
 from .solver import PanelSolution, SeamSolution, solve_seams
 from .task_profiles import TaskProfile, aggregate_rom_for_task, load_task_profile
 from .solvers_mincut import solve_seams_mincut
@@ -33,6 +38,7 @@ __all__ = [
     "PanelSolution",
     "SeamCostReceipt",
     "SeamSolution",
+    "SolverPromotionReceipt",
     "build_edge_costs",
     "build_edge_kernels",
     "can_consume_seam_cost_receipt",
@@ -41,6 +47,8 @@ __all__ = [
     "load_fabric_profile",
     "load_fabrics_from_dir",
     "load_seam_cost_receipt",
+    "can_consume_solver_promotion_receipt",
+    "load_solver_promotion_receipt",
     "aggregate_rom_for_task",
     "mdl_cost",
     "mdl_terms",

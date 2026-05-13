@@ -56,6 +56,14 @@ If that rule is not satisfied, solver outputs are diagnostic-only. Gate 4
 therefore enforces the body, field, and solve-domain rule while computing seam
 costs, not only at solver invocation time.
 
+Solver promotion adds the final topology check before panel unwrap. A solver
+may only consume a promoted `seam_cost_receipt.json`. The solver receipt records
+its anchor source, anchor count, connected-component count,
+`anchor_fallback_used`, seam artifact hash, total seam cost, panel count, and
+whether the produced panels pass the current graph-level disk proxy. Anchor
+fallback is auditable rather than silent: it does not by itself block promotion,
+but it is recorded for later anchor-policy review.
+
 ## Current Gate 0
 
 `BodyCarrierReceipt` is the first enforced receipt. It records the source,
@@ -94,7 +102,7 @@ eccentricity can promote.
 ## Minimal Reader
 
 `smii.orchestrator.read_receipt_dag(run_dir)` reads known body,
-correspondence, basis, ROM-field, and seam-cost receipt files without running
+correspondence, basis, ROM-field, seam-cost, and solver receipt files without running
 tasks. It reports lane promotions, the first blocker, and seam-solver
 eligibility under the strict rule above. This is intentionally a reader, not a
 task scheduler; existing CLIs can use it to decide whether their outputs may
@@ -175,6 +183,26 @@ repair.
 `1.0` mean the edge costs are effectively flat and cannot produce meaningful
 solver differentiation. Promotion requires `finite_cost_coverage > 0.99` and
 `cost_uniformity < 0.95`.
+
+## Solver-Promotion Policy
+
+`scripts/solve_seams.py` is the first `SolverPromotionReceipt` emitter. It
+loads a promoted `seam_cost_receipt.json`, verifies the referenced
+`seam_costs.npz` hash, selects anchors from field minima by default, solves a
+deterministic low-cost seam edge set, and writes `seam_edges.npz` plus
+`solver_promotion_receipt.json`.
+
+Field-minima anchors replace the old geometric-only default for promoted
+topology. If the selected anchor subgraph is disconnected, the script falls back
+to the largest connected anchor component and records
+`anchor_fallback_used=true`; this makes the previous "anchors disconnected"
+warning an auditable receipt field instead of a silent solver behavior.
+
+`panels_are_disks` is the hard Gate 6 boundary. The current emitter uses a
+graph-level disk proxy until the panel unwrapper owns exact cut-mesh topology:
+every post-cut component must be nonempty and have Euler characteristic at
+least one. Failed topology leaves the seam artifact diagnostic-only and blocks
+`panel_unwrap`.
 
 ## Scheduling
 

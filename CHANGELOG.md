@@ -1,5 +1,14 @@
 ## Unreleased
 
+- Wired solver promotion receipt emission into the topology lane:
+  - added `SolverPromotionReceipt` for hash-linked `seam_edges.npz` artifacts,
+  - added `scripts/solve_seams.py` to require promoted seam-cost receipts,
+    verify cost hashes, select field-minima anchors, and emit solver receipts,
+  - anchor fallback is now recorded through `connected_component_count` and
+    `anchor_fallback_used` instead of remaining an invisible warning,
+  - panel topology is now the Gate 6 boundary through `panels_are_disks`,
+  - the receipt DAG reader now loads `solver_promotion_receipt.json` and exposes
+    `can_unwrap_panels()`.
 - Wired seam-cost receipt emission into the topology lane:
   - added `SeamCostReceipt` for hash-linked `seam_costs.npz` artifacts,
   - added `scripts/compute_seam_costs.py` to enforce promoted body and ROM-field
