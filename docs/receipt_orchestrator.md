@@ -108,6 +108,22 @@ eligibility under the strict rule above. This is intentionally a reader, not a
 task scheduler; existing CLIs can use it to decide whether their outputs may
 promote.
 
+## Demo Runner
+
+The first execution layer is a thin Afflec demo runner, not a general task
+scheduler. `scripts/run_afflec_receipted_demo.py` executes the existing Gate
+0-7 CLIs in dependency order for the native `A_v3240` solve path, stops at the
+first non-promoted receipt, and writes `run_manifest.json` with per-gate
+promotion state, receipt hashes, timestamps, and final manufacturing
+eligibility.
+
+Dry runs must only print the planned command chain. They must not create run
+directories, receipts, manifests, or manufacturing artifacts.
+
+The native demo path intentionally skips Gate 1 correspondence promotion
+because no transfer-backed seam claim is made. Transfer-backed runs still need
+`A_T=+1` before Gate 4 can promote on a non-native solve domain.
+
 ## Correspondence Policy
 
 The repo currently has correspondence/reprojection tooling, not a proven true

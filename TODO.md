@@ -51,6 +51,19 @@
     cutting-layout hashes are receipted; flat allowance remains an explicit
     non-promotion diagnostic. Next, add an orchestrator task runner for the
     complete Gate 0-7 chain.
+  - R0.7 Afflec receipted demo runner: `scripts/run_afflec_receipted_demo.py`
+    now executes Gates 0-7 in order for the native `A_v3240` demo path, stops
+    at first non-promotion, emits `run_manifest.json`, and keeps `--dry-run`
+    artifact-free. Do not commit generated demo outputs; regenerate them
+    locally with the runner command. Next, use this runner as the comparison
+    harness for Gate 6/7 production upgrades.
+- Production upgrade roadmap after the receipt chain:
+  1. replace the Gate 6 bootstrap projection with real LSCM/ABF/ARAP unwrap,
+  2. wire Gate 7 to the pattern exporter for SVG/PDF/DXF cut and stitch lines,
+  3. replace synthetic Gate 3 fields with `sampler_real` corpus aggregation,
+  4. replace the Gate 2 sinusoidal/QR basis with cotangent Laplace-Beltrami
+     modes plus atlas weighting,
+  5. finish cutter-readiness checks and add Ruff to the tooling gate.
 - M1. Backfill morphology observations into run roots via `morphology_observations.json` so run-reference pages can state which artifacts are neutral-human, ogre-like, or flailing instead of defaulting to `unclassified` / `inherits_source_geometry`.
 - M2. Add explicit ROM sample morphology outputs so the pipeline can show where flailing occurs: keep the neutral-body operator field, but also emit representative posed/deformed ROM sample artifacts rather than forcing users to infer morphology from seam heatmaps on a neutral body.
   - M2.1 define representative sample selection policy

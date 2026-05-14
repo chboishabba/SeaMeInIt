@@ -1,5 +1,17 @@
 ## Unreleased
 
+- Added the Afflec receipted demo runner and production roadmap:
+  - added `scripts/run_afflec_receipted_demo.py` to execute the native
+    `A_v3240` Gate 0-7 chain as one command,
+  - the runner stops at first non-promoted receipt, writes `run_manifest.json`,
+    and uses exit codes `0` promoted, `1` expected blocker, `2` hard failure,
+  - dry runs print the planned command chain without creating run artifacts,
+  - added `docs/smii_production_roadmap.md` with the current demo flow,
+    implementation upgrade steps, and future formal objects,
+  - documented the native `A_v3240` Afflec demo runner behavior in the receipt
+    orchestrator notes,
+  - updated TODO/context to make Gate 6/7 production geometry the next upgrade
+    lane after the runner.
 - Wired manufacturing receipt emission into the final fabrication gate:
   - added `ManufacturingReceipt` for hash-linked seam allowance and cutting
     layout artifacts,

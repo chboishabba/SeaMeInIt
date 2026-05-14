@@ -12,6 +12,7 @@ Please see our docs:
 - [Afflec Mesh Provenance](docs/mesh_provenance_afflec.md)
 - [Body Lineage Protocol](docs/body_lineage_protocol.md)
 - [Receipt Orchestrator](docs/receipt_orchestrator.md)
+- [Receipt Chain Production Roadmap](docs/smii_production_roadmap.md)
 - [Seam Pipeline: Intended vs Observed](docs/seam_pipeline_intended_vs_observed.md)
 - [ROM Latent Space Notes](CONTEXT.md) (see lines 1-120 for the validity and latent-space framing)
 - [Schemas](docs/schemas.md)

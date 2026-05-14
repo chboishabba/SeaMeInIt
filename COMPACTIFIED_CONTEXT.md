@@ -230,3 +230,19 @@ Date: 2026-02-06
   - orchestrator task runner,
   - ROM environment unblock,
   - Ruff integration.
+
+## Receipt Chain Production Roadmap (2026-05-14)
+- Added the local roadmap and runner for turning the seven manual demo commands
+  into a single Afflec receipted run:
+  `scripts/run_afflec_receipted_demo.py`.
+- The runner must execute the native `A_v3240` Gate 0-7 path, stop at first
+  non-promoted receipt, emit `run_manifest.json`, and keep dry runs
+  artifact-free.
+- Gate 1 correspondence is intentionally skipped in this native demo path; it
+  remains required for transfer-backed solve domains.
+- Upgrade sequence after the runner:
+  1. real LSCM/ABF/ARAP unwrap,
+  2. pattern exporter wiring for true cut/stitch geometry,
+  3. real ROM corpus fields,
+  4. cotangent Laplace-Beltrami basis,
+  5. production manufacturing package and Ruff.
