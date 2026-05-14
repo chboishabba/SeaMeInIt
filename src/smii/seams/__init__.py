@@ -10,6 +10,11 @@ from .fabric_kernels import (
     rotate_grain,
 )
 from .kernels import EdgeKernel, KernelWeights, build_edge_kernels, edge_energy
+from .manufacturing_receipt import (
+    ManufacturingReceipt,
+    can_consume_manufacturing_receipt,
+    load_manufacturing_receipt,
+)
 from .mdl import MDLPrior, mdl_cost, mdl_terms
 from .panel_unwrap_receipt import (
     PanelUnwrapReceipt,
@@ -38,6 +43,7 @@ __all__ = [
     "FabricAssignment",
     "FabricProfile",
     "KernelWeights",
+    "ManufacturingReceipt",
     "TaskProfile",
     "MDLPrior",
     "PanelSolution",
@@ -47,12 +53,14 @@ __all__ = [
     "SolverPromotionReceipt",
     "build_edge_costs",
     "build_edge_kernels",
+    "can_consume_manufacturing_receipt",
     "can_consume_panel_unwrap_receipt",
     "can_consume_seam_cost_receipt",
     "edge_energy",
     "fabric_penalty",
     "load_fabric_profile",
     "load_fabrics_from_dir",
+    "load_manufacturing_receipt",
     "load_panel_unwrap_receipt",
     "load_seam_cost_receipt",
     "can_consume_solver_promotion_receipt",

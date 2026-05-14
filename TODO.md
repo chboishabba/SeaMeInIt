@@ -44,9 +44,13 @@
     `scripts/unwrap_panels.py` emits `panel_unwrap_receipt.json` only from a
     promoted solver receipt whose panels are topological disks. Distortion and
     grain direction are receipted per panel, failed flattening produces an
-    explicit non-promotion boundary, and manufacturing remains blocked until a
-    promoted panel unwrap receipt exists. Next, implement `ManufacturingReceipt`
-    with variable seam allowance fields.
+    explicit non-promotion boundary. `ManufacturingReceipt` is implemented and
+    `scripts/generate_manufacturing_artifacts.py` emits final manufacturing
+    receipts only from promoted panel unwrap artifacts with hash-matched UVs.
+    Variable seam allowance fields, method accessibility, notches, labels, and
+    cutting-layout hashes are receipted; flat allowance remains an explicit
+    non-promotion diagnostic. Next, add an orchestrator task runner for the
+    complete Gate 0-7 chain.
 - M1. Backfill morphology observations into run roots via `morphology_observations.json` so run-reference pages can state which artifacts are neutral-human, ogre-like, or flailing instead of defaulting to `unclassified` / `inherits_source_geometry`.
 - M2. Add explicit ROM sample morphology outputs so the pipeline can show where flailing occurs: keep the neutral-body operator field, but also emit representative posed/deformed ROM sample artifacts rather than forcing users to infer morphology from seam heatmaps on a neutral body.
   - M2.1 define representative sample selection policy

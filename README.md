@@ -41,9 +41,9 @@ BodyCarrierReceipt
   -> ManufacturingReceipt
 ```
 
-The first seven emitted gates now cover body trust, correspondence, the
+All eight emitted gates now cover body trust, correspondence, the
 bootstrap field basis, ROM field aggregation, seam-cost promotion, solver
-promotion, and panel unwrap promotion.
+promotion, panel unwrap promotion, and manufacturing promotion.
 `BodyCarrierReceipt` blocks untrusted bodies, `CorrespondenceReceipt` records
 transfer collapse or admissibility, `BasisReceipt` is emitted by canonical basis
 generation only when the body carrier is promoted, `ROMFieldReceipt` records
@@ -53,8 +53,9 @@ gate. `SolverPromotionReceipt` records anchor provenance, fallback usage, seam
 hashes, and graph-level panel topology checks before panel unwrap may promote.
 `PanelUnwrapReceipt` records per-panel distortion, grain direction, subdivision
 usage, UV artifact hashes, and the solver seam hash before manufacturing may
-consume flattened panels. The next implementation lane is manufacturing receipt
-emission.
+consume flattened panels. `ManufacturingReceipt` records variable seam
+allowance, panel UV hashes, cutting-layout artifacts, notches, labels, method
+accessibility, and the final promotion state.
 
 ## Current focus: manufacturable panels and morphology attribution
 

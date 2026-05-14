@@ -211,7 +211,7 @@ Date: 2026-02-06
 ## Receipt Orchestrator Gate 4 Snapshot (2026-05-13)
 - Active implementation direction: SMII's receipt DAG is now the production
   promotion contract, not only documentation.
-- Gates 0-6 currently emit real artifacts:
+- Gates 0-7 currently emit real artifacts:
   - `BodyCarrierReceipt` from Afflec export checkpoints,
   - `CorrespondenceReceipt` from seam reprojection quality metrics,
   - `BasisReceipt` from canonical basis generation on a promoted carrier,
@@ -222,7 +222,11 @@ Date: 2026-02-06
     provenance, fallback visibility, seam hashes, and panel-topology gating,
   - `PanelUnwrapReceipt` from promoted solver topology with per-panel
     distortion, grain direction, UV hashes, and explicit flattening
-    non-promotion boundaries.
-- Gate 7 target:
-  - emit `ManufacturingReceipt` only from promoted panel unwrap artifacts,
-  - carry variable seam allowance fields and fabrication metadata.
+    non-promotion boundaries,
+  - `ManufacturingReceipt` from promoted panel unwrap artifacts with
+    hash-matched UVs, variable seam allowance fields, cutting-layout artifacts,
+    notches, labels, method accessibility, and final promotion state.
+- Remaining independent follow-up lanes:
+  - orchestrator task runner,
+  - ROM environment unblock,
+  - Ruff integration.

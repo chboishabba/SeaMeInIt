@@ -226,6 +226,25 @@ iterations. The receipt records per-panel distortion, worst/mean distortion,
 subdivision usage, grain directions, the UV hash, and the solver seam hash.
 Non-promoted unwraps block `manufacturing`.
 
+## Manufacturing Policy
+
+`scripts/generate_manufacturing_artifacts.py` is the first
+`ManufacturingReceipt` emitter. It loads a promoted
+`panel_unwrap_receipt.json`, verifies that the referenced `panel_uvs.npz`
+matches `PanelUnwrapReceipt.uv_hash`, derives a variable seam-allowance field
+from ROM pressure/shear gradients, and writes `seam_allowance.npz`,
+`cutting_layout.svg`, and `manufacturing_receipt.json`.
+
+The manufacturing receipt is the end of the Gate 0-7 chain. It records the
+panel unwrap receipt hash, panel count, manufacturing method, accessibility
+level, seam allowance summary statistics, per-panel UV hashes, cutting-layout
+hash, grain directions, notches, labels, and final promotion state.
+
+`allowance_varies=false` is a named diagnostic rather than a silent fallback.
+A flat allowance field is the pre-formal behavior and does not promote by
+default; it means the receipted ROM fields did not provide enough pressure or
+shear variation to drive manufacturing allowances.
+
 ## Scheduling
 
 Carrier trust, correspondence, and field basis can be developed in parallel
@@ -239,9 +258,9 @@ order:
 5. compute promoted seam costs from receipted fields and solve-domain receipts
 6. promote solver outputs from promoted seam costs
 7. unwrap only promoted topological disk panels
-8. manufacture only promoted panel unwrap artifacts
+8. manufacture only promoted panel unwrap artifacts with variable allowance
 
 The orchestrator is complete when seam artifacts no longer promote from an
 untrusted body, transfer-backed claims are hash- and residual-bound, seam costs
 come from receipted fields, and manufacturing artifacts are only emitted from
-promoted topology.
+promoted topology and panel unwrap artifacts.

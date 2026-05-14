@@ -7,6 +7,7 @@ from smii.meshing.correspondence_receipt import CorrespondenceReceipt
 from smii.orchestrator.receipt_dag import read_receipt_dag
 from smii.rom.basis_receipt import BasisReceipt
 from smii.rom.rom_field_receipt import ROMFieldReceipt
+from smii.seams.manufacturing_receipt import ManufacturingReceipt
 from smii.seams.panel_unwrap_receipt import PanelUnwrapReceipt
 from smii.seams.seam_cost_receipt import SeamCostReceipt
 from smii.seams.solver_promotion_receipt import SolverPromotionReceipt
@@ -135,6 +136,33 @@ def _panel_unwrap_payload(promotion: int = 1) -> dict[str, object]:
     }
 
 
+def _manufacturing_payload(promotion: int = 1) -> dict[str, object]:
+    return {
+        "panel_unwrap_receipt_hash": "panel-receipt-sha256",
+        "panel_count": 4,
+        "manufacturing_method": "home_sewing",
+        "accessibility_level": "consumer",
+        "seam_allowance_hash": "allowance-sha256",
+        "seam_allowance_mean": 0.016,
+        "seam_allowance_min": 0.015,
+        "seam_allowance_max": 0.020,
+        "allowance_varies": True,
+        "grain_directions": ["warp", "weft", "bias", "warp"],
+        "panel_hashes": [
+            "panel-0-sha256",
+            "panel-1-sha256",
+            "panel-2-sha256",
+            "panel-3-sha256",
+        ],
+        "cutting_artifacts_hash": "cutting-sha256",
+        "notches_present": True,
+        "labels_present": True,
+        "promotion": promotion,
+        "blocked_consumers": [],
+        "notes": "",
+    }
+
+
 def _write_known_receipts(run_dir: Path) -> None:
     BodyCarrierReceipt.from_mapping(_body_payload()).to_json(
         run_dir / "body_carrier_receipt.json"
@@ -244,7 +272,58 @@ def test_panel_unwrap_receipt_enables_manufacturing_gate(tmp_path: Path) -> None
     assert state.panel == 1
     assert state.panel_unwrap_receipt is not None
     assert state.first_blocker == "manufacture"
+    assert not state.can_manufacture()
+
+
+def test_manufacturing_receipt_completes_receipt_chain(tmp_path: Path) -> None:
+    _write_known_receipts(tmp_path)
+    ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(
+        tmp_path / "rom_field_receipt.json"
+    )
+    SeamCostReceipt.from_mapping(_seam_cost_payload()).to_json(
+        tmp_path / "seam_cost_receipt.json"
+    )
+    SolverPromotionReceipt.from_mapping(_solver_payload()).to_json(
+        tmp_path / "solver_promotion_receipt.json"
+    )
+    PanelUnwrapReceipt.from_mapping(_panel_unwrap_payload()).to_json(
+        tmp_path / "panel_unwrap_receipt.json"
+    )
+    ManufacturingReceipt.from_mapping(_manufacturing_payload()).to_json(
+        tmp_path / "manufacturing_receipt.json"
+    )
+
+    state = read_receipt_dag(tmp_path)
+
+    assert state.manufacture == 1
+    assert state.manufacturing_receipt is not None
+    assert state.first_blocker is None
     assert state.can_manufacture()
+
+
+def test_manufacturing_receipt_overrides_manual_manufacture_gate(tmp_path: Path) -> None:
+    _write_known_receipts(tmp_path)
+    ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(
+        tmp_path / "rom_field_receipt.json"
+    )
+    SeamCostReceipt.from_mapping(_seam_cost_payload()).to_json(
+        tmp_path / "seam_cost_receipt.json"
+    )
+    SolverPromotionReceipt.from_mapping(_solver_payload()).to_json(
+        tmp_path / "solver_promotion_receipt.json"
+    )
+    PanelUnwrapReceipt.from_mapping(_panel_unwrap_payload()).to_json(
+        tmp_path / "panel_unwrap_receipt.json"
+    )
+    ManufacturingReceipt.from_mapping(_manufacturing_payload(promotion=0)).to_json(
+        tmp_path / "manufacturing_receipt.json"
+    )
+
+    state = read_receipt_dag(tmp_path, manufacture=1)
+
+    assert state.manufacture == 0
+    assert state.first_blocker == "manufacture"
+    assert not state.can_manufacture()
 
 
 def test_panel_unwrap_receipt_overrides_manual_panel_gate(tmp_path: Path) -> None:

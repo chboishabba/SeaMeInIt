@@ -1,5 +1,16 @@
 ## Unreleased
 
+- Wired manufacturing receipt emission into the final fabrication gate:
+  - added `ManufacturingReceipt` for hash-linked seam allowance and cutting
+    layout artifacts,
+  - added `scripts/generate_manufacturing_artifacts.py` to require promoted
+    panel unwrap receipts, verify panel UV hashes, derive variable seam
+    allowance from ROM pressure/shear gradients, and emit final manufacturing
+    receipts,
+  - flat seam allowance is now recorded as `allowance_varies=false` and blocks
+    promotion instead of silently falling back to constant allowances,
+  - the receipt DAG reader now loads `manufacturing_receipt.json` so Gate 7
+    can promote from a real artifact.
 - Wired panel unwrap receipt emission into the fabrication boundary:
   - added `PanelUnwrapReceipt` for hash-linked `panel_uvs.npz` artifacts,
   - added `scripts/unwrap_panels.py` to require promoted solver receipts,
