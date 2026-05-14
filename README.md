@@ -58,6 +58,18 @@ consume flattened panels. `ManufacturingReceipt` records variable seam
 allowance, panel UV hashes, cutting-layout artifacts, notches, labels, method
 accessibility, and the final promotion state.
 
+The single-command Afflec receipted demo runner is
+`scripts/run_afflec_receipted_demo.py`. It defaults Gate 0 to MediaPipe because
+the runner is the production-style path; pass `--detector bbox` only for coarse
+diagnostic smoke checks, and use `--require-high-trust-detector` when fallback
+to a coarse detector should stop the run as a hard failure.
+
+Current Afflec fixture status: MediaPipe Gate 0 execution now emits body
+artifacts, but the receipt is still diagnostic-only because measurement
+refinement pushes final shape betas outside the plausible range and the skull
+residual remains marginally above threshold. This is a body-fit calibration
+blocker, not an orchestrator or receipt-chain blocker.
+
 ## Current focus: manufacturable panels and morphology attribution
 
 The undersuit pipeline needs an explicit "panel" layer between geometry and export. We should treat paneling and sewability as
@@ -141,6 +153,19 @@ python tools/view_mesh.py outputs/afflec_demo/afflec_body.npz
 ```
 
 Pass `--info-only` to print mesh statistics without opening the window, or `--process` to let Trimesh repair normals and merge duplicate vertices before viewing.
+
+For the receipted Afflec demo, prefer:
+
+```bash
+PYTHONPATH=src python scripts/run_afflec_receipted_demo.py \
+  --output outputs/demo/afflec_receipted \
+  --detector mediapipe \
+  --require-high-trust-detector \
+  --allow-synthetic-promotion
+```
+
+Use `--detector bbox` only when intentionally producing a coarse diagnostic
+body-fit artifact.
 
 # END TECHNICAL INFO
 

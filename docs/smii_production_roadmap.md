@@ -41,8 +41,25 @@ The single-command runner is:
 ```bash
 PYTHONPATH=src python scripts/run_afflec_receipted_demo.py \
   --output outputs/demo/afflec_receipted \
+  --detector mediapipe \
+  --require-high-trust-detector \
   --allow-synthetic-promotion
 ```
+
+The runner defaults Gate 0 to `--detector mediapipe` because the receipted
+demo is a production-style path. `bbox` remains available via
+`--detector bbox` for coarse diagnostics and CI smoke checks, but bbox-derived
+body receipts are expected to remain non-promoted unless later fit diagnostics
+prove otherwise. `--require-high-trust-detector` can be used to fail hard if
+the detector path falls back to a coarse source.
+
+Current Afflec fixture status: a bounded MediaPipe Gate 0 run completes and
+emits artifacts, so the earlier no-receipt run is not a receipt-chain failure.
+The emitted receipt remains diagnostic-only: raw MediaPipe regression is
+plausible (`beta_max_abs=1.95`, high detector trust), but measurement refinement
+pushes final betas to `max_abs=11.84` and the skull residual remains marginally
+above the Gate 0 threshold (`0.3602 > 0.35`). The next production blocker is
+measurement-refinement calibration, not detector wiring.
 
 Inspectable outputs for a fully promoted run are:
 
@@ -73,6 +90,10 @@ Status: implemented in `scripts/run_afflec_receipted_demo.py`.
 Requirements:
 
 - execute gates in dependency order
+- pass the selected Gate 0 detector through to `smii.app afflec-demo`, with
+  `mediapipe` as the default production-style detector
+- expose `--require-high-trust-detector` for runs that should hard-fail coarse
+  detector fallback
 - stop at the first non-promoted receipt
 - write `run_manifest.json` with gate promotions, receipt paths, hashes, and
   timestamps

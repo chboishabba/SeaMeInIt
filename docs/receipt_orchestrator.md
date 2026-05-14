@@ -99,6 +99,12 @@ The receipt is conservative: `bbox` and warning-status runs remain diagnostic,
 while only high-trust `PASS` runs with acceptable confidence and crown
 eccentricity can promote.
 
+The Afflec receipted demo runner therefore defaults Gate 0 to
+`--detector mediapipe` and passes the detector choice through to
+`smii.app afflec-demo`. `bbox` is retained as an explicit diagnostic fallback,
+not the default production-style demo path. Runs that must reject a coarse
+fallback before receipt creation can pass `--require-high-trust-detector`.
+
 ## Minimal Reader
 
 `smii.orchestrator.read_receipt_dag(run_dir)` reads known body,
@@ -116,6 +122,19 @@ scheduler. `scripts/run_afflec_receipted_demo.py` executes the existing Gate
 first non-promoted receipt, and writes `run_manifest.json` with per-gate
 promotion state, receipt hashes, timestamps, and final manufacturing
 eligibility.
+
+Gate 0 detector selection is part of the run contract: `mediapipe` is the
+default for the runner, `--detector bbox` is an explicit coarse diagnostic
+mode, and `--require-high-trust-detector` is forwarded to `afflec-demo` when a
+fallback should be treated as a hard failure.
+
+MediaPipe runtime diagnosis: static MediaPipe initialisation and single-image
+inference complete locally, and direct Gate 0 execution emits body artifacts.
+The current Afflec MediaPipe receipt still blocks promotion because the
+measurement-refinement stage inflates final betas (`max_abs=11.84`) and leaves
+the skull residual just over the conservative threshold (`0.3602 > 0.35`).
+That makes the next fix a body-fit refinement calibration task rather than an
+orchestrator task.
 
 Dry runs must only print the planned command chain. They must not create run
 directories, receipts, manifests, or manufacturing artifacts.

@@ -3,6 +3,9 @@
 - Added the Afflec receipted demo runner and production roadmap:
   - added `scripts/run_afflec_receipted_demo.py` to execute the native
     `A_v3240` Gate 0-7 chain as one command,
+  - the runner now defaults Gate 0 to `--detector mediapipe`, supports
+    `--detector bbox` as an explicit coarse diagnostic mode, and forwards
+    `--require-high-trust-detector` to `afflec-demo`,
   - the runner stops at first non-promoted receipt, writes `run_manifest.json`,
     and uses exit codes `0` promoted, `1` expected blocker, `2` hard failure,
   - dry runs print the planned command chain without creating run artifacts,
@@ -10,8 +13,12 @@
     implementation upgrade steps, and future formal objects,
   - documented the native `A_v3240` Afflec demo runner behavior in the receipt
     orchestrator notes,
-  - updated TODO/context to make Gate 6/7 production geometry the next upgrade
-    lane after the runner.
+  - recorded the bounded MediaPipe Gate 0 diagnosis: direct execution emits
+    artifacts, but the Afflec receipt remains diagnostic-only because
+    measurement refinement inflates final betas and the skull residual stays
+    marginally above threshold,
+  - updated TODO/context to make Gate 6/7 production geometry and Gate 0
+    refinement calibration the next upgrade lanes after the runner.
 - Wired manufacturing receipt emission into the final fabrication gate:
   - added `ManufacturingReceipt` for hash-linked seam allowance and cutting
     layout artifacts,

@@ -120,6 +120,8 @@ def build_steps(
     allow_synthetic_promotion: bool,
     manufacturing_method: str,
     force: bool,
+    detector: str,
+    require_high_trust_detector: bool,
 ) -> list[GateStep]:
     """Build the native `A_v3240` demo command sequence."""
 
@@ -146,7 +148,11 @@ def build_steps(
         "afflec-demo",
         "--output",
         str(body_dir),
+        "--detector",
+        detector,
     ]
+    if require_high_trust_detector:
+        afflec_command.append("--require-high-trust-detector")
     if force:
         afflec_command.append("--force")
 
@@ -349,6 +355,8 @@ def run_demo(
     allow_synthetic_promotion: bool,
     manufacturing_method: str,
     force: bool,
+    detector: str,
+    require_high_trust_detector: bool,
     dry_run: bool,
     runner: Callable[[Sequence[str], Path], int] | None = None,
 ) -> int:
@@ -360,6 +368,8 @@ def run_demo(
         allow_synthetic_promotion=allow_synthetic_promotion,
         manufacturing_method=manufacturing_method,
         force=force,
+        detector=detector,
+        require_high_trust_detector=require_high_trust_detector,
     )
 
     if dry_run:
@@ -484,6 +494,20 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
         help="Pass --force to afflec-demo so existing Gate 0 outputs are replaced.",
     )
     parser.add_argument(
+        "--detector",
+        choices=("mediapipe", "bbox"),
+        default="mediapipe",
+        help=(
+            "Gate 0 body detector passed to afflec-demo "
+            "(default: mediapipe; use bbox only for coarse diagnostics)."
+        ),
+    )
+    parser.add_argument(
+        "--require-high-trust-detector",
+        action="store_true",
+        help="Pass --require-high-trust-detector to afflec-demo.",
+    )
+    parser.add_argument(
         "--python",
         default=sys.executable,
         help="Python executable used for subcommands (default: current interpreter).",
@@ -499,6 +523,8 @@ def main(argv: Iterable[str] | None = None) -> int:
         allow_synthetic_promotion=args.allow_synthetic_promotion,
         manufacturing_method=args.manufacturing_method,
         force=args.force,
+        detector=args.detector,
+        require_high_trust_detector=args.require_high_trust_detector,
         dry_run=args.dry_run,
     )
 

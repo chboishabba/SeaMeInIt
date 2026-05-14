@@ -54,9 +54,17 @@
   - R0.7 Afflec receipted demo runner: `scripts/run_afflec_receipted_demo.py`
     now executes Gates 0-7 in order for the native `A_v3240` demo path, stops
     at first non-promotion, emits `run_manifest.json`, and keeps `--dry-run`
-    artifact-free. Do not commit generated demo outputs; regenerate them
-    locally with the runner command. Next, use this runner as the comparison
-    harness for Gate 6/7 production upgrades.
+    artifact-free. It defaults Gate 0 to `--detector mediapipe`, exposes
+    `--detector bbox` only as an explicit coarse diagnostic mode, and forwards
+    `--require-high-trust-detector` when a run should hard-fail detector
+    fallback. Do not commit generated demo outputs; regenerate them locally
+    with the runner command. A bounded MediaPipe Gate 0 run completed under
+    `outputs/demo/mp_cpu_test`: raw regression stayed plausible
+    (`beta_max_abs=1.95`, high-trust detector), but measurement refinement
+    pushed final betas to `max_abs=11.84` and the skull residual remained just
+    above threshold (`0.3602 > 0.35`), so the receipt correctly stayed
+    diagnostic-only. Next, tune/constrain the measurement-refinement handoff
+    before expecting the full runner to pass Gate 0 on Afflec.
 - Production upgrade roadmap after the receipt chain:
   1. replace the Gate 6 bootstrap projection with real LSCM/ABF/ARAP unwrap,
   2. wire Gate 7 to the pattern exporter for SVG/PDF/DXF cut and stitch lines,
@@ -122,7 +130,12 @@
   2. thermal/heat-distribution routing and cooling-loop integration,
   3. comfortable system packaging,
   4. later "iron man" hard-function modules.
-- Calibrate the `bbox` Afflec fallback against the new diagnostics outputs: raw measurements are now sane again, but refinement still warns on large beta magnitude/shift, so the next step is tuning or constraining the measurement-model handoff rather than debating whether photos are used at all.
+- Calibrate the Afflec measurement-refinement handoff against the MediaPipe
+  diagnostics outputs: MediaPipe raw regression is plausible and high-trust,
+  but refinement still creates a large beta shift and leaves
+  `skull_rigidity_residual` marginally above the promotion threshold. The
+  diagnostic/coarse `bbox` fallback remains useful for smoke checks, but it is
+  not the high-trust receipted demo default.
 - Thread `afflec_fit_diagnostics.json` status into downstream body/ROM/seam manifests so low-trust Afflec runs are visibly marked outside the body-fit stage.
 - Stop emitting report-generated analytical PNGs from `render_rom_operator_report.py`; render coefficient/norm summaries directly as DOM/SVG in `index.html`, and make the report page embed existing topology media artifacts (`overlay.png`, flex heatmaps, GIF/WebM orbits, map videos) from supplied paths/directories.
 - Add canonical run reference pages and a runs index:

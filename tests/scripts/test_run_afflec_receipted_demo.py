@@ -54,9 +54,72 @@ def test_dry_run_prints_plan_without_writing_artifacts(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert "[DRY-RUN]" in result.stdout
+    assert "--detector mediapipe" in result.stdout
     assert "diagnostic_seam_costs.npz" in result.stdout
     assert "run_manifest.json" not in result.stdout
     assert not out_dir.exists()
+
+
+def test_dry_run_passes_bbox_override_and_high_trust_flag(tmp_path: Path) -> None:
+    out_dir = tmp_path / "afflec_receipted"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/run_afflec_receipted_demo.py",
+            "--output",
+            str(out_dir),
+            "--detector",
+            "bbox",
+            "--require-high-trust-detector",
+            "--dry-run",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "--detector bbox" in result.stdout
+    assert "--require-high-trust-detector" in result.stdout
+    assert "--detector mediapipe" not in result.stdout
+    assert not out_dir.exists()
+
+
+def test_runner_defaults_gate_zero_to_mediapipe(tmp_path: Path) -> None:
+    runner_module = _load_runner_module()
+
+    steps = runner_module.build_steps(
+        run_dir=tmp_path / "run",
+        python=sys.executable,
+        allow_synthetic_promotion=False,
+        manufacturing_method="home_sewing",
+        force=False,
+        detector="mediapipe",
+        require_high_trust_detector=False,
+    )
+
+    gate_zero = steps[0].command
+    assert gate_zero[gate_zero.index("--detector") + 1] == "mediapipe"
+    assert "--require-high-trust-detector" not in gate_zero
+
+
+def test_runner_can_use_bbox_diagnostic_detector_with_high_trust_flag(tmp_path: Path) -> None:
+    runner_module = _load_runner_module()
+
+    steps = runner_module.build_steps(
+        run_dir=tmp_path / "run",
+        python=sys.executable,
+        allow_synthetic_promotion=False,
+        manufacturing_method="home_sewing",
+        force=False,
+        detector="bbox",
+        require_high_trust_detector=True,
+    )
+
+    gate_zero = steps[0].command
+    assert gate_zero[gate_zero.index("--detector") + 1] == "bbox"
+    assert "--require-high-trust-detector" in gate_zero
 
 
 def test_runner_writes_manifest_for_promoted_chain(tmp_path: Path) -> None:
@@ -90,12 +153,15 @@ def test_runner_writes_manifest_for_promoted_chain(tmp_path: Path) -> None:
         allow_synthetic_promotion=True,
         manufacturing_method="home_sewing",
         force=False,
+        detector="mediapipe",
+        require_high_trust_detector=False,
         dry_run=False,
         runner=fake_runner,
     )
 
     assert exit_code == 0
     assert len(calls) == 7
+    assert calls[0][calls[0].index("--detector") + 1] == "mediapipe"
     manifest = json.loads((out_dir / "run_manifest.json").read_text("utf-8"))
     assert manifest["exit_code"] == 0
     assert manifest["first_blocker"] is None
@@ -131,6 +197,8 @@ def test_runner_stops_at_first_non_promoted_receipt(tmp_path: Path) -> None:
         allow_synthetic_promotion=False,
         manufacturing_method="home_sewing",
         force=False,
+        detector="mediapipe",
+        require_high_trust_detector=False,
         dry_run=False,
         runner=fake_runner,
     )
@@ -158,6 +226,8 @@ def test_runner_treats_missing_receipt_as_hard_failure(tmp_path: Path) -> None:
         allow_synthetic_promotion=True,
         manufacturing_method="home_sewing",
         force=False,
+        detector="mediapipe",
+        require_high_trust_detector=False,
         dry_run=False,
         runner=fake_runner,
     )

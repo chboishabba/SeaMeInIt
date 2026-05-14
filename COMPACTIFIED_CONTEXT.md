@@ -238,6 +238,15 @@ Date: 2026-02-06
 - The runner must execute the native `A_v3240` Gate 0-7 path, stop at first
   non-promoted receipt, emit `run_manifest.json`, and keep dry runs
   artifact-free.
+- The runner should default Gate 0 to `--detector mediapipe`, retain
+  `--detector bbox` as an explicit diagnostic fallback, and forward
+  `--require-high-trust-detector` for runs that should hard-fail coarse
+  detector fallback.
+- MediaPipe runtime checks completed locally: Holistic initialisation and
+  single-image inference work, and direct Gate 0 execution emits artifacts
+  under `outputs/demo/mp_cpu_test`. The receipt remains non-promoted because
+  measurement refinement pushes final betas to `max_abs=11.84` and leaves
+  `skull_rigidity_residual=0.3602` above the conservative `0.35` threshold.
 - Gate 1 correspondence is intentionally skipped in this native demo path; it
   remains required for transfer-backed solve domains.
 - Upgrade sequence after the runner:
