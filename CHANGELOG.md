@@ -1,5 +1,15 @@
 ## Unreleased
 
+- Wired panel unwrap receipt emission into the fabrication boundary:
+  - added `PanelUnwrapReceipt` for hash-linked `panel_uvs.npz` artifacts,
+  - added `scripts/unwrap_panels.py` to require promoted solver receipts,
+    verify seam topology hashes, reject incomplete topology before flattening,
+    and emit panel unwrap receipts,
+  - panel unwrap promotion now records per-panel distortion, worst/mean
+    distortion, subdivision usage, grain directions, UV hashes, and downstream
+    manufacturing blocks,
+  - the receipt DAG reader now loads `panel_unwrap_receipt.json` and exposes
+    `can_manufacture()`.
 - Wired solver promotion receipt emission into the topology lane:
   - added `SolverPromotionReceipt` for hash-linked `seam_edges.npz` artifacts,
   - added `scripts/solve_seams.py` to require promoted seam-cost receipts,

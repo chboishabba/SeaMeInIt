@@ -40,9 +40,13 @@
     promoted seam-cost receipt; it records field-minima anchors, component
     fallback usage, seam hashes, and panel-topology promotion state. Next, wire
     the legacy solver examples to consume the solver receipt when promoting.
-  - R0.6 Panel/manufacture: unwrap only promoted seam topology and emit
-    panel/manufacturing receipts; failed flattening must produce explicit
-    non-promotion boundaries.
+  - R0.6 Panel/manufacture: `PanelUnwrapReceipt` is implemented and
+    `scripts/unwrap_panels.py` emits `panel_unwrap_receipt.json` only from a
+    promoted solver receipt whose panels are topological disks. Distortion and
+    grain direction are receipted per panel, failed flattening produces an
+    explicit non-promotion boundary, and manufacturing remains blocked until a
+    promoted panel unwrap receipt exists. Next, implement `ManufacturingReceipt`
+    with variable seam allowance fields.
 - M1. Backfill morphology observations into run roots via `morphology_observations.json` so run-reference pages can state which artifacts are neutral-human, ogre-like, or flailing instead of defaulting to `unclassified` / `inherits_source_geometry`.
 - M2. Add explicit ROM sample morphology outputs so the pipeline can show where flailing occurs: keep the neutral-body operator field, but also emit representative posed/deformed ROM sample artifacts rather than forcing users to infer morphology from seam heatmaps on a neutral body.
   - M2.1 define representative sample selection policy

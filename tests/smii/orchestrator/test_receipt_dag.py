@@ -7,6 +7,7 @@ from smii.meshing.correspondence_receipt import CorrespondenceReceipt
 from smii.orchestrator.receipt_dag import read_receipt_dag
 from smii.rom.basis_receipt import BasisReceipt
 from smii.rom.rom_field_receipt import ROMFieldReceipt
+from smii.seams.panel_unwrap_receipt import PanelUnwrapReceipt
 from smii.seams.seam_cost_receipt import SeamCostReceipt
 from smii.seams.solver_promotion_receipt import SolverPromotionReceipt
 
@@ -116,6 +117,24 @@ def _solver_payload(promotion: int = 1) -> dict[str, object]:
     }
 
 
+def _panel_unwrap_payload(promotion: int = 1) -> dict[str, object]:
+    return {
+        "solver_receipt_hash": "solver-receipt-sha256",
+        "panel_count": 4,
+        "panels_all_disks": True,
+        "per_panel_distortion": [0.01, 0.02, 0.015, 0.012],
+        "worst_panel_distortion": 0.02,
+        "mean_panel_distortion": 0.01425,
+        "distortion_threshold": 0.05,
+        "subdivision_iterations": 0,
+        "grain_directions": ["warp", "weft", "bias", "warp"],
+        "uv_hash": "uv-sha256",
+        "seam_topology_hash": "seam-sha256",
+        "promotion": promotion,
+        "blocked_consumers": [],
+    }
+
+
 def _write_known_receipts(run_dir: Path) -> None:
     BodyCarrierReceipt.from_mapping(_body_payload()).to_json(
         run_dir / "body_carrier_receipt.json"
@@ -203,6 +222,51 @@ def test_solver_receipt_overrides_manual_solver_gate(tmp_path: Path) -> None:
     assert state.solver == 0
     assert state.first_blocker == "solver"
     assert not state.can_unwrap_panels()
+
+
+def test_panel_unwrap_receipt_enables_manufacturing_gate(tmp_path: Path) -> None:
+    _write_known_receipts(tmp_path)
+    ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(
+        tmp_path / "rom_field_receipt.json"
+    )
+    SeamCostReceipt.from_mapping(_seam_cost_payload()).to_json(
+        tmp_path / "seam_cost_receipt.json"
+    )
+    SolverPromotionReceipt.from_mapping(_solver_payload()).to_json(
+        tmp_path / "solver_promotion_receipt.json"
+    )
+    PanelUnwrapReceipt.from_mapping(_panel_unwrap_payload()).to_json(
+        tmp_path / "panel_unwrap_receipt.json"
+    )
+
+    state = read_receipt_dag(tmp_path)
+
+    assert state.panel == 1
+    assert state.panel_unwrap_receipt is not None
+    assert state.first_blocker == "manufacture"
+    assert state.can_manufacture()
+
+
+def test_panel_unwrap_receipt_overrides_manual_panel_gate(tmp_path: Path) -> None:
+    _write_known_receipts(tmp_path)
+    ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(
+        tmp_path / "rom_field_receipt.json"
+    )
+    SeamCostReceipt.from_mapping(_seam_cost_payload()).to_json(
+        tmp_path / "seam_cost_receipt.json"
+    )
+    SolverPromotionReceipt.from_mapping(_solver_payload()).to_json(
+        tmp_path / "solver_promotion_receipt.json"
+    )
+    PanelUnwrapReceipt.from_mapping(_panel_unwrap_payload(promotion=0)).to_json(
+        tmp_path / "panel_unwrap_receipt.json"
+    )
+
+    state = read_receipt_dag(tmp_path, panel=1)
+
+    assert state.panel == 0
+    assert state.first_blocker == "panel"
+    assert not state.can_manufacture()
 
 
 def test_solver_eligibility_blocks_without_seam_cost_receipt(tmp_path: Path) -> None:

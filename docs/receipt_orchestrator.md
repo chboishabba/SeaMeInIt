@@ -204,6 +204,28 @@ every post-cut component must be nonempty and have Euler characteristic at
 least one. Failed topology leaves the seam artifact diagnostic-only and blocks
 `panel_unwrap`.
 
+## Panel-Unwrap Policy
+
+`scripts/unwrap_panels.py` is the first `PanelUnwrapReceipt` emitter. It loads
+a promoted `solver_promotion_receipt.json`, verifies that the referenced
+`seam_edges.npz` matches `SolverPromotionReceipt.seam_hash`, rejects incomplete
+topology before flattening, and writes `panel_uvs.npz` plus
+`panel_unwrap_receipt.json`.
+
+The current emitter is a dependency-light bootstrap unwrapper: it accepts the
+`lscm`, `abf`, and `arap` method labels for the receipt-facing interface, then
+uses deterministic panel-local projection and edge-length distortion checks to
+gate promotion. The full conformal exporter backends remain a downstream
+integration target for richer production pattern artifacts.
+
+`panels_are_disks=false` is a topology error, not an unwrapper failure. The CLI
+must say this explicitly so the fix is to add or repair seam cuts before
+flattening. A promoted panel unwrap receipt requires every extracted panel to
+stay within the configured distortion threshold after any allowed subdivision
+iterations. The receipt records per-panel distortion, worst/mean distortion,
+subdivision usage, grain directions, the UV hash, and the solver seam hash.
+Non-promoted unwraps block `manufacturing`.
+
 ## Scheduling
 
 Carrier trust, correspondence, and field basis can be developed in parallel
@@ -216,7 +238,8 @@ order:
 4. aggregate ROM fields from the receipted basis
 5. compute promoted seam costs from receipted fields and solve-domain receipts
 6. promote solver outputs from promoted seam costs
-7. unwrap and manufacture only promoted topology
+7. unwrap only promoted topological disk panels
+8. manufacture only promoted panel unwrap artifacts
 
 The orchestrator is complete when seam artifacts no longer promote from an
 untrusted body, transfer-backed claims are hash- and residual-bound, seam costs

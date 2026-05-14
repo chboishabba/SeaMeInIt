@@ -11,6 +11,11 @@ from .fabric_kernels import (
 )
 from .kernels import EdgeKernel, KernelWeights, build_edge_kernels, edge_energy
 from .mdl import MDLPrior, mdl_cost, mdl_terms
+from .panel_unwrap_receipt import (
+    PanelUnwrapReceipt,
+    can_consume_panel_unwrap_receipt,
+    load_panel_unwrap_receipt,
+)
 from .pda import solve_seams_pda
 from .seam_cost_receipt import (
     SeamCostReceipt,
@@ -36,16 +41,19 @@ __all__ = [
     "TaskProfile",
     "MDLPrior",
     "PanelSolution",
+    "PanelUnwrapReceipt",
     "SeamCostReceipt",
     "SeamSolution",
     "SolverPromotionReceipt",
     "build_edge_costs",
     "build_edge_kernels",
+    "can_consume_panel_unwrap_receipt",
     "can_consume_seam_cost_receipt",
     "edge_energy",
     "fabric_penalty",
     "load_fabric_profile",
     "load_fabrics_from_dir",
+    "load_panel_unwrap_receipt",
     "load_seam_cost_receipt",
     "can_consume_solver_promotion_receipt",
     "load_solver_promotion_receipt",
