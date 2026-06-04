@@ -1,4 +1,41 @@
 # TODO
+
+Current planning entrypoint: `docs/roadmap/index.md`.
+Current audit summary: `docs/roadmap/audit_findings_20260604.md`.
+Afflec local reference-image manifest: `docs/roadmap/afflec_reference_images_20260604.md`.
+
+## Active P0
+
+- Make the documented quality gates reproducible:
+  - define or correct `dev` and `test` extras for `pip install -e .[dev,test]`,
+    or document the sibling ITIR venv (`../.venv`) as the required local
+    runtime,
+  - ensure `../.venv/bin/python -m pytest --maxfail=1 -q` remains clean,
+  - declare Ruff, mypy, Hypothesis, pytest-mock, `jsonschema`, and other
+    required test/dev dependencies in the chosen dependency surface.
+- Resolve repository governance blockers before adding new generated artifacts:
+  - reconcile README license claims with `LICENSE`,
+  - audit tracked binary/generated files and replace generated outputs with
+    regeneration commands,
+  - decide fixture policy for image/body-derived assets,
+  - ignore or relocate default `exports/` outputs.
+- The 2026-06-04 Afflec reference images are an owner-approved manual binary
+  exception for the calibration lane. Agents must not commit the binaries, but
+  the project owner may force-add `assets/reference_images/afflec/` using the
+  command block in `docs/roadmap/afflec_reference_images_20260604.md`.
+- Keep Gate 0 body-trust calibration as the first production pipeline blocker:
+  add `WARN:low_view_diversity` / `WARN:long_lens_flattening_risk`, tune or
+  constrain measurement refinement, preserve export-stage checkpoints, and
+  acceptance-test the known skull/head non-promotion case. See
+  `docs/roadmap/gate0_reference_and_p3_handoff.md`.
+- Define the P3 back-transfer spec against the exact forward object and cutting
+  constraints before replacing bootstrap unwrap/manufacturing behavior:
+  topology/hashes, transfer mode, round-trip checks, seam retention/collapse,
+  collision/load metrics, morphology preservation, grain/notch/label/cut-line
+  promotion gates.
+
+## Existing Backlog
+
 - R0. Build the receipt orchestrator as a promotion DAG, not a task list:
   `BodyCarrierReceipt -> Transform/CorrespondenceReceipt -> BasisReceipt ->
   ROMFieldReceipt -> SeamCostReceipt -> SolverPromotionReceipt ->
