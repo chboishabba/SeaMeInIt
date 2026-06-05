@@ -207,6 +207,97 @@ P3 now separates this into a dedicated cut-topology receipt before unwrap:
   the failure field is partitioned into multiple disconnected components. On the
   current Afflec data it still does not promote, but the receipt now exposes the
   tree-shaped search space explicitly.
+- The next rung under evaluation is `failure_drain_path`: the measured failure
+  island is routed toward a release sink on the panel boundary, so the parent
+  surgery is a corridor-to-boundary move rather than only an island partition.
+  This should be treated as a new search family, not a relaxation of the
+  existing score/distortion/serializability acceptance rule.
+- The first drain-family Afflec rerun at
+  `outputs/p3_afflec_failure_relief_20260605/panel_unwrap_fabric_drain/panel_unwrap_receipt.json`
+  keeps the same boundary explicit: P1 exposes a genuine `failure_drain_tree`
+  candidate, but it is still rejected; P2 still rejects on score after the
+  lower-distortion relief path; P0 does not materialize a drain candidate from
+  its current failure field. The criterion remains backend-serializable,
+  score-improving, and non-regressing in worst distortion.
+- The tightened single-path drain selection at
+  `outputs/p3_afflec_failure_relief_20260605/panel_unwrap_fabric_drain3/panel_unwrap_receipt.json`
+  prefers the seam boundary and reduces the drain search to one selected path,
+  but the best P1 drain variant still stays just above the original score and
+  remains rejected. That is a selection boundary, not a gate bug.
+- The next diagnostic rung is `VariantParetoReceipt` plus profile-relative
+  selection scoring: each candidate should report which metrics it improves,
+  whether it remains on the Pareto frontier against sibling variants, and
+  whether a debug-geometry or manufacture-oriented profile would pick a
+  different winner even when the default scalar gate still rejects it. This is
+  diagnostic only; it does not loosen the existing serializability or
+  distortion gate.
+- The next operator-family rung is `failure_wedge_relief`: the failure field
+  now derives a two-leg wedge/lens candidate from a measured failure component
+  to boundary or seam-boundary sinks. The materialized split creates a separate
+  wedge chart plus parent remainder charts without deleting parent fabric, then
+  enters the same backend competition and Pareto/profile receipt path as the
+  previous relief and drain families.
+- Variant diagnostics also report the default-profile loss explanation for
+  non-selected candidates (`lost_to_*` plus metric deltas). This is meant to
+  distinguish "geometrically useful but too costly" from "dominated by every
+  tracked metric" without changing promotion.
+- The bounded wedge-family Afflec rerun at
+  `outputs/demo/afflec_receipted_curated_20260605_143059/panels_fabric_wedge2/panel_unwrap_receipt.json`
+  keeps the same hard boundary. P1 receives a valid bounded
+  `failure_wedge_relief` candidate, but it is dominated and not useful under
+  the tracked metrics. P0 and P2 do not receive a wedge candidate from the
+  current failure-field geometry; P2 still carries the useful-but-not-promoted
+  `failure_relief_path` boundary.
+- The guided dart-wedge Afflec rerun at
+  `outputs/demo/afflec_receipted_curated_20260605_143059/panels_fabric_guided_dart/panel_unwrap_receipt.json`
+  adds `pareto_guided_dart_wedge`, seeded from the measured one-path relief
+  receipt instead of generic boundary sinks. The candidate is bounded to a
+  narrow apex-plus-two-leg dart/lens chart and preserves parent faces. P2 now
+  receives a valid frontier/useful guided candidate: score `10897.938`, worst
+  distortion `5.241`, two charts. It improves the original worst distortion
+  (`5.411`) but still loses default-profile selection to `cutout_r2` and does
+  not promote under the unchanged score-plus-distortion gate. Accepted parents
+  remain P1 `cutout_r1` and P3 `relief_split`.
+- The next patch-family experiment is `failure_lens_patch`: derive a bounded
+  support region from the measured serializer failure component and/or the
+  Pareto-useful relief path, materialize that region as its own replacement
+  patch chart, keep the parent remainder face-backed, and send the combined
+  atlas through the same backend competition. This is intentionally different
+  from path-family relief: it tests whether isolating a local metric region as
+  a patch beats another narrow line split while preserving all original parent
+  faces and leaving the hard acceptance gate unchanged.
+- The bounded lens-patch Afflec rerun at
+  `outputs/demo/afflec_receipted_curated_20260605_143059/panels_fabric_lens_patch/panel_unwrap_receipt.json`
+  keeps the accepted parents unchanged: P1 `cutout_r1` and P3 `relief_split`.
+  P0 receives a valid `failure_lens_patch` candidate that improves score and
+  foldovers (`7154.330`, `713`) but regresses worst distortion to `16.176`, so
+  it is dominated by `relief_split` under the unchanged hard gate. P2 receives
+  no bounded lens candidate from the current support generator and remains the
+  Pareto-useful path/dart frontier case.
+- The next rung is `OperatorBasisSearchReceipt`
+  (`smii.operator_basis_search.v1`): stop treating each local parent surgery as
+  a one-off experiment and retain a bounded beam over small operator trees
+  composed from the already measured single-operator deltas. The first receipt
+  is diagnostic only: it can show that a depth-2 tree beats all single variants
+  by profile/Pareto score, or that the declared path/patch basis is exhausted
+  for a hard panel, but it does not claim true sequential rematerialization
+  until a native operator-tree materializer is implemented.
+- The native serializer fallback should be tracked separately as a
+  `bt369_pattern_serializer` target. LSCM/xatlas/bootstrap remain backend
+  serializers; the BT369-native path should start from the operator atlas,
+  correction prefixes, fabric cone, and residual cells instead of treating the
+  chart as an ordinary UV island.
+- The first operator-basis-search Afflec rerun at
+  `outputs/demo/afflec_receipted_curated_20260605_143059/panels_fabric_operator_basis_search/panel_unwrap_receipt.json`
+  preserves the hard boundary: accepted parents remain P1 `cutout_r1` and P3
+  `relief_split`; P0 and P2 emit `basis_exhausted_at_depth=true` at depth 2.
+  P2's retained diagnostic trees still expose useful geometry tradeoffs
+  (`cutout_r2 + failure_relief_path` improves worst distortion but regresses
+  score/foldovers; `failure_relief_path + pareto_guided_dart_wedge` improves
+  worst distortion further but also regresses score/foldovers). No composed
+  P0/P2 tree can promote because composed trees are not sequentially
+  materialized and the measured single-operator families still miss the hard
+  score/distortion/foldover gate.
 
 The distinction is intentional: a high-curvature dart candidate is not a cut
 mesh boundary and does not promote panel unwrap. It is the next input for the

@@ -85,6 +85,75 @@ Afflec local reference-image manifest: `docs/roadmap/afflec_reference_images_202
   alongside the older single-path family. It is still rejected on the current
   Afflec panels, but the receipt shows the next shape of the search space is now
   explicit rather than implied.
+- The next parent-surgery rung is `failure_drain_path` / `failure_drain_tree`:
+  route measured failure islands toward a release boundary instead of only
+  separating bad components from the parent remainder, then rerun the same
+  acceptance gate. This is the current implementation target for improving
+  P0/P2.
+- The first Afflec rerun with `failure_drain_*` is recorded at
+  `outputs/p3_afflec_failure_relief_20260605/panel_unwrap_fabric_drain/panel_unwrap_receipt.json`:
+  P1 now exposes a real `failure_drain_tree` candidate, but it is still
+  rejected; P2 still prefers the lower-distortion `failure_relief_path` shape
+  yet remains score-rejected; P0 does not gain a drain candidate from the
+  current failure field. The acceptance gate is still honest, so the next
+  improvement has to come from better drain geometry or better global scoring.
+- The tightened single-path drain selection is recorded at
+  `outputs/p3_afflec_failure_relief_20260605/panel_unwrap_fabric_drain3/panel_unwrap_receipt.json`:
+  the selected drain path now prefers the seam boundary, but the best P1 drain
+  variant still lands just above the original score and remains correctly
+  rejected. The next gain has to come from a genuinely cheaper corridor, not
+  another acceptance tweak.
+- Add Pareto/profile diagnostics to the Gate 6c parent-surgery receipt:
+  record per-variant improvement dimensions, Pareto-frontier membership, and
+  profile-relative winner selection so a candidate that loses on the default
+  scalar score still carries an explicit "useful but not promoted" receipt.
+  Keep the existing acceptance gate unchanged.
+- Add `failure_wedge_relief` as the next parent-surgery operator family:
+  route two low-cost legs from a measured failure component toward panel or
+  seam-boundary sinks, split a wedge/lens chart without deleting parent faces,
+  and compete it under the existing backend/score/distortion gate. The receipt
+  should also explain default-profile losses with `lost_to_*` and metric-delta
+  diagnostics so P2-style Pareto-useful variants are not collapsed into a
+  generic rejection.
+- Bounded wedge evidence is recorded at
+  `outputs/demo/afflec_receipted_curated_20260605_143059/panels_fabric_wedge2/panel_unwrap_receipt.json`:
+  the chart-count guard prevents pathological wedge fragmentation. P1 receives
+  a valid `failure_wedge_relief` candidate, but it is dominated. P0/P2 do not
+  receive wedge candidates from the current two-leg corridor generator, so P2
+  remains the useful single-relief-path case and the next geometry needs a
+  stronger apex/sink pair generator rather than a looser gate.
+- Guided dart-wedge evidence is recorded at
+  `outputs/demo/afflec_receipted_curated_20260605_143059/panels_fabric_guided_dart/panel_unwrap_receipt.json`:
+  `pareto_guided_dart_wedge` uses the measured `failure_relief_path` as guide
+  evidence, materializes only a narrow apex-plus-two-leg dart/lens chart, and
+  competes under the unchanged gate. P2 receives a valid Pareto-frontier useful
+  candidate (`score=10897.938`, `worst_distortion=5.241`, `charts=2`), but it
+  still loses default-profile selection to `cutout_r2` and does not promote.
+  Accepted parents remain P1 `cutout_r1` and P3 `relief_split`.
+- Implement `failure_lens_patch` as the first patch-family parent operator:
+  derive a bounded support region from serializer failure components and
+  Pareto-useful relief evidence, split it into a replacement patch chart plus
+  parent remainder charts without face loss, run normal backend competition,
+  and record Pareto/profile diagnostics. Keep the existing hard acceptance gate
+  unchanged.
+- Lens-patch evidence is recorded at
+  `outputs/demo/afflec_receipted_curated_20260605_143059/panels_fabric_lens_patch/panel_unwrap_receipt.json`:
+  P0 gets a valid `failure_lens_patch` that improves score/foldovers but
+  regresses worst distortion (`16.176`) and is dominated by `relief_split`;
+  P1 gets lens candidates but still accepts `cutout_r1`; P2 gets no bounded
+  lens candidate from the current support generator. Next patch-family work
+  needs true `gusset_parent_replacement` or a broader support generator rather
+  than another bounded path/lens repartition.
+- Implement `OperatorBasisSearchReceipt` as the next diagnostic surface:
+  define a small operator basis from the measured parent-surgery variants,
+  compose depth-2/beam-8 operator trees from the single-operator metric deltas,
+  retain default/profile/Pareto winners, and mark whether the declared basis is
+  exhausted for hard panels. This first version must be explicit that composed
+  trees are diagnostic beam candidates, not true sequential rematerializations.
+- Start the native serializer fallback after the search receipt exists:
+  prototype `bt369_pattern_serializer` over operator-prefix/fabric-cone cells
+  for P0/P2 if the depth-limited basis remains exhausted under current
+  LSCM/xatlas/bootstrap backends.
 - Graph/ultrametric unwrap scoring now has a local benchmark surface:
   `smii.seams.unwrap_benchmark` compares sphere-to-rectangle candidates across
   edge-length, area, angle, foldover, aggregate residual, and agreement-depth

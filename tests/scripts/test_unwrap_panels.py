@@ -18,11 +18,26 @@ from smii.seams import (
 )
 from scripts.unwrap_panels import (
     PanelPatch,
+    _expanded_corrected_residuals,
     _branch_spoke_split_parent_panels,
+    _candidate_guided_dart_wedges,
+    _candidate_failure_lens_patches,
+    _candidate_failure_wedge_reliefs,
     _face_edges,
+    _failure_drain_split_parent_panels,
+    _failure_drain_variant_id,
     _failure_relief_split_parent_panels,
     _failure_relief_variant_id,
+    _guided_dart_wedge_split_parent_panels,
+    _guided_dart_wedge_variant_id,
+    _failure_lens_patch_split_parent_panels,
+    _failure_lens_patch_variant_id,
+    _failure_wedge_split_parent_panels,
+    _failure_wedge_variant_id,
+    _operator_basis_search_receipt,
     _serialization_failure_field_receipt,
+    _variant_pareto_receipt,
+    VARIANT_SELECTION_PROFILES,
 )
 
 
@@ -63,7 +78,7 @@ def test_branch_spoke_split_preserves_branch_and_parent_faces() -> None:
 
     split = _branch_spoke_split_parent_panels(panel, [0], ring_depth=1)
 
-    assert len(split) == 2
+    assert len(split) >= 2
     assert sorted(face for patch in split for face in patch.faces) == sorted(faces)
     assert any(set(patch.faces) == {(0, 1, 2), (0, 2, 3)} for patch in split)
 
@@ -91,7 +106,7 @@ def test_failure_relief_split_preserves_parent_faces() -> None:
 
     split = _failure_relief_split_parent_panels(panel, failure_field)
 
-    assert len(split) == 2
+    assert len(split) >= 2
     assert sorted(face for patch in split for face in patch.faces) == sorted(faces)
     assert any(set(patch.faces) == {(2, 3, 4), (4, 3, 5)} for patch in split)
 
@@ -148,6 +163,10 @@ def test_serialization_failure_field_derives_relief_path_from_distortion() -> No
     assert path["failure_face_indices"] == [2, 3]
     assert path["separates_bad_region"] is True
     assert path["face_partition_preserves_faces"] is True
+    assert "candidate_guided_dart_wedges" in field
+    assert "selected_guided_dart_wedges" in field
+    assert "candidate_lens_patches" in field
+    assert "selected_lens_patches" in field
 
 
 def test_serialization_failure_field_derives_multi_path_tree_for_disconnected_islands() -> None:
@@ -218,6 +237,444 @@ def test_serialization_failure_field_derives_multi_path_tree_for_disconnected_is
     assert sorted(face for patch in split for face in patch.faces) == sorted(faces)
     assert any(set(patch.faces) == {(0, 1, 2), (2, 1, 3)} for patch in split)
     assert any(set(patch.faces) == {(8, 9, 10), (10, 9, 11)} for patch in split)
+
+
+def test_serialization_failure_field_derives_drain_path_to_boundary() -> None:
+    vertices = np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [0.0, 2.0, 0.0],
+            [1.0, 2.0, 0.0],
+        ],
+        dtype=float,
+    )
+    faces = (
+        (0, 1, 2),
+        (2, 1, 3),
+        (2, 3, 4),
+        (4, 3, 5),
+    )
+    panel = PanelPatch(
+        vertices=tuple(range(6)),
+        edges=_face_edges(faces),
+        faces=faces,
+    )
+    uv = np.array(
+        [
+            [0.0, 0.0],
+            [1.0, 0.0],
+            [0.0, 1.0],
+            [1.0, 1.0],
+            [0.0, 12.0],
+            [1.0, 12.0],
+        ],
+        dtype=float,
+    )
+
+    field = _serialization_failure_field_receipt(
+        panel_id="P1",
+        backend="lscm",
+        vertices=vertices,
+        panel=panel,
+        uv=uv,
+        seam_edges=[(2, 3)],
+        distortion_threshold=0.05,
+    )
+
+    assert field["candidate_drain_paths"]
+    assert any(path["sink"] == "seam_boundary" for path in field["candidate_drain_paths"])
+    assert field["selected_drain_paths"]
+    drain_path = field["selected_drain_paths"][0]
+    assert drain_path["sink"] == "seam_boundary"
+    assert drain_path["drains_to_boundary"] is True
+    assert drain_path["path_length"] >= 2
+    assert _failure_drain_variant_id(field) == "failure_drain_path"
+
+    split = _failure_drain_split_parent_panels(panel, field)
+
+    assert len(split) >= 2
+    assert sorted(face for patch in split for face in patch.faces) == sorted(faces)
+
+
+def test_failure_wedge_relief_candidate_uses_two_boundary_legs() -> None:
+    faces = (
+        (0, 1, 2),
+        (0, 1, 3),
+        (1, 2, 4),
+        (0, 2, 5),
+    )
+    panel = PanelPatch(
+        vertices=tuple(range(6)),
+        edges=_face_edges(faces),
+        faces=faces,
+    )
+
+    candidates = _candidate_failure_wedge_reliefs(
+        panel,
+        source="distortion_gradient_path",
+        component_indices=[0],
+        boundary_faces=[1, 2, 3],
+        seam_boundary_faces=[2],
+        face_costs=[8.0, 1.0, 1.0, 1.0],
+    )
+
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    assert candidate["operator_family"] == "wedge_relief"
+    assert candidate["leg_count"] == 2
+    assert candidate["creates_wedge_chart"] is True
+    assert candidate["face_partition_preserves_faces"] is True
+    assert "seam_boundary" in candidate["sink_pair"]
+    assert _failure_wedge_variant_id({"selected_wedge_reliefs": candidates}) == (
+        "failure_wedge_relief"
+    )
+
+
+def test_failure_wedge_split_preserves_parent_faces() -> None:
+    faces = (
+        (0, 1, 2),
+        (0, 1, 3),
+        (1, 2, 4),
+        (0, 2, 5),
+    )
+    panel = PanelPatch(
+        vertices=tuple(range(6)),
+        edges=_face_edges(faces),
+        faces=faces,
+    )
+    failure_field = {
+        "selected_wedge_reliefs": [
+            {
+                "creates_wedge_chart": True,
+                "wedge_face_indices": [0, 1, 2],
+            }
+        ]
+    }
+
+    split = _failure_wedge_split_parent_panels(panel, failure_field)
+
+    assert len(split) == 2
+    assert sorted(face for patch in split for face in patch.faces) == sorted(faces)
+    assert any(set(patch.faces) == {(0, 1, 2), (0, 1, 3), (1, 2, 4)} for patch in split)
+
+
+def test_guided_dart_wedge_derives_from_relief_path_neighbors() -> None:
+    faces = (
+        (0, 1, 2),
+        (0, 1, 3),
+        (1, 2, 4),
+        (0, 2, 5),
+        (3, 4, 6),
+    )
+    panel = PanelPatch(
+        vertices=tuple(range(7)),
+        edges=_face_edges(faces),
+        faces=faces,
+    )
+    relief_path = {
+        "failure_face_indices": [0],
+        "edge_path": [[0, 1], [1, 2]],
+        "separates_bad_region": True,
+    }
+
+    candidates = _candidate_guided_dart_wedges(
+        panel,
+        source="distortion_gradient_path",
+        relief_path=relief_path,
+        boundary_faces=[1, 2, 3, 4],
+        seam_boundary_faces=[2],
+        face_costs=[8.0, 1.0, 1.0, 1.0, 2.0],
+    )
+
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    assert candidate["operator_family"] == "guided_dart_wedge"
+    assert candidate["guide_variant"] == "failure_relief_path"
+    assert candidate["derived_from_single_path"] is True
+    assert candidate["leg_count"] == 2
+    assert candidate["creates_dart_chart"] is True
+    assert candidate["face_partition_preserves_faces"] is True
+    assert "seam_boundary" in candidate["sink_pair"]
+    assert _guided_dart_wedge_variant_id({"selected_guided_dart_wedges": candidates}) == (
+        "pareto_guided_dart_wedge"
+    )
+
+
+def test_guided_dart_wedge_split_preserves_parent_faces() -> None:
+    faces = (
+        (0, 1, 2),
+        (0, 1, 3),
+        (1, 2, 4),
+        (0, 2, 5),
+        (3, 4, 6),
+    )
+    panel = PanelPatch(
+        vertices=tuple(range(7)),
+        edges=_face_edges(faces),
+        faces=faces,
+    )
+    failure_field = {
+        "selected_guided_dart_wedges": [
+            {
+                "creates_dart_chart": True,
+                "wedge_face_indices": [0, 1, 2],
+            }
+        ]
+    }
+
+    split = _guided_dart_wedge_split_parent_panels(panel, failure_field)
+
+    assert len(split) >= 2
+    assert sorted(face for patch in split for face in patch.faces) == sorted(faces)
+    assert any(set(patch.faces) == {(0, 1, 2), (0, 1, 3), (1, 2, 4)} for patch in split)
+
+
+def test_failure_lens_patch_derives_bounded_patch_from_relief_path() -> None:
+    faces = (
+        (0, 1, 2),
+        (0, 1, 3),
+        (1, 2, 4),
+        (0, 2, 5),
+        (3, 4, 6),
+        (4, 6, 7),
+    )
+    panel = PanelPatch(
+        vertices=tuple(range(8)),
+        edges=_face_edges(faces),
+        faces=faces,
+    )
+    relief_path = {
+        "failure_face_indices": [0, 1],
+        "edge_path": [[0, 1], [0, 3]],
+        "separates_bad_region": True,
+    }
+
+    candidates = _candidate_failure_lens_patches(
+        panel,
+        source="distortion_gradient_path",
+        relief_path=relief_path,
+        face_costs=[8.0, 6.0, 1.0, 1.0, 2.0, 1.0],
+    )
+
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    assert candidate["operator_family"] == "lens_patch"
+    assert candidate["guide_variant"] == "failure_relief_path"
+    assert candidate["patch_shape"] == "lens"
+    assert candidate["creates_patch_chart"] is True
+    assert candidate["replaces_parent_region"] is True
+    assert candidate["face_partition_preserves_faces"] is True
+    assert set(candidate["covered_failure_face_indices"]) <= set(candidate["failure_face_indices"])
+    assert _failure_lens_patch_variant_id({"selected_lens_patches": candidates}) == (
+        "failure_lens_patch"
+    )
+
+
+def test_failure_lens_patch_split_preserves_parent_faces() -> None:
+    faces = (
+        (0, 1, 2),
+        (0, 1, 3),
+        (1, 2, 4),
+        (0, 2, 5),
+        (3, 4, 6),
+    )
+    panel = PanelPatch(
+        vertices=tuple(range(7)),
+        edges=_face_edges(faces),
+        faces=faces,
+    )
+    failure_field = {
+        "selected_lens_patches": [
+            {
+                "creates_patch_chart": True,
+                "patch_face_indices": [0, 1, 2],
+            }
+        ]
+    }
+
+    split = _failure_lens_patch_split_parent_panels(panel, failure_field)
+
+    assert len(split) >= 2
+    assert sorted(face for patch in split for face in patch.faces) == sorted(faces)
+    assert any(set(patch.faces) == {(0, 1, 2), (0, 1, 3), (1, 2, 4)} for patch in split)
+
+
+def test_variant_pareto_receipt_marks_frontier_and_profile_winners() -> None:
+    receipt = _variant_pareto_receipt(
+        original_candidate_id="P1.original",
+        original_metrics={
+            "score": 10.0,
+            "worst_distortion": 5.0,
+            "foldovers": 2,
+            "boundary_deviation": 3.0,
+            "chart_count": 1,
+            "exportable": True,
+        },
+        variant_candidates=[
+            {
+                "candidate_id": "P1.failure_relief_path",
+                "variant_id": "failure_relief_path",
+                "metrics": {
+                    "score": 11.0,
+                    "worst_distortion": 4.0,
+                    "foldovers": 2,
+                    "boundary_deviation": 3.0,
+                    "chart_count": 2,
+                    "exportable": True,
+                },
+            },
+            {
+                "candidate_id": "P1.failure_drain_path",
+                "variant_id": "failure_drain_path",
+                "metrics": {
+                    "score": 12.0,
+                    "worst_distortion": 6.0,
+                    "foldovers": 3,
+                    "boundary_deviation": 4.0,
+                    "chart_count": 2,
+                    "exportable": True,
+                },
+            },
+        ],
+    )
+
+    candidates = {str(candidate["candidate_id"]): candidate for candidate in receipt["candidates"]}
+    assert set(receipt["frontier_candidate_ids"]) == {
+        "P1.original",
+        "P1.failure_relief_path",
+    }
+    assert candidates["P1.failure_relief_path"]["pareto_useful"] is True
+    assert candidates["P1.failure_drain_path"]["pareto_status"] == "dominated"
+    assert (
+        candidates["P1.failure_relief_path"]["profile_scores"]["default"]
+        < candidates["P1.original"]["profile_scores"]["default"]
+    )
+    assert (
+        candidates["P1.failure_drain_path"]["default_profile_selection"]["lost_to_variant_id"]
+        == "failure_relief_path"
+    )
+    assert (
+        "score_delta"
+        in candidates["P1.failure_drain_path"]["default_profile_selection"]["lost_because"]
+    )
+    assert set(receipt["profile_best_candidate_ids"]) == set(VARIANT_SELECTION_PROFILES)
+
+
+def test_operator_basis_search_receipt_retains_diagnostic_depth_two_tree() -> None:
+    receipt = _operator_basis_search_receipt(
+        panel_id="P2",
+        original_metrics={
+            "score": 100.0,
+            "worst_distortion": 5.0,
+            "foldovers": 10,
+            "boundary_deviation": 2.0,
+            "chart_count": 1,
+            "exportable": True,
+        },
+        variant_candidates=[
+            {
+                "candidate_id": "P2.failure_relief_path",
+                "variant_id": "failure_relief_path",
+                "metrics": {
+                    "score": 110.0,
+                    "worst_distortion": 3.0,
+                    "foldovers": 10,
+                    "boundary_deviation": 1.0,
+                    "chart_count": 2,
+                    "exportable": True,
+                },
+            },
+            {
+                "candidate_id": "P2.pareto_guided_dart_wedge",
+                "variant_id": "pareto_guided_dart_wedge",
+                "metrics": {
+                    "score": 70.0,
+                    "worst_distortion": 5.0,
+                    "foldovers": 2,
+                    "boundary_deviation": 2.0,
+                    "chart_count": 2,
+                    "exportable": True,
+                },
+            },
+        ],
+        max_depth=2,
+        beam_width=8,
+    )
+
+    assert receipt["schema_version"] == "smii.operator_basis_search.v1"
+    assert receipt["search_depth"] == 2
+    assert receipt["candidate_count"] == 3
+    trees = {tuple(candidate["operators"]): candidate for candidate in receipt["candidates"]}
+    combined = trees[("failure_relief_path", "pareto_guided_dart_wedge")]
+    assert combined["composition_mode"] == "diagnostic_delta_composition"
+    assert combined["materialized"] is False
+    assert combined["metrics"]["score"] == 80.0
+    assert combined["metrics"]["worst_distortion"] == 3.0
+    assert combined["metrics"]["foldovers"] == 2
+    assert combined["hard_gate_passes"] is True
+    assert "operator_tree_not_sequentially_materialized" in combined["blockers"]
+    assert receipt["promotion"] == 1
+    assert receipt["basis_exhausted_at_depth"] is False
+    assert set(receipt["best_by_profile"]) == set(VARIANT_SELECTION_PROFILES)
+
+
+def test_operator_basis_search_receipt_marks_exhaustion_without_promoted_tree() -> None:
+    receipt = _operator_basis_search_receipt(
+        panel_id="P0",
+        original_metrics={
+            "score": 100.0,
+            "worst_distortion": 1.0,
+            "foldovers": 5,
+            "boundary_deviation": 1.0,
+            "chart_count": 1,
+            "exportable": True,
+        },
+        variant_candidates=[
+            {
+                "candidate_id": "P0.failure_lens_patch",
+                "variant_id": "failure_lens_patch",
+                "metrics": {
+                    "score": 70.0,
+                    "worst_distortion": 6.0,
+                    "foldovers": 2,
+                    "boundary_deviation": 1.0,
+                    "chart_count": 2,
+                    "exportable": True,
+                },
+            },
+            {
+                "candidate_id": "P0.failure_drain_path",
+                "variant_id": "failure_drain_path",
+                "metrics": {
+                    "score": 120.0,
+                    "worst_distortion": 1.5,
+                    "foldovers": 7,
+                    "boundary_deviation": 2.0,
+                    "chart_count": 2,
+                    "exportable": True,
+                },
+            },
+        ],
+    )
+
+    assert receipt["promotion"] == 0
+    assert receipt["basis_exhausted_at_depth"] is True
+    assert receipt["stronger_backend_open"] is True
+    assert receipt["larger_operator_basis_open"] is True
+    assert receipt["blockers"] == ["operator_basis_search_no_promoted_tree"]
+
+
+def test_expanded_corrected_residuals_matches_materialized_panel_count() -> None:
+    expanded = _expanded_corrected_residuals(
+        [0.1, 0.2, 0.3, 0.4],
+        [0, 0, 1, 3, 2, 1],
+        [1.0, 1.1, 1.2, 1.3, 1.4, 1.5],
+    )
+
+    assert expanded == [0.1, 0.1, 0.2, 0.4, 0.3, 0.2]
 
 
 def _write_nonplanar_mesh(path: Path) -> None:

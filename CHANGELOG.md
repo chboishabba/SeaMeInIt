@@ -1,5 +1,52 @@
 ## Unreleased
 
+- Extended Gate 6c parent-surgery receipts with diagnostic Pareto/profile
+  metadata:
+  - added per-variant improvement/regression reporting for the hard metrics
+    already used by the unwrap gate,
+  - recorded Pareto-frontier membership for the materialized relief/drain
+    candidates without changing the acceptance rule,
+  - added profile-relative winner scoring so debug/manufacturing viewpoints can
+    see a different preferred candidate even when the default scalar gate
+    still rejects the variant,
+  - added compact default-profile loss explanations for non-selected variants.
+- Added the `failure_wedge_relief` parent-surgery family:
+  - derives a two-leg wedge/lens candidate from serializer failure fields to
+    panel or seam-boundary sinks,
+  - materializes the wedge as a fabric-preserving chart split,
+  - bounds wedge candidates by estimated chart count to avoid pathological
+    parent-remainder fragmentation,
+  - competes the new charts under the existing score/distortion/serializability
+    gate and Pareto/profile receipt diagnostics.
+- Added the `pareto_guided_dart_wedge` parent-surgery family:
+  - derives a narrow two-leg dart/lens chart from a measured
+    `failure_relief_path` candidate,
+  - keeps the full failure component as guide evidence while materializing only
+    the apex and local leg corridor,
+  - bounds local exit-pair search and wedge size so large parent panels remain
+    practical to compete,
+  - records the candidate through the existing Pareto/profile diagnostics
+    without changing scalar promotion.
+- Added the `failure_lens_patch` parent-surgery target to the Gate 6c roadmap:
+  - derives a bounded replacement patch support from serializer failure fields,
+  - materializes the patch support as a separate face-backed chart and preserves
+    the parent remainder,
+  - keeps all promotion rules unchanged while testing whether patch-family
+    geometry beats the exhausted path-family relief operators.
+- Implemented and measured `failure_lens_patch` on the Afflec/P3 chain:
+  - P0 gets a valid bounded lens patch that improves score and foldovers but
+    regresses worst distortion to `16.176`, so it remains rejected,
+  - P1 receives lens candidates but still promotes `cutout_r1`,
+  - P2 receives no bounded lens patch candidate from the current support
+    generator,
+  - accepted parents remain P1 `cutout_r1` and P3 `relief_split`.
+- Added `OperatorBasisSearchReceipt` diagnostics for materialized parent
+  chart-domain decisions:
+  - emits `smii.operator_basis_search.v1` per source parent panel,
+  - composes depth-2, beam-8 operator trees from already measured
+    single-operator metric deltas,
+  - records profile winners, Pareto frontier membership, and exhausted-basis
+    blockers without claiming true sequential tree rematerialization.
 - Added the finished seam/body atlas receipt surface:
   - added `smii.seams.seam_derivation.FinishedSeamReceipt` and
     `derive_finished_seams` to compose promoted body, ROM, fabric, basis,

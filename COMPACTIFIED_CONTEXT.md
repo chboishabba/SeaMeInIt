@@ -341,3 +341,53 @@ Date: 2026-02-06
   3. real ROM corpus fields,
   4. cotangent Laplace-Beltrami basis,
   5. production manufacturing package and Ruff.
+
+## Gate 6c Pareto/Profile Boundary (2026-06-06)
+- Parent-surgery diagnostics are now being extended with Pareto metadata:
+  each candidate should report which hard metrics it improves, whether it sits
+  on the frontier against sibling variants, and which profile would select it.
+- The default acceptance rule remains unchanged:
+  backend-serializable, score-improving, and non-regressing in worst distortion.
+- Profile-relative scoring is diagnostic only for now; it should not silently
+  override the scalar gate or the existing failure-field receipts.
+- The next geometry family is `failure_wedge_relief`: a two-leg wedge/lens
+  split derived from measured serializer failure fields. It is a fabric
+  repartition, not fabric deletion, and is competed through the same scalar gate
+  plus Pareto/profile diagnostics.
+- Non-selected variants now need compact default-profile loss explanations
+  (`lost_to_*` and metric deltas) so dominated variants and Pareto-useful but
+  too-costly variants remain distinguishable in receipts.
+- Empirical wedge result:
+  `outputs/demo/afflec_receipted_curated_20260605_143059/panels_fabric_wedge2/panel_unwrap_receipt.json`
+  keeps accepted parents at P1 `cutout_r1` and P3 `relief_split`; the bounded
+  P1 `failure_wedge_relief` candidate is valid but dominated, while P0/P2 do
+  not get wedge candidates from the current two-leg corridor generator.
+- Guided dart-wedge result:
+  `outputs/demo/afflec_receipted_curated_20260605_143059/panels_fabric_guided_dart/panel_unwrap_receipt.json`
+  adds `pareto_guided_dart_wedge`, derived from the measured
+  `failure_relief_path` rather than generic sinks. P2 receives a valid
+  Pareto-frontier useful guided candidate (`score=10897.938`,
+  `worst_distortion=5.241`, `charts=2`) that improves original worst
+  distortion but still loses default-profile selection to `cutout_r2` and does
+  not promote. Accepted parents remain P1 `cutout_r1` and P3 `relief_split`.
+- Current next rung: `failure_lens_patch`. Path-family operators
+  (`failure_relief_path`, drain/tree, wedge, and guided dart wedge) are now
+  empirically insufficient for P0/P2 under the default hard gate. The open
+  patch-family test is to isolate the measured failure support as a bounded
+  replacement patch chart plus parent remainder, preserving all faces and
+  competing under the unchanged serializer/score/distortion gate.
+- Lens-patch rerun result:
+  `outputs/demo/afflec_receipted_curated_20260605_143059/panels_fabric_lens_patch/panel_unwrap_receipt.json`.
+  Accepted parents remain P1 `cutout_r1` and P3 `relief_split`; P0 gets a
+  valid `failure_lens_patch` that improves score/foldovers but regresses worst
+  distortion to `16.176`; P2 gets no bounded lens candidate. Current boundary:
+  bounded patch repartition is still insufficient, so the next open family is
+  true `gusset_parent_replacement` / broader operator-native patch geometry.
+- Operator-basis search is now the next implemented diagnostic surface:
+  materialized parent-domain decisions emit `smii.operator_basis_search.v1`,
+  a depth-2/beam-8 search receipt over measured single-operator metric deltas.
+  It can report profile/Pareto tree winners or declare the current local
+  operator basis exhausted for a panel, but it does not claim true sequential
+  tree rematerialization. That keeps native operator-tree materialization and
+  the BT369 pattern serializer as explicit next rungs rather than hidden
+  assumptions.

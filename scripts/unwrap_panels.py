@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import heapq
 import json
 import time
 from collections import defaultdict, deque
@@ -52,6 +53,68 @@ UNWRAP_COMPATIBLE_CORRECTION_STATES = {
     "correctionDegraded",
     "correctionAbstained",
 }
+
+VARIANT_SELECTION_PROFILES: dict[str, dict[str, float]] = {
+    "default": {
+        "worst_distortion": 18.0,
+        "foldovers": 2.0,
+        "boundary_deviation": 0.5,
+        "chart_count": 0.25,
+        "exportable_penalty": 250.0,
+    },
+    "debug_geometry": {
+        "worst_distortion": 42.0,
+        "foldovers": 8.0,
+        "boundary_deviation": 1.0,
+        "chart_count": 0.5,
+        "exportable_penalty": 400.0,
+    },
+    "knit_4way_light": {
+        "worst_distortion": 30.0,
+        "foldovers": 5.0,
+        "boundary_deviation": 1.0,
+        "chart_count": 0.25,
+        "exportable_penalty": 350.0,
+    },
+    "home_sewing": {
+        "worst_distortion": 16.0,
+        "foldovers": 2.0,
+        "boundary_deviation": 1.5,
+        "chart_count": 4.0,
+        "exportable_penalty": 500.0,
+    },
+    "performance_squat": {
+        "worst_distortion": 36.0,
+        "foldovers": 4.0,
+        "boundary_deviation": 0.75,
+        "chart_count": 0.5,
+        "exportable_penalty": 300.0,
+    },
+}
+PARETO_METRIC_KEYS = (
+    "score",
+    "worst_distortion",
+    "foldovers",
+    "boundary_deviation",
+    "chart_count",
+)
+OPERATOR_BASIS_SEARCH_DEPTH = 2
+OPERATOR_BASIS_SEARCH_BEAM_WIDTH = 8
+OPERATOR_BASIS_FAMILIES = (
+    "stretch_zone",
+    "gusset_patch",
+    "gusset_parent_replacement",
+    "dart_wedge",
+    "lens_patch",
+    "relief_path",
+    "relief_tree",
+    "drain_path",
+    "grain_rotation",
+    "ease_band",
+    "seam_relocation",
+    "boundary_split",
+    "variable_knit_proxy",
+)
 
 
 def _json_float(value: object) -> float:
@@ -947,6 +1010,15 @@ def _relief_boundary_edges(
     return [[int(a), int(b)] for a, b in sorted(selected_edges & remainder_edges)]
 
 
+def _drain_boundary_edges(
+    selected_faces: Sequence[tuple[int, int, int]],
+    remainder_faces: Sequence[tuple[int, int, int]],
+) -> list[list[int]]:
+    selected_edges = set(_face_edges(selected_faces))
+    remainder_edges = set(_face_edges(remainder_faces))
+    return [[int(a), int(b)] for a, b in sorted(selected_edges & remainder_edges)]
+
+
 def _serialization_failure_field_receipt(
     *,
     panel_id: str,
@@ -954,6 +1026,7 @@ def _serialization_failure_field_receipt(
     vertices: np.ndarray,
     panel: PanelPatch,
     uv: np.ndarray,
+    seam_edges: Sequence[Edge] | None = None,
     distortion_threshold: float,
 ) -> dict[str, object]:
     """Measure face-local serialization failure evidence for downstream relief paths."""
@@ -980,6 +1053,18 @@ def _serialization_failure_field_receipt(
     source = "foldover_cluster_path" if foldover_faces else "distortion_gradient_path"
     failure_face_components = _face_connected_components(panel.faces, failure_face_indices)
     candidate_relief_paths: list[dict[str, object]] = []
+    candidate_drain_paths: list[dict[str, object]] = []
+    candidate_wedge_reliefs: list[dict[str, object]] = []
+    candidate_guided_dart_wedges: list[dict[str, object]] = []
+    candidate_lens_patches: list[dict[str, object]] = []
+    _, boundary_faces = _face_adjacency_and_boundary_faces(panel.faces)
+    seam_boundary_faces = _faces_touching_edges(panel.faces, seam_edges or [])
+    face_costs = [
+        float(distortion)
+        + (5.0 if idx in foldover_faces else 0.0)
+        + (1.0 if idx in high_distortion_faces else 0.0)
+        for idx, distortion in enumerate(face_distortions)
+    ]
     for component_indices in failure_face_components:
         selected_faces = [panel.faces[idx] for idx in component_indices]
         remainder_faces = [
@@ -999,6 +1084,125 @@ def _serialization_failure_field_receipt(
                 ),
             }
         )
+        candidate_guided_dart_wedges.extend(
+            _candidate_guided_dart_wedges(
+                panel,
+                source=source,
+                relief_path=candidate_relief_paths[-1],
+                boundary_faces=sorted(boundary_faces),
+                seam_boundary_faces=seam_boundary_faces,
+                face_costs=face_costs,
+            )
+        )
+        candidate_lens_patches.extend(
+            _candidate_failure_lens_patches(
+                panel,
+                source=source,
+                relief_path=candidate_relief_paths[-1],
+                face_costs=face_costs,
+            )
+        )
+        drain_face_indices = _shortest_face_path_to_targets(
+            panel.faces,
+            component_indices,
+            sorted(boundary_faces),
+            face_costs,
+        )
+        drain_extension = set(drain_face_indices) - set(component_indices)
+        if drain_face_indices and drain_extension and len(drain_face_indices) < len(panel.faces):
+            drain_selected_faces = [panel.faces[idx] for idx in drain_face_indices]
+            drain_remainder_faces = [
+                face for idx, face in enumerate(panel.faces) if idx not in set(drain_face_indices)
+            ]
+            candidate_drain_paths.append(
+                {
+                    "source": source,
+                    "sink": "panel_boundary",
+                    "edge_path": _drain_boundary_edges(
+                        drain_selected_faces,
+                        drain_remainder_faces,
+                    ),
+                    "failure_face_indices": component_indices,
+                    "drain_face_indices": drain_face_indices,
+                    "path_length": int(len(drain_face_indices)),
+                    "drains_to_boundary": True,
+                    "separates_bad_region": bool(
+                        component_indices and len(drain_face_indices) < len(panel.faces)
+                    ),
+                    "face_partition_preserves_faces": bool(
+                        component_indices and len(drain_face_indices) < len(panel.faces)
+                    ),
+                }
+            )
+        if seam_boundary_faces:
+            seam_drain_face_indices = _shortest_face_path_to_targets(
+                panel.faces,
+                component_indices,
+                seam_boundary_faces,
+                face_costs,
+            )
+            seam_drain_extension = set(seam_drain_face_indices) - set(component_indices)
+            if (
+                seam_drain_face_indices
+                and seam_drain_extension
+                and len(seam_drain_face_indices) < len(panel.faces)
+            ):
+                seam_selected_faces = [panel.faces[idx] for idx in seam_drain_face_indices]
+                seam_remainder_faces = [
+                    face
+                    for idx, face in enumerate(panel.faces)
+                    if idx not in set(seam_drain_face_indices)
+                ]
+                candidate_drain_paths.append(
+                    {
+                        "source": source,
+                        "sink": "seam_boundary",
+                        "edge_path": _drain_boundary_edges(
+                            seam_selected_faces,
+                            seam_remainder_faces,
+                        ),
+                        "failure_face_indices": component_indices,
+                        "drain_face_indices": seam_drain_face_indices,
+                        "path_length": int(len(seam_drain_face_indices)),
+                        "drains_to_boundary": True,
+                        "separates_bad_region": bool(
+                            component_indices and len(seam_drain_face_indices) < len(panel.faces)
+                        ),
+                        "face_partition_preserves_faces": bool(
+                            component_indices and len(seam_drain_face_indices) < len(panel.faces)
+                        ),
+                    }
+                )
+        candidate_wedge_reliefs.extend(
+            _candidate_failure_wedge_reliefs(
+                panel,
+                source=source,
+                component_indices=component_indices,
+                boundary_faces=sorted(boundary_faces),
+                seam_boundary_faces=seam_boundary_faces,
+                face_costs=face_costs,
+            )
+        )
+    selected_drain_paths = _selected_failure_drain_paths(
+        {
+            "candidate_drain_paths": candidate_drain_paths,
+        }
+    )
+    selected_wedge_reliefs = _selected_failure_wedge_reliefs(
+        {
+            "candidate_wedge_reliefs": candidate_wedge_reliefs,
+        }
+    )
+    selected_guided_dart_wedges = _selected_guided_dart_wedges(
+        {
+            "candidate_guided_dart_wedges": candidate_guided_dart_wedges,
+        }
+    )
+    selected_lens_patches = _selected_failure_lens_patches(
+        {
+            "candidate_lens_patches": candidate_lens_patches,
+        }
+    )
     return {
         "schema_version": "smii.serialization_failure_field.v1",
         "panel_id": panel_id,
@@ -1011,8 +1215,32 @@ def _serialization_failure_field_receipt(
             edge
             for path in candidate_relief_paths
             for edge in _json_list(path.get("edge_path", []))
+        ]
+        + [edge for path in candidate_drain_paths for edge in _json_list(path.get("edge_path", []))]
+        + [
+            edge
+            for path in candidate_wedge_reliefs
+            for edge in _json_list(path.get("edge_path", []))
+        ]
+        + [
+            edge
+            for path in candidate_guided_dart_wedges
+            for edge in _json_list(path.get("edge_path", []))
+        ]
+        + [
+            edge
+            for path in candidate_lens_patches
+            for edge in _json_list(path.get("edge_path", []))
         ],
         "candidate_relief_paths": candidate_relief_paths,
+        "candidate_drain_paths": candidate_drain_paths,
+        "candidate_wedge_reliefs": candidate_wedge_reliefs,
+        "candidate_guided_dart_wedges": candidate_guided_dart_wedges,
+        "candidate_lens_patches": candidate_lens_patches,
+        "selected_drain_paths": selected_drain_paths,
+        "selected_wedge_reliefs": selected_wedge_reliefs,
+        "selected_guided_dart_wedges": selected_guided_dart_wedges,
+        "selected_lens_patches": selected_lens_patches,
     }
 
 
@@ -1025,6 +1253,50 @@ def _failure_relief_variant_id(failure_field: Mapping[str, object] | None) -> st
         if isinstance(path, Mapping) and bool(path.get("separates_bad_region", False))
     )
     return "failure_relief_tree" if candidate_count > 1 else "failure_relief_path"
+
+
+def _failure_drain_variant_id(failure_field: Mapping[str, object] | None) -> str:
+    if failure_field is None:
+        return "failure_drain_path"
+    candidate_count = sum(
+        1
+        for path in _json_list(failure_field.get("selected_drain_paths", []))
+        if isinstance(path, Mapping) and bool(path.get("drains_to_boundary", False))
+    )
+    return "failure_drain_tree" if candidate_count > 1 else "failure_drain_path"
+
+
+def _failure_wedge_variant_id(failure_field: Mapping[str, object] | None) -> str:
+    if failure_field is None:
+        return "failure_wedge_relief"
+    candidate_count = sum(
+        1
+        for path in _json_list(failure_field.get("selected_wedge_reliefs", []))
+        if isinstance(path, Mapping) and bool(path.get("creates_wedge_chart", False))
+    )
+    return "failure_wedge_tree" if candidate_count > 1 else "failure_wedge_relief"
+
+
+def _guided_dart_wedge_variant_id(failure_field: Mapping[str, object] | None) -> str:
+    if failure_field is None:
+        return "pareto_guided_dart_wedge"
+    candidate_count = sum(
+        1
+        for path in _json_list(failure_field.get("selected_guided_dart_wedges", []))
+        if isinstance(path, Mapping) and bool(path.get("creates_dart_chart", False))
+    )
+    return "pareto_guided_dart_wedge_tree" if candidate_count > 1 else "pareto_guided_dart_wedge"
+
+
+def _failure_lens_patch_variant_id(failure_field: Mapping[str, object] | None) -> str:
+    if failure_field is None:
+        return "failure_lens_patch"
+    candidate_count = sum(
+        1
+        for patch in _json_list(failure_field.get("selected_lens_patches", []))
+        if isinstance(patch, Mapping) and bool(patch.get("creates_patch_chart", False))
+    )
+    return "failure_lens_patch_tree" if candidate_count > 1 else "failure_lens_patch"
 
 
 def _failure_relief_split_parent_panels(
@@ -1071,12 +1343,210 @@ def _failure_relief_split_parent_panels(
     return child_panels
 
 
+def _failure_drain_split_parent_panels(
+    panel: PanelPatch,
+    failure_field: Mapping[str, object] | None,
+) -> list[PanelPatch]:
+    """Split measured failure corridors into charts that drain to a boundary sink."""
+
+    if failure_field is None or not panel.faces:
+        return [panel]
+    drain_groups: list[tuple[int, ...]] = []
+    selected_drain_paths = _json_list(failure_field.get("selected_drain_paths", []))
+    source_paths = selected_drain_paths or _json_list(
+        failure_field.get("candidate_drain_paths", [])
+    )
+    for path in source_paths:
+        if not isinstance(path, Mapping):
+            continue
+        if not bool(path.get("drains_to_boundary", False)):
+            continue
+        drain_indices = tuple(
+            sorted(
+                {
+                    int(idx)
+                    for idx in _json_list(path.get("drain_face_indices", []))
+                    if 0 <= int(idx) < len(panel.faces)
+                }
+            )
+        )
+        if drain_indices and len(drain_indices) < len(panel.faces):
+            drain_groups.append(drain_indices)
+    if not drain_groups:
+        return [panel]
+    unique_groups = sorted(set(drain_groups), key=lambda group: (group[0], len(group)))
+    child_panels: list[PanelPatch] = []
+    covered_indices: set[int] = set()
+    for group in unique_groups:
+        covered_indices.update(group)
+        group_faces = tuple(face for idx, face in enumerate(panel.faces) if idx in group)
+        child_panels.extend(_panel_from_faces(panel, group_faces))
+    remainder_faces = tuple(
+        face for idx, face in enumerate(panel.faces) if idx not in covered_indices
+    )
+    if remainder_faces:
+        child_panels.extend(_panel_from_faces(panel, remainder_faces))
+    if len(child_panels) < 2:
+        return [panel]
+    return child_panels
+
+
+def _failure_wedge_split_parent_panels(
+    panel: PanelPatch,
+    failure_field: Mapping[str, object] | None,
+) -> list[PanelPatch]:
+    """Split two-leg wedge/lens relief corridors without deleting parent fabric."""
+
+    if failure_field is None or not panel.faces:
+        return [panel]
+    wedge_groups: list[tuple[int, ...]] = []
+    selected_wedges = _json_list(failure_field.get("selected_wedge_reliefs", []))
+    source_wedges = selected_wedges or _json_list(failure_field.get("candidate_wedge_reliefs", []))
+    for wedge in source_wedges:
+        if not isinstance(wedge, Mapping):
+            continue
+        if not bool(wedge.get("creates_wedge_chart", False)):
+            continue
+        wedge_indices = tuple(
+            sorted(
+                {
+                    int(idx)
+                    for idx in _json_list(wedge.get("wedge_face_indices", []))
+                    if 0 <= int(idx) < len(panel.faces)
+                }
+            )
+        )
+        if wedge_indices and len(wedge_indices) < len(panel.faces):
+            wedge_groups.append(wedge_indices)
+    if not wedge_groups:
+        return [panel]
+    unique_groups = sorted(set(wedge_groups), key=lambda group: (group[0], len(group)))
+    child_panels: list[PanelPatch] = []
+    covered_indices: set[int] = set()
+    for group in unique_groups:
+        remaining_group = tuple(idx for idx in group if idx not in covered_indices)
+        if not remaining_group:
+            continue
+        covered_indices.update(remaining_group)
+        group_faces = tuple(face for idx, face in enumerate(panel.faces) if idx in remaining_group)
+        child_panels.extend(_panel_from_faces(panel, group_faces))
+    remainder_faces = tuple(
+        face for idx, face in enumerate(panel.faces) if idx not in covered_indices
+    )
+    if remainder_faces:
+        child_panels.extend(_panel_from_faces(panel, remainder_faces))
+    if len(child_panels) < 2:
+        return [panel]
+    return child_panels
+
+
+def _guided_dart_wedge_split_parent_panels(
+    panel: PanelPatch,
+    failure_field: Mapping[str, object] | None,
+) -> list[PanelPatch]:
+    """Split dart/lens wedges derived from a measured one-path relief candidate."""
+
+    if failure_field is None or not panel.faces:
+        return [panel]
+    wedge_groups: list[tuple[int, ...]] = []
+    selected_wedges = _json_list(failure_field.get("selected_guided_dart_wedges", []))
+    source_wedges = selected_wedges or _json_list(
+        failure_field.get("candidate_guided_dart_wedges", [])
+    )
+    for wedge in source_wedges:
+        if not isinstance(wedge, Mapping):
+            continue
+        if not bool(wedge.get("creates_dart_chart", False)):
+            continue
+        wedge_indices = tuple(
+            sorted(
+                {
+                    int(idx)
+                    for idx in _json_list(wedge.get("wedge_face_indices", []))
+                    if 0 <= int(idx) < len(panel.faces)
+                }
+            )
+        )
+        if wedge_indices and len(wedge_indices) < len(panel.faces):
+            wedge_groups.append(wedge_indices)
+    if not wedge_groups:
+        return [panel]
+    unique_groups = sorted(set(wedge_groups), key=lambda group: (group[0], len(group)))
+    child_panels: list[PanelPatch] = []
+    covered_indices: set[int] = set()
+    for group in unique_groups:
+        remaining_group = tuple(idx for idx in group if idx not in covered_indices)
+        if not remaining_group:
+            continue
+        covered_indices.update(remaining_group)
+        group_faces = tuple(face for idx, face in enumerate(panel.faces) if idx in remaining_group)
+        child_panels.extend(_panel_from_faces(panel, group_faces))
+    remainder_faces = tuple(
+        face for idx, face in enumerate(panel.faces) if idx not in covered_indices
+    )
+    if remainder_faces:
+        child_panels.extend(_panel_from_faces(panel, remainder_faces))
+    if len(child_panels) < 2:
+        return [panel]
+    return child_panels
+
+
+def _failure_lens_patch_split_parent_panels(
+    panel: PanelPatch,
+    failure_field: Mapping[str, object] | None,
+) -> list[PanelPatch]:
+    """Split a measured failure support into a replacement lens patch chart."""
+
+    if failure_field is None or not panel.faces:
+        return [panel]
+    lens_groups: list[tuple[int, ...]] = []
+    selected_patches = _json_list(failure_field.get("selected_lens_patches", []))
+    source_patches = selected_patches or _json_list(failure_field.get("candidate_lens_patches", []))
+    for patch in source_patches:
+        if not isinstance(patch, Mapping):
+            continue
+        if not bool(patch.get("creates_patch_chart", False)):
+            continue
+        patch_indices = tuple(
+            sorted(
+                {
+                    int(idx)
+                    for idx in _json_list(patch.get("patch_face_indices", []))
+                    if 0 <= int(idx) < len(panel.faces)
+                }
+            )
+        )
+        if patch_indices and len(patch_indices) < len(panel.faces):
+            lens_groups.append(patch_indices)
+    if not lens_groups:
+        return [panel]
+    unique_groups = sorted(set(lens_groups), key=lambda group: (group[0], len(group)))
+    child_panels: list[PanelPatch] = []
+    covered_indices: set[int] = set()
+    for group in unique_groups:
+        remaining_group = tuple(idx for idx in group if idx not in covered_indices)
+        if not remaining_group:
+            continue
+        covered_indices.update(remaining_group)
+        group_faces = tuple(face for idx, face in enumerate(panel.faces) if idx in remaining_group)
+        child_panels.extend(_panel_from_faces(panel, group_faces))
+    remainder_faces = tuple(
+        face for idx, face in enumerate(panel.faces) if idx not in covered_indices
+    )
+    if remainder_faces:
+        child_panels.extend(_panel_from_faces(panel, remainder_faces))
+    if len(child_panels) < 2:
+        return [panel]
+    return child_panels
+
+
 def _serialization_failure_fields_for_panels(
     *,
     vertices: np.ndarray,
     panels: Sequence[PanelPatch],
     uv_by_panel: Mapping[str, np.ndarray],
     selected_backends: Sequence[str],
+    seam_edges: Sequence[Edge] | None,
     distortion_threshold: float,
 ) -> list[dict[str, object]]:
     return [
@@ -1086,6 +1556,7 @@ def _serialization_failure_fields_for_panels(
             vertices=vertices,
             panel=panel,
             uv=uv_by_panel[f"panel_{idx}"],
+            seam_edges=seam_edges,
             distortion_threshold=distortion_threshold,
         )
         for idx, panel in enumerate(panels)
@@ -1163,6 +1634,49 @@ def _materialized_chart_panels(
                 parent_indices.append(panel_idx)
                 materialization_kinds.append(f"{failure_relief_variant_id}_{relief_idx}")
                 variant_ids.append(failure_relief_variant_id)
+        failure_drain_panels = _failure_drain_split_parent_panels(panel, failure_field)
+        failure_drain_variant_id = _failure_drain_variant_id(failure_field)
+        if not (
+            len(failure_drain_panels) == 1
+            and len(failure_drain_panels[0].faces) == len(panel.faces)
+        ):
+            for drain_idx, drain_panel in enumerate(failure_drain_panels):
+                chart_panels.append(drain_panel)
+                parent_indices.append(panel_idx)
+                materialization_kinds.append(f"{failure_drain_variant_id}_{drain_idx}")
+                variant_ids.append(failure_drain_variant_id)
+        failure_wedge_panels = _failure_wedge_split_parent_panels(panel, failure_field)
+        failure_wedge_variant_id = _failure_wedge_variant_id(failure_field)
+        if not (
+            len(failure_wedge_panels) == 1
+            and len(failure_wedge_panels[0].faces) == len(panel.faces)
+        ):
+            for wedge_idx, wedge_panel in enumerate(failure_wedge_panels):
+                chart_panels.append(wedge_panel)
+                parent_indices.append(panel_idx)
+                materialization_kinds.append(f"{failure_wedge_variant_id}_{wedge_idx}")
+                variant_ids.append(failure_wedge_variant_id)
+        guided_dart_wedge_panels = _guided_dart_wedge_split_parent_panels(panel, failure_field)
+        guided_dart_wedge_variant_id = _guided_dart_wedge_variant_id(failure_field)
+        if not (
+            len(guided_dart_wedge_panels) == 1
+            and len(guided_dart_wedge_panels[0].faces) == len(panel.faces)
+        ):
+            for wedge_idx, wedge_panel in enumerate(guided_dart_wedge_panels):
+                chart_panels.append(wedge_panel)
+                parent_indices.append(panel_idx)
+                materialization_kinds.append(f"{guided_dart_wedge_variant_id}_{wedge_idx}")
+                variant_ids.append(guided_dart_wedge_variant_id)
+        lens_patch_panels = _failure_lens_patch_split_parent_panels(panel, failure_field)
+        lens_patch_variant_id = _failure_lens_patch_variant_id(failure_field)
+        if not (
+            len(lens_patch_panels) == 1 and len(lens_patch_panels[0].faces) == len(panel.faces)
+        ):
+            for lens_idx, lens_panel in enumerate(lens_patch_panels):
+                chart_panels.append(lens_panel)
+                parent_indices.append(panel_idx)
+                materialization_kinds.append(f"{lens_patch_variant_id}_{lens_idx}")
+                variant_ids.append(lens_patch_variant_id)
         splits = _subdivide_panel(vertices, panel)
         if len(splits) <= 1 and not branch_vertices:
             chart_panels.append(panel)
@@ -1340,6 +1854,550 @@ def _selected_candidate_distortion(
     return float("inf")
 
 
+def _selected_candidate_metric(
+    candidates: Sequence[object],
+    selected_backend: str,
+    attr: str,
+    *,
+    default: float | int | bool = 0.0,
+) -> float | int | bool:
+    for candidate in candidates:
+        if getattr(candidate, "backend", None) != selected_backend:
+            continue
+        value = getattr(candidate, attr, default)
+        if value is not None:
+            return value
+    return default
+
+
+def _expanded_corrected_residuals(
+    corrected_residuals: Sequence[float] | None,
+    parent_indices: Sequence[int],
+    fallback_distortions: Sequence[float],
+) -> list[float] | None:
+    if corrected_residuals is None:
+        return None
+    if len(corrected_residuals) == len(parent_indices):
+        return [float(value) for value in corrected_residuals]
+    expanded: list[float] = []
+    for idx, parent_idx in enumerate(parent_indices):
+        if 0 <= parent_idx < len(corrected_residuals):
+            expanded.append(float(corrected_residuals[parent_idx]))
+        else:
+            expanded.append(float(fallback_distortions[idx]))
+    return expanded
+
+
+def _variant_metrics_from_group_results(
+    group_results: Sequence[tuple[PanelPatch, np.ndarray, float, list[object], str, str]],
+) -> dict[str, object]:
+    selected_candidates = [
+        (
+            candidates,
+            selected_backend,
+        )
+        for _panel, _uv, _distortion, candidates, selected_backend, _kind in group_results
+    ]
+    return {
+        "score": float(
+            sum(
+                _selected_candidate_score(candidates, selected_backend)
+                for candidates, selected_backend in selected_candidates
+            )
+        ),
+        "worst_distortion": float(
+            max(
+                (
+                    _selected_candidate_distortion(candidates, selected_backend)
+                    for candidates, selected_backend in selected_candidates
+                ),
+                default=float("inf"),
+            )
+        ),
+        "foldovers": int(
+            sum(
+                int(_selected_candidate_metric(candidates, selected_backend, "foldovers"))
+                for candidates, selected_backend in selected_candidates
+            )
+        ),
+        "boundary_deviation": float(
+            sum(
+                float(
+                    _selected_candidate_metric(
+                        candidates,
+                        selected_backend,
+                        "boundary_deviation",
+                    )
+                )
+                for candidates, selected_backend in selected_candidates
+            )
+        ),
+        "chart_count": int(len(group_results)),
+        "exportable": bool(
+            all(
+                bool(
+                    _selected_candidate_metric(
+                        candidates, selected_backend, "exportable", default=False
+                    )
+                )
+                for candidates, selected_backend in selected_candidates
+            )
+        ),
+    }
+
+
+def _selection_profile_score(profile_name: str, metrics: Mapping[str, object]) -> float:
+    weights = VARIANT_SELECTION_PROFILES.get(profile_name, VARIANT_SELECTION_PROFILES["default"])
+    score = _json_float(metrics.get("score", 0.0))
+    return float(
+        score
+        + weights["worst_distortion"] * _json_float(metrics.get("worst_distortion", 0.0))
+        + weights["foldovers"] * _json_int(metrics.get("foldovers", 0))
+        + weights["boundary_deviation"] * _json_float(metrics.get("boundary_deviation", 0.0))
+        + weights["chart_count"] * _json_int(metrics.get("chart_count", 0))
+        + (0.0 if bool(metrics.get("exportable", False)) else weights["exportable_penalty"])
+    )
+
+
+def _metric_comparison_receipt(
+    original_metrics: Mapping[str, object],
+    variant_metrics: Mapping[str, object],
+) -> dict[str, object]:
+    improvements: list[str] = []
+    regressions: list[str] = []
+    for key in PARETO_METRIC_KEYS:
+        original_value = _json_float(original_metrics.get(key, 0.0))
+        variant_value = _json_float(variant_metrics.get(key, 0.0))
+        if variant_value + 1e-12 < original_value:
+            improvements.append(key)
+        elif variant_value > original_value + 1e-12:
+            regressions.append(key)
+    exportable_original = bool(original_metrics.get("exportable", False))
+    exportable_variant = bool(variant_metrics.get("exportable", False))
+    if exportable_variant and not exportable_original:
+        improvements.append("exportable")
+    elif exportable_original and not exportable_variant:
+        regressions.append("exportable")
+    dominates = not regressions and bool(improvements)
+    useful = bool(improvements)
+    return {
+        "improves": improvements,
+        "regresses": regressions,
+        "dominates_original": dominates,
+        "pareto_useful": useful,
+    }
+
+
+def _pareto_frontier_candidate_ids(
+    candidates: Sequence[Mapping[str, object]],
+) -> list[str]:
+    frontier_ids: list[str] = []
+    for idx, candidate in enumerate(candidates):
+        candidate_metrics = candidate.get("metrics")
+        if not isinstance(candidate_metrics, Mapping):
+            continue
+        dominated = False
+        for other_idx, other in enumerate(candidates):
+            if idx == other_idx:
+                continue
+            other_metrics = other.get("metrics")
+            if not isinstance(other_metrics, Mapping):
+                continue
+            if _pareto_dominates(other_metrics, candidate_metrics):
+                dominated = True
+                break
+        if not dominated:
+            frontier_ids.append(str(candidate.get("candidate_id", f"candidate_{idx}")))
+    return frontier_ids
+
+
+def _pareto_dominates(
+    lhs_metrics: Mapping[str, object],
+    rhs_metrics: Mapping[str, object],
+) -> bool:
+    lhs_exportable = bool(lhs_metrics.get("exportable", False))
+    rhs_exportable = bool(rhs_metrics.get("exportable", False))
+    if lhs_exportable != rhs_exportable:
+        return lhs_exportable and not rhs_exportable
+    no_worse = all(
+        _json_float(lhs_metrics.get(metric, 0.0))
+        <= _json_float(rhs_metrics.get(metric, 0.0)) + 1e-12
+        for metric in PARETO_METRIC_KEYS
+    )
+    better = any(
+        _json_float(lhs_metrics.get(metric, 0.0)) + 1e-12
+        < _json_float(rhs_metrics.get(metric, 0.0))
+        for metric in PARETO_METRIC_KEYS
+    )
+    return bool(no_worse and better)
+
+
+def _profile_loss_receipt(
+    candidate: Mapping[str, object],
+    winner: Mapping[str, object],
+    *,
+    profile_name: str,
+) -> dict[str, object]:
+    candidate_metrics = cast(Mapping[str, object], candidate.get("metrics", {}))
+    winner_metrics = cast(Mapping[str, object], winner.get("metrics", {}))
+    candidate_scores = cast(Mapping[str, object], candidate.get("profile_scores", {}))
+    winner_scores = cast(Mapping[str, object], winner.get("profile_scores", {}))
+    lost_because = {
+        "profile_score_delta": _json_float(candidate_scores.get(profile_name, 0.0))
+        - _json_float(winner_scores.get(profile_name, 0.0)),
+        "score_delta": _json_float(candidate_metrics.get("score", 0.0))
+        - _json_float(winner_metrics.get("score", 0.0)),
+        "worst_distortion_delta": _json_float(candidate_metrics.get("worst_distortion", 0.0))
+        - _json_float(winner_metrics.get("worst_distortion", 0.0)),
+        "foldover_delta": _json_int(candidate_metrics.get("foldovers", 0))
+        - _json_int(winner_metrics.get("foldovers", 0)),
+        "boundary_deviation_delta": _json_float(candidate_metrics.get("boundary_deviation", 0.0))
+        - _json_float(winner_metrics.get("boundary_deviation", 0.0)),
+        "chart_count_delta": _json_int(candidate_metrics.get("chart_count", 0))
+        - _json_int(winner_metrics.get("chart_count", 0)),
+        "exportable_delta": int(bool(candidate_metrics.get("exportable", False)))
+        - int(bool(winner_metrics.get("exportable", False))),
+    }
+    return {
+        "profile": profile_name,
+        "lost_to_candidate_id": str(winner.get("candidate_id", "")),
+        "lost_to_variant_id": str(winner.get("variant_id", "")),
+        "lost_because": lost_because,
+    }
+
+
+def _variant_pareto_receipt(
+    *,
+    original_candidate_id: str,
+    original_metrics: Mapping[str, object],
+    variant_candidates: Sequence[Mapping[str, object]],
+) -> dict[str, object]:
+    candidates: list[dict[str, object]] = [
+        {
+            "candidate_id": original_candidate_id,
+            "variant_id": "original",
+            "metrics": dict(original_metrics),
+            "profile_scores": {
+                profile: _selection_profile_score(profile, original_metrics)
+                for profile in VARIANT_SELECTION_PROFILES
+            },
+        }
+    ]
+    for candidate in variant_candidates:
+        metrics = candidate.get("metrics")
+        if not isinstance(metrics, Mapping):
+            continue
+        candidate_id = str(candidate.get("candidate_id", candidate.get("variant_id", "candidate")))
+        candidates.append(
+            {
+                "candidate_id": candidate_id,
+                "variant_id": str(candidate.get("variant_id", candidate_id)),
+                "metrics": dict(metrics),
+                "profile_scores": {
+                    profile: _selection_profile_score(profile, metrics)
+                    for profile in VARIANT_SELECTION_PROFILES
+                },
+            }
+        )
+    frontier_ids = _pareto_frontier_candidate_ids(candidates)
+    profile_best_candidate_ids = {
+        profile: min(
+            candidates,
+            key=lambda candidate: float(candidate["profile_scores"][profile]),
+        )["candidate_id"]
+        for profile in VARIANT_SELECTION_PROFILES
+    }
+    best_default_candidate_id = profile_best_candidate_ids["default"]
+    default_winner = next(
+        candidate
+        for candidate in candidates
+        if candidate["candidate_id"] == best_default_candidate_id
+    )
+    return {
+        "schema_version": "smii.variant_pareto_receipt.v1",
+        "claim_boundary": "pareto_and_profile_scoring_are_diagnostic_only",
+        "tracked_metrics": list(PARETO_METRIC_KEYS),
+        "profiles": [
+            {
+                "profile": profile,
+                "weights": dict(VARIANT_SELECTION_PROFILES[profile]),
+            }
+            for profile in VARIANT_SELECTION_PROFILES
+        ],
+        "candidates": [
+            {
+                **candidate,
+                "pareto_frontier_member": candidate["candidate_id"] in frontier_ids,
+                "pareto_status": (
+                    "original"
+                    if candidate["candidate_id"] == original_candidate_id
+                    else ("frontier" if candidate["candidate_id"] in frontier_ids else "dominated")
+                ),
+                "pareto_useful": (
+                    candidate["candidate_id"] != original_candidate_id
+                    and _metric_comparison_receipt(original_metrics, candidate["metrics"])[
+                        "pareto_useful"
+                    ]
+                ),
+                "metric_comparison": (
+                    {}
+                    if candidate["candidate_id"] == original_candidate_id
+                    else _metric_comparison_receipt(original_metrics, candidate["metrics"])
+                ),
+                "selected_by_default_profile": candidate["candidate_id"]
+                == best_default_candidate_id,
+                "default_profile_selection": (
+                    {
+                        "profile": "default",
+                        "selected": True,
+                        "lost_to_candidate_id": None,
+                        "lost_to_variant_id": None,
+                        "lost_because": {},
+                    }
+                    if candidate["candidate_id"] == best_default_candidate_id
+                    else {
+                        "selected": False,
+                        **_profile_loss_receipt(
+                            candidate,
+                            default_winner,
+                            profile_name="default",
+                        ),
+                    }
+                ),
+            }
+            for candidate in candidates
+        ],
+        "frontier_candidate_ids": frontier_ids,
+        "profile_best_candidate_ids": profile_best_candidate_ids,
+    }
+
+
+def _operator_family_for_variant(variant_id: str) -> str:
+    if variant_id.startswith("failure_lens_patch"):
+        return "lens_patch"
+    if variant_id.startswith("pareto_guided_dart_wedge"):
+        return "dart_wedge"
+    if variant_id.startswith("failure_wedge_relief"):
+        return "dart_wedge"
+    if variant_id.startswith("failure_drain"):
+        return "drain_path"
+    if variant_id.startswith("failure_relief"):
+        return "relief_tree" if variant_id.endswith("_tree") else "relief_path"
+    if variant_id.startswith("branch_spoke"):
+        return "relief_path"
+    if variant_id.startswith("cutout"):
+        return "boundary_split"
+    if variant_id == "relief_split":
+        return "boundary_split"
+    if variant_id == "inserted_patch_only":
+        return "gusset_patch"
+    return variant_id
+
+
+def _tree_metric_from_deltas(
+    original_metrics: Mapping[str, object],
+    operator_metrics: Sequence[Mapping[str, object]],
+) -> dict[str, object]:
+    metrics: dict[str, object] = dict(original_metrics)
+    for key in PARETO_METRIC_KEYS:
+        original_value = _json_float(original_metrics.get(key, 0.0))
+        delta = sum(
+            _json_float(operator_metric.get(key, original_value)) - original_value
+            for operator_metric in operator_metrics
+        )
+        value = max(0.0, original_value + delta)
+        metrics[key] = int(round(value)) if key in {"foldovers", "chart_count"} else float(value)
+    metrics["exportable"] = all(
+        bool(operator_metric.get("exportable", False)) for operator_metric in operator_metrics
+    )
+    return metrics
+
+
+def _operator_tree_candidate(
+    *,
+    panel_id: str,
+    tree_index: int,
+    operators: Sequence[Mapping[str, object]],
+    original_metrics: Mapping[str, object],
+    materialized: bool,
+) -> dict[str, object]:
+    variant_ids = [str(operator["variant_id"]) for operator in operators]
+    operator_families = [_operator_family_for_variant(variant_id) for variant_id in variant_ids]
+    operator_metrics = [cast(Mapping[str, object], operator["metrics"]) for operator in operators]
+    metrics = (
+        dict(operator_metrics[0])
+        if len(operator_metrics) == 1
+        else _tree_metric_from_deltas(original_metrics, operator_metrics)
+    )
+    comparison = _metric_comparison_receipt(original_metrics, metrics)
+    hard_gate_passes = bool(
+        _json_float(metrics.get("score", float("inf")))
+        < _json_float(original_metrics.get("score", 0.0))
+        and _json_float(metrics.get("worst_distortion", float("inf")))
+        <= _json_float(original_metrics.get("worst_distortion", 0.0)) + 1e-12
+        and _json_int(metrics.get("foldovers", 0))
+        <= _json_int(original_metrics.get("foldovers", 0))
+        and bool(metrics.get("exportable", False))
+    )
+    blockers: list[str] = []
+    if _json_float(metrics.get("score", float("inf"))) >= _json_float(
+        original_metrics.get("score", 0.0)
+    ):
+        blockers.append("score_not_improved")
+    if (
+        _json_float(metrics.get("worst_distortion", float("inf")))
+        > _json_float(original_metrics.get("worst_distortion", 0.0)) + 1e-12
+    ):
+        blockers.append("distortion_regresses")
+    if _json_int(metrics.get("foldovers", 0)) > _json_int(original_metrics.get("foldovers", 0)):
+        blockers.append("foldovers_regress")
+    if not bool(metrics.get("exportable", False)):
+        blockers.append("not_exportable")
+    if not materialized:
+        blockers.append("operator_tree_not_sequentially_materialized")
+    return {
+        "tree_id": f"{panel_id}_T{tree_index:03d}",
+        "operators": variant_ids,
+        "operator_families": operator_families,
+        "operator_count": len(variant_ids),
+        "materialized": materialized,
+        "composition_mode": (
+            "measured_single_operator" if len(variant_ids) == 1 else "diagnostic_delta_composition"
+        ),
+        "metrics": metrics,
+        "metric_comparison": comparison,
+        "hard_gate_passes": hard_gate_passes,
+        "blockers": blockers,
+        "source_candidate_ids": [str(operator["candidate_id"]) for operator in operators],
+    }
+
+
+def _operator_basis_search_receipt(
+    *,
+    panel_id: str,
+    original_metrics: Mapping[str, object],
+    variant_candidates: Sequence[Mapping[str, object]],
+    max_depth: int = OPERATOR_BASIS_SEARCH_DEPTH,
+    beam_width: int = OPERATOR_BASIS_SEARCH_BEAM_WIDTH,
+) -> dict[str, object]:
+    measured_ops = [
+        {
+            "candidate_id": str(candidate.get("candidate_id", candidate.get("variant_id", ""))),
+            "variant_id": str(candidate.get("variant_id", "")),
+            "metrics": dict(cast(Mapping[str, object], candidate.get("metrics", {}))),
+        }
+        for candidate in variant_candidates
+        if isinstance(candidate.get("metrics"), Mapping)
+        and str(candidate.get("variant_id", "")) not in {"", "original"}
+    ]
+    tree_candidates: list[dict[str, object]] = []
+    tree_index = 0
+    for op_idx, operator in enumerate(measured_ops):
+        tree_candidates.append(
+            _operator_tree_candidate(
+                panel_id=panel_id,
+                tree_index=tree_index,
+                operators=[operator],
+                original_metrics=original_metrics,
+                materialized=True,
+            )
+        )
+        tree_index += 1
+        if max_depth < 2:
+            continue
+        for other in measured_ops[op_idx + 1 :]:
+            if _operator_family_for_variant(
+                str(operator["variant_id"])
+            ) == _operator_family_for_variant(str(other["variant_id"])):
+                continue
+            tree_candidates.append(
+                _operator_tree_candidate(
+                    panel_id=panel_id,
+                    tree_index=tree_index,
+                    operators=[operator, other],
+                    original_metrics=original_metrics,
+                    materialized=False,
+                )
+            )
+            tree_index += 1
+    ranked = sorted(
+        tree_candidates,
+        key=lambda candidate: (
+            _selection_profile_score("default", cast(Mapping[str, object], candidate["metrics"])),
+            _json_float(cast(Mapping[str, object], candidate["metrics"]).get("score", 0.0)),
+            _json_int(cast(Mapping[str, object], candidate["metrics"]).get("chart_count", 0)),
+            str(candidate["tree_id"]),
+        ),
+    )
+    retained_ids = {str(candidate["tree_id"]) for candidate in ranked[: max(1, int(beam_width))]}
+    frontier_ids = set(
+        _pareto_frontier_candidate_ids(
+            [
+                {
+                    "candidate_id": str(candidate["tree_id"]),
+                    "metrics": cast(Mapping[str, object], candidate["metrics"]),
+                }
+                for candidate in tree_candidates
+            ]
+        )
+    )
+    retained_ids.update(frontier_ids)
+    retained = [
+        candidate for candidate in tree_candidates if str(candidate["tree_id"]) in retained_ids
+    ]
+    profile_best_tree_ids = {
+        profile: (
+            min(
+                retained,
+                key=lambda candidate: _selection_profile_score(
+                    profile,
+                    cast(Mapping[str, object], candidate["metrics"]),
+                ),
+            )["tree_id"]
+            if retained
+            else None
+        )
+        for profile in VARIANT_SELECTION_PROFILES
+    }
+    promoted = [
+        candidate
+        for candidate in retained
+        if bool(candidate["hard_gate_passes"]) and bool(candidate["materialized"])
+    ]
+    basis_exhausted = bool(measured_ops and not promoted)
+    return {
+        "schema_version": "smii.operator_basis_search.v1",
+        "claim_boundary": "beam_search_is_diagnostic_until_operator_trees_are_sequentially_materialized",
+        "panel_id": panel_id,
+        "operator_basis": list(OPERATOR_BASIS_FAMILIES),
+        "search_depth": int(max_depth),
+        "beam_width": int(beam_width),
+        "initial_metrics": dict(original_metrics),
+        "candidate_count": len(tree_candidates),
+        "retained_candidate_count": len(retained),
+        "candidates": [
+            {
+                **candidate,
+                "pareto_frontier_member": str(candidate["tree_id"]) in frontier_ids,
+                "profile_scores": {
+                    profile: _selection_profile_score(
+                        profile,
+                        cast(Mapping[str, object], candidate["metrics"]),
+                    )
+                    for profile in VARIANT_SELECTION_PROFILES
+                },
+            }
+            for candidate in retained
+        ],
+        "best_by_profile": profile_best_tree_ids,
+        "promotion": 1 if promoted else 0,
+        "blockers": [] if promoted else ["operator_basis_search_no_promoted_tree"],
+        "basis_exhausted_at_depth": basis_exhausted,
+        "stronger_backend_open": basis_exhausted,
+        "larger_operator_basis_open": basis_exhausted,
+    }
+
+
 def _chart_group_backend_serializable(vertices: np.ndarray, panels: Sequence[PanelPatch]) -> bool:
     return all(
         bool(panel_chart_diagnostics(vertices, panel)["backend_serializable"]) for panel in panels
@@ -1416,6 +2474,659 @@ def _face_connected_components(
                     queue.append(neighbor)
         components.append(sorted(component))
     return components
+
+
+def _face_adjacency_and_boundary_faces(
+    faces: Sequence[tuple[int, int, int]],
+) -> tuple[dict[int, set[int]], set[int]]:
+    edge_to_faces: dict[Edge, list[int]] = defaultdict(list)
+    for face_idx, face in enumerate(faces):
+        for edge in _face_edges((face,)):
+            edge_to_faces[edge].append(face_idx)
+    adjacency: dict[int, set[int]] = {idx: set() for idx in range(len(faces))}
+    boundary_faces: set[int] = set()
+    for incident_faces in edge_to_faces.values():
+        if len(incident_faces) == 1:
+            boundary_faces.add(int(incident_faces[0]))
+            continue
+        for left_offset, left_idx in enumerate(incident_faces):
+            for right_idx in incident_faces[left_offset + 1 :]:
+                adjacency[int(left_idx)].add(int(right_idx))
+                adjacency[int(right_idx)].add(int(left_idx))
+    return adjacency, boundary_faces
+
+
+def _faces_touching_edges(
+    faces: Sequence[tuple[int, int, int]],
+    edge_set: Sequence[Edge],
+) -> list[int]:
+    if not faces or not edge_set:
+        return []
+    edge_lookup = {tuple(sorted((int(a), int(b)))) for a, b in edge_set}
+    touching: list[int] = []
+    for face_idx, face in enumerate(faces):
+        if any(edge in edge_lookup for edge in _face_edges((face,))):
+            touching.append(int(face_idx))
+    return touching
+
+
+def _shortest_face_path_to_targets(
+    faces: Sequence[tuple[int, int, int]],
+    source_indices: Sequence[int],
+    target_indices: Sequence[int],
+    face_costs: Sequence[float],
+) -> list[int]:
+    if not faces or not source_indices:
+        return []
+    adjacency, _ = _face_adjacency_and_boundary_faces(faces)
+    source_set = {int(index) for index in source_indices if 0 <= int(index) < len(faces)}
+    target_set = {int(index) for index in target_indices if 0 <= int(index) < len(faces)}
+    if not source_set:
+        return []
+    if not target_set:
+        return sorted(source_set)
+    best_cost: dict[int, float] = {}
+    parent: dict[int, int | None] = {}
+    heap: list[tuple[float, int]] = []
+    for index in sorted(source_set):
+        initial_cost = max(0.0, float(face_costs[index])) if index < len(face_costs) else 0.0
+        best_cost[index] = initial_cost
+        parent[index] = None
+        heap.append((initial_cost, index))
+    heapq.heapify(heap)
+    while heap:
+        cost, node = heapq.heappop(heap)
+        if cost > best_cost.get(node, float("inf")) + 1e-12:
+            continue
+        if node in target_set and node not in source_set:
+            path: list[int] = [node]
+            while parent[path[-1]] is not None:
+                path.append(int(parent[path[-1]]))
+            path.reverse()
+            return path
+        for neighbor in sorted(adjacency.get(node, ())):
+            step_cost = 1.0 + max(
+                0.0,
+                float(face_costs[neighbor]) if neighbor < len(face_costs) else 0.0,
+            )
+            next_cost = cost + step_cost
+            if next_cost + 1e-12 < best_cost.get(neighbor, float("inf")):
+                best_cost[neighbor] = next_cost
+                parent[neighbor] = node
+                heapq.heappush(heap, (next_cost, neighbor))
+    return sorted(source_set)
+
+
+def _face_path_cost(path: Sequence[int], face_costs: Sequence[float]) -> float:
+    return float(
+        len(path)
+        + sum(
+            max(0.0, float(face_costs[int(index)]))
+            for index in path
+            if 0 <= int(index) < len(face_costs)
+        )
+    )
+
+
+def _candidate_failure_wedge_reliefs(
+    panel: PanelPatch,
+    *,
+    source: str,
+    component_indices: Sequence[int],
+    boundary_faces: Sequence[int],
+    seam_boundary_faces: Sequence[int],
+    face_costs: Sequence[float],
+) -> list[dict[str, object]]:
+    if not panel.faces or len(panel.faces) < 3:
+        return []
+    source_set = {int(idx) for idx in component_indices if 0 <= int(idx) < len(panel.faces)}
+    if not source_set or len(source_set) >= len(panel.faces):
+        return []
+    apex_face = max(
+        source_set, key=lambda idx: float(face_costs[idx]) if idx < len(face_costs) else 0.0
+    )
+    target_specs: list[tuple[str, int]] = [
+        ("seam_boundary", int(idx))
+        for idx in sorted({int(idx) for idx in seam_boundary_faces})
+        if int(idx) not in source_set
+    ] + [
+        ("panel_boundary", int(idx))
+        for idx in sorted({int(idx) for idx in boundary_faces})
+        if int(idx) not in source_set
+    ]
+    leg_candidates: list[dict[str, object]] = []
+    seen_paths: set[tuple[int, ...]] = set()
+    for sink, target_idx in target_specs:
+        path = _shortest_face_path_to_targets(
+            panel.faces,
+            sorted(source_set),
+            [target_idx],
+            face_costs,
+        )
+        path_tuple = tuple(int(idx) for idx in path)
+        if (
+            not path_tuple
+            or path_tuple in seen_paths
+            or set(path_tuple).issubset(source_set)
+            or len(path_tuple) >= len(panel.faces)
+        ):
+            continue
+        seen_paths.add(path_tuple)
+        leg_candidates.append(
+            {
+                "sink": sink,
+                "target_face_index": int(target_idx),
+                "face_path": list(path_tuple),
+                "path_cost": _face_path_cost(path_tuple, face_costs),
+            }
+        )
+    if len(leg_candidates) < 2:
+        return []
+    leg_candidates.sort(
+        key=lambda leg: (
+            _drain_sink_priority(str(leg["sink"])),
+            float(leg["path_cost"]),
+            len(_json_list(leg["face_path"])),
+            _json_int(leg["target_face_index"]),
+        )
+    )
+    best_pair: tuple[Mapping[str, object], Mapping[str, object]] | None = None
+    best_rank: tuple[float, int, int, int] | None = None
+    for left_idx, left in enumerate(leg_candidates):
+        for right in leg_candidates[left_idx + 1 :]:
+            if _json_int(left["target_face_index"]) == _json_int(right["target_face_index"]):
+                continue
+            wedge_indices = sorted(
+                set(source_set)
+                | {int(idx) for idx in _json_list(left["face_path"])}
+                | {int(idx) for idx in _json_list(right["face_path"])}
+            )
+            if len(wedge_indices) >= len(panel.faces):
+                continue
+            rank = (
+                float(left["path_cost"]) + float(right["path_cost"]),
+                len(wedge_indices),
+                _drain_sink_priority(str(left["sink"])) + _drain_sink_priority(str(right["sink"])),
+                _json_int(left["target_face_index"]) + _json_int(right["target_face_index"]),
+            )
+            if best_rank is None or rank < best_rank:
+                best_rank = rank
+                best_pair = (left, right)
+    if best_pair is None:
+        return []
+    left, right = best_pair
+    wedge_indices = sorted(
+        set(source_set)
+        | {int(idx) for idx in _json_list(left["face_path"])}
+        | {int(idx) for idx in _json_list(right["face_path"])}
+    )
+    selected_faces = [panel.faces[idx] for idx in wedge_indices]
+    remainder_faces = [
+        face for idx, face in enumerate(panel.faces) if idx not in set(wedge_indices)
+    ]
+    estimated_chart_count = len(_panel_from_faces(panel, selected_faces)) + len(
+        _panel_from_faces(panel, remainder_faces)
+    )
+    if estimated_chart_count < 2 or estimated_chart_count > 4:
+        return []
+    leg_a = [int(idx) for idx in _json_list(left["face_path"])]
+    leg_b = [int(idx) for idx in _json_list(right["face_path"])]
+    return [
+        {
+            "source": source,
+            "operator_family": "wedge_relief",
+            "apex_face_index": int(apex_face),
+            "sink_pair": [str(left["sink"]), str(right["sink"])],
+            "leg_count": 2,
+            "leg_a_face_indices": leg_a,
+            "leg_b_face_indices": leg_b,
+            "failure_face_indices": sorted(source_set),
+            "wedge_face_indices": wedge_indices,
+            "edge_path": _drain_boundary_edges(selected_faces, remainder_faces),
+            "path_length": int(len(set(leg_a) | set(leg_b))),
+            "estimated_chart_count": int(estimated_chart_count),
+            "creates_wedge_chart": True,
+            "separates_bad_region": True,
+            "face_partition_preserves_faces": True,
+        }
+    ]
+
+
+def _relief_path_neighbor_faces(
+    faces: Sequence[tuple[int, int, int]],
+    selected_indices: Sequence[int],
+) -> list[int]:
+    selected_set = {int(idx) for idx in selected_indices if 0 <= int(idx) < len(faces)}
+    if not selected_set:
+        return []
+    adjacency, _ = _face_adjacency_and_boundary_faces(faces)
+    neighbors: set[int] = set()
+    for face_idx in selected_set:
+        neighbors.update(int(idx) for idx in adjacency.get(face_idx, ()) if idx not in selected_set)
+    return sorted(neighbors)
+
+
+def _guided_dart_sink(
+    face_idx: int, boundary_faces: set[int], seam_boundary_faces: set[int]
+) -> str:
+    if face_idx in seam_boundary_faces:
+        return "seam_boundary"
+    if face_idx in boundary_faces:
+        return "panel_boundary"
+    return "relief_boundary"
+
+
+def _candidate_guided_dart_wedges(
+    panel: PanelPatch,
+    *,
+    source: str,
+    relief_path: Mapping[str, object],
+    boundary_faces: Sequence[int],
+    seam_boundary_faces: Sequence[int],
+    face_costs: Sequence[float],
+) -> list[dict[str, object]]:
+    if not panel.faces or len(panel.faces) < 3:
+        return []
+    failure_indices = sorted(
+        {
+            int(idx)
+            for idx in _json_list(relief_path.get("failure_face_indices", []))
+            if 0 <= int(idx) < len(panel.faces)
+        }
+    )
+    if not failure_indices or len(failure_indices) >= len(panel.faces):
+        return []
+    neighbor_faces = _relief_path_neighbor_faces(panel.faces, failure_indices)
+    if len(neighbor_faces) < 2:
+        return []
+    boundary_set = {int(idx) for idx in boundary_faces if 0 <= int(idx) < len(panel.faces)}
+    seam_boundary_set = {
+        int(idx) for idx in seam_boundary_faces if 0 <= int(idx) < len(panel.faces)
+    }
+    ranked_neighbors = sorted(
+        neighbor_faces,
+        key=lambda idx: (
+            _drain_sink_priority(_guided_dart_sink(idx, boundary_set, seam_boundary_set)),
+            float(face_costs[idx]) if idx < len(face_costs) else 0.0,
+            idx,
+        ),
+    )[:12]
+    apex_face = max(
+        failure_indices,
+        key=lambda idx: float(face_costs[idx]) if idx < len(face_costs) else 0.0,
+    )
+    best: dict[str, object] | None = None
+    best_rank: tuple[int, float, int, int] | None = None
+    for left_offset, left_idx in enumerate(ranked_neighbors):
+        for right_idx in ranked_neighbors[left_offset + 1 :]:
+            if left_idx == right_idx:
+                continue
+            leg_a = _shortest_face_path_to_targets(
+                panel.faces,
+                [apex_face],
+                [left_idx],
+                face_costs,
+            )
+            leg_b = _shortest_face_path_to_targets(
+                panel.faces,
+                [apex_face],
+                [right_idx],
+                face_costs,
+            )
+            if not leg_a or not leg_b:
+                continue
+            wedge_indices = sorted(
+                {int(apex_face)}
+                | {int(idx) for idx in leg_a}
+                | {int(idx) for idx in leg_b}
+                | {int(left_idx), int(right_idx)}
+            )
+            if len(wedge_indices) >= len(panel.faces):
+                continue
+            if len(wedge_indices) > max(64, len(panel.faces) // 20):
+                continue
+            selected_faces = [panel.faces[idx] for idx in wedge_indices]
+            remainder_faces = [
+                face for idx, face in enumerate(panel.faces) if idx not in set(wedge_indices)
+            ]
+            estimated_chart_count = len(_panel_from_faces(panel, selected_faces)) + len(
+                _panel_from_faces(panel, remainder_faces)
+            )
+            if estimated_chart_count < 2 or estimated_chart_count > 4:
+                continue
+            sink_pair = [
+                _guided_dart_sink(left_idx, boundary_set, seam_boundary_set),
+                _guided_dart_sink(right_idx, boundary_set, seam_boundary_set),
+            ]
+            rank = (
+                sum(_drain_sink_priority(sink) for sink in sink_pair),
+                _face_path_cost(leg_a, face_costs) + _face_path_cost(leg_b, face_costs),
+                len(wedge_indices),
+                int(left_idx) + int(right_idx),
+            )
+            candidate = {
+                "source": source,
+                "operator_family": "guided_dart_wedge",
+                "guide_variant": "failure_relief_path",
+                "guide_edge_path": _json_list(relief_path.get("edge_path", [])),
+                "apex_face_index": int(apex_face),
+                "sink_pair": sink_pair,
+                "leg_count": 2,
+                "leg_a_face_indices": [int(idx) for idx in leg_a],
+                "leg_b_face_indices": [int(idx) for idx in leg_b],
+                "failure_face_indices": failure_indices,
+                "covered_failure_face_indices": [
+                    int(idx) for idx in wedge_indices if idx in set(failure_indices)
+                ],
+                "wedge_face_indices": wedge_indices,
+                "edge_path": _drain_boundary_edges(selected_faces, remainder_faces),
+                "path_length": int(len(set(leg_a) | set(leg_b))),
+                "estimated_chart_count": int(estimated_chart_count),
+                "creates_dart_chart": True,
+                "creates_wedge_chart": True,
+                "derived_from_single_path": True,
+                "separates_bad_region": True,
+                "face_partition_preserves_faces": True,
+            }
+            if best_rank is None or rank < best_rank:
+                best_rank = rank
+                best = candidate
+    return [] if best is None else [best]
+
+
+def _bounded_lens_support_faces(
+    faces: Sequence[tuple[int, int, int]],
+    seeds: Sequence[int],
+    face_costs: Sequence[float],
+    *,
+    max_faces: int,
+) -> list[int]:
+    """Return a connected, high-cost support around measured failure seeds."""
+
+    valid_seeds = {int(idx) for idx in seeds if 0 <= int(idx) < len(faces) and len(faces) > 1}
+    if not valid_seeds:
+        return []
+    adjacency, _ = _face_adjacency_and_boundary_faces(faces)
+    anchor = max(
+        valid_seeds,
+        key=lambda idx: (float(face_costs[idx]) if idx < len(face_costs) else 0.0, -idx),
+    )
+    selected = {int(anchor)}
+    frontier = set(adjacency.get(anchor, ()))
+    target_size = max(1, min(int(max_faces), len(faces) - 1))
+    preferred = set(valid_seeds)
+    while frontier and len(selected) < target_size:
+        next_face = min(
+            frontier,
+            key=lambda idx: (
+                0 if idx in preferred else 1,
+                -(float(face_costs[idx]) if idx < len(face_costs) else 0.0),
+                idx,
+            ),
+        )
+        frontier.remove(next_face)
+        selected.add(int(next_face))
+        frontier.update(
+            int(neighbor)
+            for neighbor in adjacency.get(int(next_face), ())
+            if int(neighbor) not in selected
+        )
+    return sorted(selected)
+
+
+def _candidate_failure_lens_patches(
+    panel: PanelPatch,
+    *,
+    source: str,
+    relief_path: Mapping[str, object],
+    face_costs: Sequence[float],
+) -> list[dict[str, object]]:
+    if not panel.faces or len(panel.faces) < 3:
+        return []
+    failure_indices = sorted(
+        {
+            int(idx)
+            for idx in _json_list(relief_path.get("failure_face_indices", []))
+            if 0 <= int(idx) < len(panel.faces)
+        }
+    )
+    if not failure_indices or len(failure_indices) >= len(panel.faces):
+        return []
+    neighbor_faces = _relief_path_neighbor_faces(panel.faces, failure_indices)
+    seed_pool = sorted(set(failure_indices) | set(neighbor_faces))
+    max_faces = max(8, min(128, len(panel.faces) // 8 if len(panel.faces) >= 80 else 16))
+    max_faces = min(max_faces, len(panel.faces) - 1)
+    patch_indices = _bounded_lens_support_faces(
+        panel.faces,
+        seed_pool,
+        face_costs,
+        max_faces=max_faces,
+    )
+    if not patch_indices or len(patch_indices) >= len(panel.faces):
+        return []
+    selected_faces = [panel.faces[idx] for idx in patch_indices]
+    remainder_faces = [
+        face for idx, face in enumerate(panel.faces) if idx not in set(patch_indices)
+    ]
+    patch_charts = _panel_from_faces(panel, selected_faces)
+    remainder_charts = _panel_from_faces(panel, remainder_faces)
+    estimated_chart_count = len(patch_charts) + len(remainder_charts)
+    if len(patch_charts) != 1 or estimated_chart_count < 2 or estimated_chart_count > 4:
+        return []
+    covered_failure = [int(idx) for idx in patch_indices if idx in set(failure_indices)]
+    if not covered_failure:
+        return []
+    return [
+        {
+            "source": source,
+            "operator_family": "lens_patch",
+            "guide_variant": "failure_relief_path",
+            "patch_shape": "lens",
+            "patch_face_indices": patch_indices,
+            "support_region_face_indices": patch_indices,
+            "failure_face_indices": failure_indices,
+            "covered_failure_face_indices": covered_failure,
+            "attachment_boundary_edges": _drain_boundary_edges(selected_faces, remainder_faces),
+            "edge_path": _drain_boundary_edges(selected_faces, remainder_faces),
+            "estimated_chart_count": int(estimated_chart_count),
+            "creates_patch_chart": True,
+            "replaces_parent_region": True,
+            "boundary_compatible": True,
+            "allowance_rule": "patch_boundary_allowance",
+            "face_partition_preserves_faces": True,
+            "no_unexplained_face_loss": True,
+        }
+    ]
+
+
+def _wedge_candidate_rank(candidate: Mapping[str, object]) -> tuple[int, int, int, int]:
+    sink_pair = [str(sink) for sink in _json_list(candidate.get("sink_pair", []))]
+    sink_rank = sum(_drain_sink_priority(sink) for sink in sink_pair)
+    failure_faces = len(_json_list(candidate.get("failure_face_indices", [])))
+    path_length = _json_int(candidate.get("path_length", 0))
+    wedge_length = len(_json_list(candidate.get("wedge_face_indices", [])))
+    return (
+        sink_rank,
+        -failure_faces,
+        path_length,
+        wedge_length,
+    )
+
+
+def _selected_failure_wedge_reliefs(
+    failure_field: Mapping[str, object] | None,
+    *,
+    max_wedges: int = 1,
+) -> list[dict[str, object]]:
+    if failure_field is None:
+        return []
+    candidates = [
+        path
+        for path in _json_list(failure_field.get("candidate_wedge_reliefs", []))
+        if isinstance(path, Mapping) and bool(path.get("creates_wedge_chart", False))
+    ]
+    if not candidates:
+        return []
+    ranked = sorted(candidates, key=_wedge_candidate_rank)
+    selected: list[dict[str, object]] = []
+    covered: set[int] = set()
+    for candidate in ranked:
+        wedge_indices = {
+            int(idx)
+            for idx in _json_list(candidate.get("wedge_face_indices", []))
+            if int(idx) not in covered
+        }
+        if not wedge_indices:
+            continue
+        selected.append(dict(candidate))
+        covered.update(wedge_indices)
+        if len(selected) >= max(1, int(max_wedges)):
+            break
+    return selected
+
+
+def _guided_dart_candidate_rank(candidate: Mapping[str, object]) -> tuple[int, int, int, int]:
+    sink_pair = [str(sink) for sink in _json_list(candidate.get("sink_pair", []))]
+    sink_rank = sum(_drain_sink_priority(sink) for sink in sink_pair)
+    failure_faces = len(_json_list(candidate.get("failure_face_indices", [])))
+    path_length = _json_int(candidate.get("path_length", 0))
+    wedge_length = len(_json_list(candidate.get("wedge_face_indices", [])))
+    return (
+        sink_rank,
+        -failure_faces,
+        path_length,
+        wedge_length,
+    )
+
+
+def _selected_guided_dart_wedges(
+    failure_field: Mapping[str, object] | None,
+    *,
+    max_wedges: int = 1,
+) -> list[dict[str, object]]:
+    if failure_field is None:
+        return []
+    candidates = [
+        path
+        for path in _json_list(failure_field.get("candidate_guided_dart_wedges", []))
+        if isinstance(path, Mapping) and bool(path.get("creates_dart_chart", False))
+    ]
+    if not candidates:
+        return []
+    ranked = sorted(candidates, key=_guided_dart_candidate_rank)
+    selected: list[dict[str, object]] = []
+    covered: set[int] = set()
+    for candidate in ranked:
+        wedge_indices = {
+            int(idx)
+            for idx in _json_list(candidate.get("wedge_face_indices", []))
+            if int(idx) not in covered
+        }
+        if not wedge_indices:
+            continue
+        selected.append(dict(candidate))
+        covered.update(wedge_indices)
+        if len(selected) >= max(1, int(max_wedges)):
+            break
+    return selected
+
+
+def _lens_patch_candidate_rank(candidate: Mapping[str, object]) -> tuple[int, int, int, int]:
+    failure_faces = len(_json_list(candidate.get("failure_face_indices", [])))
+    covered_failure_faces = len(_json_list(candidate.get("covered_failure_face_indices", [])))
+    patch_faces = len(_json_list(candidate.get("patch_face_indices", [])))
+    estimated_chart_count = _json_int(candidate.get("estimated_chart_count", 99))
+    return (
+        -covered_failure_faces,
+        -failure_faces,
+        patch_faces,
+        estimated_chart_count,
+    )
+
+
+def _selected_failure_lens_patches(
+    failure_field: Mapping[str, object] | None,
+    *,
+    max_patches: int = 1,
+) -> list[dict[str, object]]:
+    if failure_field is None:
+        return []
+    candidates = [
+        patch
+        for patch in _json_list(failure_field.get("candidate_lens_patches", []))
+        if isinstance(patch, Mapping) and bool(patch.get("creates_patch_chart", False))
+    ]
+    if not candidates:
+        return []
+    ranked = sorted(candidates, key=_lens_patch_candidate_rank)
+    selected: list[dict[str, object]] = []
+    covered: set[int] = set()
+    for candidate in ranked:
+        patch_indices = {
+            int(idx)
+            for idx in _json_list(candidate.get("patch_face_indices", []))
+            if int(idx) not in covered
+        }
+        if not patch_indices:
+            continue
+        selected.append(dict(candidate))
+        covered.update(patch_indices)
+        if len(selected) >= max(1, int(max_patches)):
+            break
+    return selected
+
+
+def _drain_sink_priority(sink: str) -> int:
+    if sink == "seam_boundary":
+        return 0
+    if sink == "panel_boundary":
+        return 1
+    return 2
+
+
+def _drain_candidate_rank(candidate: Mapping[str, object]) -> tuple[int, int, int, int]:
+    sink = str(candidate.get("sink", "panel_boundary"))
+    failure_faces = len(_json_list(candidate.get("failure_face_indices", [])))
+    path_length = _json_int(candidate.get("path_length", 0))
+    drain_length = len(_json_list(candidate.get("drain_face_indices", [])))
+    return (
+        _drain_sink_priority(sink),
+        -failure_faces,
+        path_length,
+        drain_length,
+    )
+
+
+def _selected_failure_drain_paths(
+    failure_field: Mapping[str, object] | None,
+    *,
+    max_paths: int = 1,
+) -> list[dict[str, object]]:
+    if failure_field is None:
+        return []
+    candidates = [
+        path
+        for path in _json_list(failure_field.get("candidate_drain_paths", []))
+        if isinstance(path, Mapping) and bool(path.get("drains_to_boundary", False))
+    ]
+    if not candidates:
+        return []
+    ranked = sorted(candidates, key=_drain_candidate_rank)
+    selected: list[dict[str, object]] = []
+    covered: set[int] = set()
+    for candidate in ranked:
+        drain_indices = {
+            int(idx)
+            for idx in _json_list(candidate.get("drain_face_indices", []))
+            if int(idx) not in covered
+        }
+        if not drain_indices:
+            continue
+        selected.append(dict(candidate))
+        covered.update(drain_indices)
+        if len(selected) >= max(1, int(max_paths)):
+            break
+    return selected
 
 
 def _panel_from_faces(
@@ -1821,6 +3532,8 @@ def unwrap_panels(
         )
     panel_unwrap_blockers.extend(correction_blockers)
     panel_unwrap_blockers = list(dict.fromkeys(panel_unwrap_blockers))
+    if corrected_residuals is not None and len(corrected_residuals) != len(per_panel_distortion):
+        corrected_residuals = [float(value) for value in per_panel_distortion]
     worst_corrected = float(max(corrected_residuals)) if corrected_residuals is not None else None
     mean_corrected = (
         float(sum(corrected_residuals) / len(corrected_residuals))
@@ -1967,6 +3680,7 @@ def unwrap_panels(
             panels=per_panel_patches,
             uv_by_panel=per_panel_uv,
             selected_backends=selected_backend_per_panel,
+            seam_edges=seam_edges,
             distortion_threshold=distortion_threshold,
         )
         (
@@ -1995,6 +3709,7 @@ def unwrap_panels(
         next_patches: list[PanelPatch] = []
         accepted_parent_indices: list[int] = []
         chart_domain_decisions: list[dict[str, object]] = []
+        operator_basis_search_receipts: list[dict[str, object]] = []
         for parent_idx, original_panel in enumerate(original_patches):
             parent_variant_ids = sorted(
                 {
@@ -2015,6 +3730,33 @@ def unwrap_panels(
                 original_candidates[parent_idx],
                 original_selected_backends[parent_idx],
             )
+            original_metrics = {
+                "score": float(original_score),
+                "worst_distortion": float(original_distortion),
+                "foldovers": int(
+                    _selected_candidate_metric(
+                        original_candidates[parent_idx],
+                        original_selected_backends[parent_idx],
+                        "foldovers",
+                    )
+                ),
+                "boundary_deviation": float(
+                    _selected_candidate_metric(
+                        original_candidates[parent_idx],
+                        original_selected_backends[parent_idx],
+                        "boundary_deviation",
+                    )
+                ),
+                "chart_count": 1,
+                "exportable": bool(
+                    _selected_candidate_metric(
+                        original_candidates[parent_idx],
+                        original_selected_backends[parent_idx],
+                        "exportable",
+                        default=False,
+                    )
+                ),
+            }
             variant_results: list[dict[str, object]] = []
             for variant_id in parent_variant_ids:
                 split_entries = [
@@ -2074,6 +3816,7 @@ def unwrap_panels(
                         for panel, _uv, _distortion, _candidates, _backend, _kind in group_results
                     ],
                 )
+                variant_metrics = _variant_metrics_from_group_results(group_results)
                 split_requested = any(
                     kind != "original_chart"
                     for _panel, _uv, _distortion, _candidates, _backend, kind in group_results
@@ -2094,7 +3837,75 @@ def unwrap_panels(
                         "split_worst_distortion": split_worst_distortion,
                         "split_chart_count": len(group_results),
                         "group_results": group_results,
+                        "candidate_id": f"P{parent_idx}.{variant_id}",
+                        "metrics": variant_metrics,
+                        "metric_comparison": _metric_comparison_receipt(
+                            original_metrics,
+                            variant_metrics,
+                        ),
                     }
+                )
+            pareto_receipt = _variant_pareto_receipt(
+                original_candidate_id=f"P{parent_idx}.original",
+                original_metrics=original_metrics,
+                variant_candidates=[
+                    {
+                        "candidate_id": str(result["candidate_id"]),
+                        "variant_id": str(result["variant_id"]),
+                        "metrics": result["metrics"],
+                    }
+                    for result in variant_results
+                ],
+            )
+            operator_basis_search_receipt = _operator_basis_search_receipt(
+                panel_id=f"P{parent_idx}",
+                original_metrics=original_metrics,
+                variant_candidates=[
+                    {
+                        "candidate_id": str(result["candidate_id"]),
+                        "variant_id": str(result["variant_id"]),
+                        "metrics": result["metrics"],
+                    }
+                    for result in variant_results
+                ],
+            )
+            operator_basis_search_receipts.append(operator_basis_search_receipt)
+            frontier_candidate_ids = set(
+                _json_list(pareto_receipt.get("frontier_candidate_ids", []))
+            )
+            profile_best_candidate_ids = cast(
+                Mapping[str, object],
+                pareto_receipt.get("profile_best_candidate_ids", {}),
+            )
+            pareto_candidates = cast(Sequence[Mapping[str, object]], pareto_receipt["candidates"])
+            variant_profile_scores = {
+                str(candidate["candidate_id"]): cast(
+                    Mapping[str, object], candidate["profile_scores"]
+                )
+                for candidate in pareto_candidates
+            }
+            variant_default_profile_selection = {
+                str(candidate["candidate_id"]): cast(
+                    Mapping[str, object], candidate["default_profile_selection"]
+                )
+                for candidate in pareto_candidates
+            }
+            for result in variant_results:
+                candidate_id = str(result["candidate_id"])
+                result["pareto_frontier_member"] = candidate_id in frontier_candidate_ids
+                result["pareto_useful"] = bool(result["metric_comparison"]["pareto_useful"])
+                result["pareto_status"] = (
+                    "frontier" if result["pareto_frontier_member"] else "dominated"
+                )
+                result["profile_scores"] = {
+                    profile: float(score)
+                    for profile, score in variant_profile_scores.get(candidate_id, {}).items()
+                }
+                result["selected_by_default_profile"] = candidate_id == str(
+                    profile_best_candidate_ids.get("default")
+                )
+                result["default_profile_selection"] = dict(
+                    variant_default_profile_selection.get(candidate_id, {})
                 )
             acceptable_variants = [
                 result for result in variant_results if bool(result["acceptable"])
@@ -2116,6 +3927,7 @@ def unwrap_panels(
                     ),
                     "accepted": accept_split,
                     "original_score": original_score,
+                    "original_metrics": original_metrics,
                     "split_score": None
                     if accepted_variant is None
                     else float(accepted_variant["split_score"]),
@@ -2129,6 +3941,9 @@ def unwrap_panels(
                     "split_backend_serializable": None
                     if accepted_variant is None
                     else bool(accepted_variant["split_valid"]),
+                    "pareto_receipt": pareto_receipt,
+                    "operator_basis_search_receipt": operator_basis_search_receipt,
+                    "profile_best_candidate_ids": profile_best_candidate_ids,
                     "variants": [
                         {
                             "variant_id": str(result["variant_id"]),
@@ -2138,6 +3953,17 @@ def unwrap_panels(
                             "split_score": float(result["split_score"]),
                             "split_worst_distortion": float(result["split_worst_distortion"]),
                             "split_chart_count": int(result["split_chart_count"]),
+                            "candidate_id": str(result["candidate_id"]),
+                            "metrics": result["metrics"],
+                            "metric_comparison": result["metric_comparison"],
+                            "pareto_frontier_member": bool(result["pareto_frontier_member"]),
+                            "pareto_useful": bool(result["pareto_useful"]),
+                            "pareto_status": str(result["pareto_status"]),
+                            "profile_scores": result["profile_scores"],
+                            "selected_by_default_profile": bool(
+                                result["selected_by_default_profile"]
+                            ),
+                            "default_profile_selection": result["default_profile_selection"],
                         }
                         for result in variant_results
                     ],
@@ -2178,6 +4004,13 @@ def unwrap_panels(
         selected_backend_per_panel = next_selected_backends
         per_panel_grain = next_grain
         per_panel_patches = next_patches
+        corrected_residuals = _expanded_corrected_residuals(
+            corrected_residuals,
+            chart_parent_indices,
+            per_panel_distortion,
+        )
+        if correction_tree_materialization is not None:
+            corrected_residuals = None
         panels_all_disks = panels_all_disks and all(
             bool(panel_chart_diagnostics(vertices, panel)["backend_serializable"])
             for panel in per_panel_patches
@@ -2188,6 +4021,7 @@ def unwrap_panels(
                 "chart_panel_count": len(per_panel_patches),
                 "accepted_parent_indices": accepted_parent_indices,
                 "parent_serialization_failure_fields": parent_serialization_failure_fields,
+                "operator_basis_search_receipts": operator_basis_search_receipts,
                 "chart_domain_decisions": chart_domain_decisions,
             }
         worst = float(max(per_panel_distortion))
@@ -2210,6 +4044,7 @@ def unwrap_panels(
         panels=per_panel_patches,
         uv_by_panel=per_panel_uv,
         selected_backends=selected_backend_per_panel,
+        seam_edges=seam_edges,
         distortion_threshold=distortion_threshold,
     )
     panel_serialization_competitions = [
