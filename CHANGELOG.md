@@ -47,6 +47,12 @@
     single-operator metric deltas,
   - records profile winners, Pareto frontier membership, and exhausted-basis
     blockers without claiming true sequential tree rematerialization.
+- Measured the operator-basis-search rung on the Afflec/P3 chain:
+  - accepted parents remain P1 `cutout_r1` and P3 `relief_split`,
+  - P0 and P2 report `basis_exhausted_at_depth=true` at depth 2 under the
+    current local operator basis,
+  - retained P2 diagnostic trees preserve the useful path/dart tradeoff but do
+    not clear the unchanged hard score/distortion/foldover gate.
 - Added the finished seam/body atlas receipt surface:
   - added `smii.seams.seam_derivation.FinishedSeamReceipt` and
     `derive_finished_seams` to compose promoted body, ROM, fabric, basis,

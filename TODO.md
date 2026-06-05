@@ -150,6 +150,12 @@ Afflec local reference-image manifest: `docs/roadmap/afflec_reference_images_202
   retain default/profile/Pareto winners, and mark whether the declared basis is
   exhausted for hard panels. This first version must be explicit that composed
   trees are diagnostic beam candidates, not true sequential rematerializations.
+- Operator-basis-search evidence is recorded at
+  `outputs/demo/afflec_receipted_curated_20260605_143059/panels_fabric_operator_basis_search/panel_unwrap_receipt.json`:
+  P0 and P2 are exhausted at depth 2 under the current measured local operator
+  basis; P1/P3 still promote via the same single materialized surgeries. Next
+  implementation work should be true sequential operator-tree materialization
+  or the BT369-native serializer, not another isolated local variant.
 - Start the native serializer fallback after the search receipt exists:
   prototype `bt369_pattern_serializer` over operator-prefix/fabric-cone cells
   for P0/P2 if the depth-limited basis remains exhausted under current

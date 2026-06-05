@@ -391,3 +391,10 @@ Date: 2026-02-06
   tree rematerialization. That keeps native operator-tree materialization and
   the BT369 pattern serializer as explicit next rungs rather than hidden
   assumptions.
+- Operator-basis-search Afflec/P3 rerun:
+  `outputs/demo/afflec_receipted_curated_20260605_143059/panels_fabric_operator_basis_search/panel_unwrap_receipt.json`.
+  Accepted parents remain P1 `cutout_r1` and P3 `relief_split`; P0 and P2 both
+  report `basis_exhausted_at_depth=true` at depth 2. P2's retained diagnostic
+  trees keep the useful relief/dart geometry evidence, but none can promote
+  because measured singles still miss the hard gate and composed trees are not
+  sequentially materialized.
