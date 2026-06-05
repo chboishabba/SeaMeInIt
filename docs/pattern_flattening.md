@@ -201,6 +201,12 @@ P3 now separates this into a dedicated cut-topology receipt before unwrap:
   P0 generated a lower-score `failure_relief_path` candidate but failed chart
   validity; P2 generated a backend-valid candidate with lower worst distortion
   but higher score. Both were rejected by the unchanged acceptance rule.
+- A follow-up run at
+  `outputs/p3_afflec_failure_relief_20260605/panel_unwrap_fabric_tree/panel_unwrap_receipt.json`
+  now emits `failure_relief_tree` as a distinct materialized variant label when
+  the failure field is partitioned into multiple disconnected components. On the
+  current Afflec data it still does not promote, but the receipt now exposes the
+  tree-shaped search space explicitly.
 
 The distinction is intentional: a high-curvature dart candidate is not a cut
 mesh boundary and does not promote panel unwrap. It is the next input for the
