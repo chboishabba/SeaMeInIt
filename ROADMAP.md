@@ -1,5 +1,9 @@
-
 # Wave 3 - Undersuit pattern generation
+
+Status note: this is a historical/lane-specific roadmap. Current priority
+decisions should start from `docs/roadmap/index.md`. The panel work below is
+still relevant, but the current production blocker is Gate 0 body trust and
+reproducible quality/governance gates.
 
 Currently we're struggling with producing biblically accurate bodysuit patterns which are entirely unfeasible to sew.
 

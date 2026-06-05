@@ -154,18 +154,18 @@ def compute_seam_costs(
         raise ValueError("ROM fields hash does not match ROMFieldReceipt.fields_hash.")
 
     correspondence_hash: str | None = None
-    if solve_domain == "B_v9438":
+    if solve_domain.startswith("B_"):
         if correspondence_receipt_path is None:
-            raise ValueError("B_v9438 solve requires --correspondence-receipt.")
+            raise ValueError(f"{solve_domain} solve requires --correspondence-receipt.")
         corr = load_correspondence_receipt(correspondence_receipt_path)
         if not can_consume_correspondence_receipt(corr, "seam_cost_field"):
             raise ValueError(
                 f"CorrespondenceReceipt not promoted ({corr.promotion}). "
-                "Use solve_domain=A_v3240 or fix transfer first."
+                "Use a native A_v* solve_domain or fix transfer first."
             )
         correspondence_hash = _sha256_file(correspondence_receipt_path)
-    elif solve_domain != "A_v3240":
-        raise ValueError("solve_domain must be A_v3240 or B_v9438.")
+    elif not solve_domain.startswith("A_"):
+        raise ValueError("solve_domain must be a native A_v* or transfer-backed B_v* domain.")
 
     vertices, faces = _load_mesh(mesh_path)
     vertex_count = int(vertices.shape[0])
@@ -271,7 +271,7 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--correspondence-receipt", type=Path, default=None)
     parser.add_argument(
         "--solve-domain",
-        choices=("A_v3240", "B_v9438"),
+        choices=("A_v3240", "A_v9384", "B_v9438"),
         default="A_v3240",
     )
     parser.add_argument(

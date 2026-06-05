@@ -11,13 +11,18 @@ import numpy as np
 
 from smii.meshing.body_carrier_receipt import BodyCarrierReceipt
 
+BODY_HASH_A = "a" * 64
+BODY_HASH_B = "b" * 64
+BODY_HASH_C = "c" * 64
+BODY_HASH_D = "d" * 64
+
 
 def _body_payload(*, promotion: int = 1, vertex_count: int = 4) -> dict[str, object]:
     return {
-        "source_hash": "source-abc",
-        "raw_reprojection_hash": "raw-def",
-        "refined_pre_repair_hash": "refined-ghi",
-        "repaired_export_hash": "repaired-jkl",
+        "source_hash": BODY_HASH_A,
+        "raw_reprojection_hash": BODY_HASH_B,
+        "refined_pre_repair_hash": BODY_HASH_C,
+        "repaired_export_hash": BODY_HASH_D,
         "vertex_count": vertex_count,
         "face_count": 2,
         "topology_label": f"A_v{vertex_count}",
@@ -110,9 +115,7 @@ def test_generate_canonical_basis_rejects_unpromoted_body_receipt(
     receipt_path = tmp_path / "basis_receipt.json"
 
     _write_vertices(vertices_path)
-    BodyCarrierReceipt.from_mapping(_body_payload(promotion=0)).to_json(
-        body_receipt_path
-    )
+    BodyCarrierReceipt.from_mapping(_body_payload(promotion=0)).to_json(body_receipt_path)
 
     result = _run_basis_script(
         "--vertices",
@@ -131,4 +134,3 @@ def test_generate_canonical_basis_rejects_unpromoted_body_receipt(
     assert "BodyCarrierReceipt not promoted" in result.stderr
     assert not basis_path.exists()
     assert not receipt_path.exists()
-

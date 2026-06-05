@@ -14,7 +14,7 @@ DEFAULT_SEAM_COST_BLOCKED_CONSUMERS = (
     "panel_unwrap",
     "manufacturing",
 )
-SOLVE_DOMAINS = ("A_v3240", "B_v9438")
+SOLVE_DOMAINS = ("A_v3240", "A_v9384", "B_v9438")
 
 __all__ = [
     "DEFAULT_SEAM_COST_BLOCKED_CONSUMERS",

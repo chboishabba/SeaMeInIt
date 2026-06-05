@@ -106,6 +106,82 @@ Date: 2026-02-06
   - distilled roadmap note recorded at `docs/solver_kernel_roadmap_note_20260310.md`.
   - morphology debugging follow-through recorded in `docs/seam_pipeline_intended_vs_observed.md` under "Morphology Taxonomy For Debugging".
 
+## Dart / Shaping Formalism Refresh (2026-06-04)
+- Resolved archived thread metadata with `robust-context-fetch` from the canonical local DB `/home/c/chat_archive.sqlite`; no web fetch was used:
+  - title: `Repo planning blockers`
+  - online UUID: `6a03e573-caa4-83ec-83ed-af05b723ed4c`
+  - canonical thread id: `9382ee2cba0c06880b8d351e2055acb49e97a12d`
+  - source used: `db`
+  - relevant range: stitched lines `16670-16830`
+- Supporting local DB context:
+  - `Seam Walker Troubleshooting`
+    - online UUID: `698d5e21-6d54-839a-a127-088c1dc21227`
+    - canonical thread id: `0eff7f41332ca191629d9246ad3677518461fa55`
+    - key point: open seams can be valid for plackets/darts/partial openings; cut-graph optimization should include cone/dart support so curvature can be concentrated instead of generating micro-seams.
+
+## BT369 Sphere Unwrap Boundary (2026-06-05)
+- Local implementation path: `src/smii/unwrap/sphere_bt369.py`.
+- Sibling formal path: `../../dashi_agda/DASHI/Interop/SeaMeInItBT369SphereUnwrap.agda`.
+- The rectangle is a serialization view, not the geometry. The source of truth is the equal-area sampled spherical carrier plus BT369 residual trits, 6-sector orientation, ternary prefixes, seam/braid tokens, MDL-bounded depth, and certificate metrics.
+- The formal claim is benchmark-gated approximation over declared candidates, not a global isometry or perfect inverse for sphere-to-plane flattening.
+- External competitor implementation path: `src/smii/unwrap/external_competitors.py`.
+- Competitor docs path: `docs/unwrap_competitor_matrix.md`.
+- The measured sphere slice now records receipts for BT369, equal-area,
+  equirectangular, cubed-sphere, octahedral, and HEALPix when `healpy` is
+  installed. The adversarial field suite adds constant, linear, harmonic,
+  polar-cap, seam-stripe, checkerboard, localized-bump, binary-hemisphere, and
+  band-limited fields so results can report per-field winners. Mesh/UV solvers
+  remain optional diagnostic receipts until real adapters are bound.
+- Seam derivation is now framed as an adaptive body atlas compiler:
+  body/ROM/fabric evidence projects through a stable basis into fields, fields
+  induce seam and panel topology, flattening residuals promote typed
+  metric-correction operators, manufacturing allowances serialize the result,
+  and `FinishedSeamReceipt` records the final body/ROM/fabric atlas receipt.
+- Local runtime path: `src/smii/seams/seam_derivation.py`.
+- CLI emission path: `scripts/generate_manufacturing_artifacts.py` with
+  `--out-finished-seam-receipt` plus upstream body/ROM/fabric/basis hashes or
+  receipt paths and seam-cost/solver/cut-topology/metric-correction receipt
+  paths. `scripts/run_afflec_receipted_demo.py` now supplies those paths
+  automatically after the cut-topology and metric-correction gates promote.
+- JSON schema path: `schemas/finished_seam_receipt.schema.json`.
+- Sibling formal path: `../../dashi_agda/DASHI/Interop/SeaMeInItROMSeamAtlas.agda`.
+  - `UV unwrapping explanation`
+    - online UUID: `6916c180-1080-8320-ae2d-acc2e3ac3c23`
+    - canonical thread id: `3562461ee45a9f6eb3b24f0cbd4a233161a7b60e`
+    - key point: high-curvature ridges need seams, darts, or controlled stretch zones before LSCM/ABF; projection-only flattening produces starburst artifacts.
+- Repo-facing decision:
+  - darts, gathers, easing, panel shaping, stretch zoning, variable knit, pleats, gussets, and bias orientation are all typed implementations of controlled metric mismatch injection.
+  - A garment panel is not modeled only as a UV map `u : M -> R2`; the useful formal object is `(u, Delta g)`, where `Delta g` is the allowed metric modification field.
+  - A dart is a discrete curvature operator: wedge removal in the flat domain that intentionally injects local Gaussian curvature when reassembled.
+  - P3 cut-topology work should not merely prune all branch/junction structures until a simple seam graph passes. It should classify them as ordinary cut boundaries, typed dart/relief/gusset/easing operators, or invalid accidental fragmentation before authorizing panel unwrap.
+- Follow-up DASHI/Agda cross-check:
+  - checked sibling checkout `../../dashi_agda` from this repo.
+  - `Docs/SeaMeInItROMKernelFormalism.md` and `DASHI/Interop/SeaMeInItROMKernelFormalism.agda` currently define a theorem-thin receipt surface for `BodyCarrier -> KernelBasis -> ROMOperator -> ProjectedField -> SeamGraph -> SeamCutPanelization -> ManufacturingReceipt`.
+  - The current seam formalism is graph/panelization-only: `G = (V, E)`, `S subset E`, and `panels = connected components of G \\ S`.
+  - The Agda surface has `SeamGraph`, `SeamCutPanelization`, and strict gates including `topologyGate` and `panelizationGate`, but no `Dart`, `Delta g`, `MetricCorrection`, wedge-removal, or curvature-insertion type yet.
+  - `Docs/MeasurementSurfaceProjectionContract.md` and `scripts/hepdata_projection_contract.py` provide the right adjacent pattern: future Delta-bearing projections need declared semantics, metric propagation, explicit failure/degraded states, and no silent theorem-side consumption.
+  - Local implication: SeaMeInIt should document and implement a receipt-level metric-correction contract before P3 allows typed dart/relief/gusset/easing structures to authorize unwrap.
+- Additional DASHI patterns supplied by the 2026-06-04 review:
+  - `DASHI/Physics/Closure/CrossDomainVariationalSpine.agda` defines the closest reusable conceptual shape for metric corrections: a typed variational object with `delta`, `projection`, `defect`, `admissibleGate`, observation quotient, and symmetry boundary.
+  - `DASHI/Physics/Closure/HEPDataMeasurementSurfaceProjectionRejection.agda` gives a local pattern for result states and abstention blockers: ok/degraded/rejected/abstained, including missing delta meaning and missing metric propagation law.
+  - `DASHI/Foundations/QuotientSetoidSurface.agda` is the strongest reusable foundation for quotient-stable ROM compression, equivalent pose regions, panel equivalence, and seam-cost/norm invariance over quotients.
+  - `DASHI/Interop/ObservationTransportSpine.agda` gives the generic observation/transport/non-claim surface for making clear that body or ROM observations do not imply inverse recovery.
+  - `DASHI/Metric/FibrePressureMetricBridge.agda` provides residual-budget and candidate-only promotion patterns relevant to seam/fabric coupling debt.
+  - `DASHI/Core/UniversalOperatorBasis.agda` supplies join/coordinate-transport vocabulary for future merge layers over seam costs or body-space/ROM-space constraints.
+  - `DASHI/Core/AuthorityBoundary.agda` separates citation authority from artifact authority; manufacturing receipts should preserve that boundary.
+  - `DASHI/Combinatorics/TriadicVideoCodecObservationQuotient.agda` has side-information-backed reconstruction witnesses and non-promotion certificates useful for ROM compression/hypervoxel side information.
+  - Sidecar conventions in DASHI support keeping `MetricCorrectionReceipt` separate from `SeamCutPanelization`: sidecars add extra receipted structure without mutating the core carrier, and remain candidate-only until consumed by later gates.
+  - No useful generic garment graph topology library was found; keep connected-component/cut-boundary fields SeaMeInIt-local for now.
+  - Preferred local pipeline reading is `SeamGraph -> SeamCutPanelization -> MetricCorrectionReceipt -> PanelUnwrapReceipt -> ManufacturingReceipt`.
+  - Ordinary disk-like panels should not pretend to have successful corrections. They either do not require a correction or carry a neutral/non-required state. Branchy/open topology may promote only when required corrections are typed, receipted, admissible, and consumed by panel unwrap.
+- `../animalexic` context check:
+  - no `.agda` files were found there; it is implementation-first rather than theorem-first.
+  - Its docs/runtime define a concrete lattice of `substrate -> candidate -> promoted` with explicit abstain/reject, plus `Candidate<T>`, `Promoted<T>`, `Receipt`, and `InvariantCheck`.
+  - Its voxel/surfel guards implement grounded/plateau/ascended states, evidence accumulation, residual thresholds, temporal support, neighbor support, and replayable promotion guards.
+  - Conceptual mapping: animalexic `grounded/plateau/ascended` is the runtime analogue of SMII `gateReject/gateDiagnostic/gateAdmissible`, but animalexic solves extrinsic 3D reconstruction while SMII solves intrinsic body-field/seam/metric development into 2D garment topology.
+  - Animalexic can feed a stronger candidate/promoted `BodyCarrier`, but it must not bypass SMII gates. Solver seams, darts, panels, and manufacturing outputs remain candidates until SMII receipts promote them.
+  - Runtime discipline to copy: kernels emit candidates; host/DASHI owns promotion; abstain by default; never let local numeric kernels mutate canonical promoted state directly.
+
 ## ROM Operator Reporting (2026-03-09)
 - Implemented operator-level coefficient export in `smii.rom.sampler_real`:
   - new optional inputs/outputs: `--basis` and `--out-coeff-samples`
@@ -235,9 +311,19 @@ Date: 2026-02-06
 - Added the local roadmap and runner for turning the seven manual demo commands
   into a single Afflec receipted run:
   `scripts/run_afflec_receipted_demo.py`.
-- The runner must execute the native `A_v3240` Gate 0-7 path, stop at first
-  non-promoted receipt, emit `run_manifest.json`, and keep dry runs
-  artifact-free.
+- The runner executes the native `A_v3240` receipt path through cut topology,
+  metric correction, panel unwrap, manufacturing, and finished seam receipt
+  emission; it stops at first non-promoted receipt, emits `run_manifest.json`,
+  keeps dry runs artifact-free, and accepts `--images` for curated Afflec/P3
+  reference-image validation.
+- Latest validation: bundled three-image MediaPipe path still blocks at Gate 0
+  due skull residual / measurement-refinement quality. The curated seven-image
+  P3 path promotes through Gate 5c (`BodyCarrierReceipt`, `BasisReceipt`,
+  `ROMFieldReceipt`, `SeamCostReceipt`, `SolverPromotionReceipt`,
+  `CutTopologyReceipt`, and `MetricCorrectionReceipt`) and blocks at Gate 6 on
+  panel unwrap distortion/corrected residual budget. Next work is improving
+  panelization/unwrap/correction quality, not loosening thresholds or adding
+  missing receipt plumbing.
 - The runner should default Gate 0 to `--detector mediapipe`, retain
   `--detector bbox` as an explicit diagnostic fallback, and forward
   `--require-high-trust-detector` for runs that should hard-fail coarse

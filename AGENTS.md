@@ -16,10 +16,11 @@ These instructions apply to the entire repository. Any nested `AGENTS.md` files 
 - Documentation (design notes, automation walkthroughs, deep dives) belongs in `docs/`.
 
 ## Tooling & Commands
-- Create a virtual environment and install dependencies with `pip install -e .[dev,test]`.
-- Run the full test suite using `pytest`; scope to individual modules when needed 
-- Format code via `ruff format` and lint with `ruff check --fix`. Use `ruff check --select I` for import sorting.
-- Validate typing with `mypy .`.
+- Use the sibling ITIR virtual environment when present: `../.venv/bin/python`.
+- Install dependencies with `../.venv/bin/python -m pip install -e .[dev,test]`.
+- Run the full test suite using `../.venv/bin/python -m pytest`; scope to individual modules when needed.
+- Format code via `../.venv/bin/python -m ruff format` and lint with `../.venv/bin/python -m ruff check --fix`. Use `../.venv/bin/python -m ruff check --select I` for import sorting.
+- Validate typing with `../.venv/bin/python -m mypy .`.
 - Launch dashboards using [command here] and access the CLI with [command here]
 ## Coding Conventions
 - Target Python 3.11 features while keeping modules import-safe for 3.10.
@@ -31,10 +32,10 @@ These instructions apply to the entire repository. Any nested `AGENTS.md` files 
 - Place new tests under `tests/`, mirroring the source module path (`tests/path/to/test_module.py`).
 - Name test files `test_<feature>.py` and use descriptive test function names.
 - Employ Hypothesis for property-based scenarios and mock external I/O via `pytest-mock`.
-- Run `pytest --maxfail=1 -q` before submitting changes, and capture regressions with fixtures where applicable.
+- Run `../.venv/bin/python -m pytest --maxfail=1 -q` before submitting changes, and capture regressions with fixtures where applicable.
 
 ## Commit & PR Standards
 - Use imperative tense commit messages scoped to logical change sets.
-- Ensure CI checks pass locally (`pytest`, `ruff check`, `ruff format --check`) before opening a PR.
+- Ensure CI checks pass locally (`../.venv/bin/python -m pytest`, `../.venv/bin/python -m ruff check`, `../.venv/bin/python -m ruff format --check`) before opening a PR.
 - PR descriptions should summarize the change, link relevant issues, describe behaviour differences (with before/after context), and include updated screenshots for UI modifications.
 - Document any intentionally skipped checks in the PR body.

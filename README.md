@@ -2,6 +2,8 @@
 SMII(gol?)  Parametric design of next-generation, made-to-fit clothing. We aim to address major factors such as climate adaptation and refugees, accessiblity, as well as hobbyists and cosplayers.
 
 Please see our docs:
+- [Canonical Roadmap Index](docs/roadmap/index.md) - Start here for current priorities, blockers, and active roadmap surfaces.
+- [Audit Findings 2026-06-04](docs/roadmap/audit_findings_20260604.md) - Current prioritized codebase risks and known bad cases.
 - [We use Ben Afflec as our test fixture because we thought he'd appreciate an Iron Man suit of his own.](docs/afflec_image_preprocessing.md)
 - [Avatar Model](docs/avatar_model.md)
 - [Engine Integration](docs/engine_integration.md)
@@ -26,6 +28,10 @@ Please see our docs:
 
 ## Current focus: receipted promotion pipeline
 
+Roadmap source of truth: [docs/roadmap/index.md](docs/roadmap/index.md).
+Historical roadmap notes and lane-specific deep dives remain useful context, but
+priority decisions should start from that index.
+
 The near-term engineering goal is to make SMII behave as a gated
 transport-realisation pipeline rather than a mesh-first CAD workflow.
 Promoted seam, panel, and manufacturing artifacts must consume receipted
@@ -38,37 +44,76 @@ BodyCarrierReceipt
   -> ROMFieldReceipt
   -> SeamCostReceipt
   -> SolverPromotionReceipt
+  -> CutTopologyReceipt
+  -> MetricCorrectionReceipt
   -> PanelUnwrapReceipt
   -> ManufacturingReceipt
+  -> FinishedSeamReceipt
 ```
 
-All eight emitted gates now cover body trust, correspondence, the
+The emitted gates now cover body trust, correspondence, the
 bootstrap field basis, ROM field aggregation, seam-cost promotion, solver
-promotion, panel unwrap promotion, and manufacturing promotion.
+promotion, cut-topology promotion, metric-correction promotion when typed
+operators are present, panel unwrap promotion, and manufacturing promotion.
 `BodyCarrierReceipt` blocks untrusted bodies, `CorrespondenceReceipt` records
 transfer collapse or admissibility, `BasisReceipt` is emitted by canonical basis
 generation only when the body carrier is promoted, `ROMFieldReceipt` records
 field uniformity and synthetic-promotion boundaries, and `SeamCostReceipt`
 records finite/non-flat edge costs under the native-or-transfer solve-domain
 gate. `SolverPromotionReceipt` records anchor provenance, fallback usage, seam
-hashes, and graph-level panel topology checks before panel unwrap may promote.
-`PanelUnwrapReceipt` records per-panel distortion, grain direction, subdivision
-usage, UV artifact hashes, and the solver seam hash before manufacturing may
+hashes, and graph-level panel topology checks. `CutTopologyReceipt`
+distinguishes ordinary cut boundaries from typed correction operators and
+invalid fragmentation. `MetricCorrectionReceipt` is required when typed
+operators are present. `PanelUnwrapReceipt` records per-panel distortion, grain
+direction, subdivision usage, UV artifact hashes, the cut-topology hash, metric
+correction hash when consumed, and the unwrap backend before manufacturing may
 consume flattened panels. `ManufacturingReceipt` records variable seam
 allowance, panel UV hashes, cutting-layout artifacts, notches, labels, method
-accessibility, and the final promotion state.
+accessibility, and the final promotion state. `FinishedSeamReceipt` composes
+the promoted body, ROM, fabric, basis, seam-cost, solver, cut-topology,
+metric-correction, panel-unwrap, and manufacturing evidence into the final
+adaptive body atlas receipt. The exported pattern is a serialization of that
+atlas, not the geometry or a global optimum claim.
+
+Unwrap backend selection is now treated as a candidate-ranking problem rather
+than a backend claim. `smii.seams.unwrap_benchmark` provides a sphere-to-
+rectangle comparison surface for graph/ultrametric rectangle unwraps, LSCM, and
+bootstrap projections. The benchmark scores edge-length residual, area
+residual, angle residual, foldover/non-injectivity, aggregate residual, and
+agreement-depth distance; the graph/ultrametric layer is the formal gate above
+numerical backends, not a proof that a sphere can flatten isometrically.
+`smii.unwrap.unwrap_sphere_bt369` is the canonical sphere export API: it uses
+equal-area inverse pullback for measurement, records BT369 cell state
+(`value`, residual trit, 6-sector orientation, depth, ternary prefix, and seam
+token), and emits a certificate. The rectangle remains a serialization view;
+the source of truth is the adaptive spherical carrier plus residual and seam
+ledger. `smii.unwrap.external_competitors` is the executable external
+competitor harness for the sphere slice: it measures BT369, equal-area,
+equirectangular, cubed-sphere, octahedral, and HEALPix carriers when their
+runtime dependencies are installed. It also runs an adversarial synthetic field
+suite so benchmark reports can show per-field winners rather than only one
+friendly smoke result. Unbound optional tools such as xatlas, SLIM, and BFF
+remain unavailable diagnostic receipts without breaking CI. See
+[Unwrap Competitor Matrix](docs/unwrap_competitor_matrix.md).
 
 The single-command Afflec receipted demo runner is
 `scripts/run_afflec_receipted_demo.py`. It defaults Gate 0 to MediaPipe because
 the runner is the production-style path; pass `--detector bbox` only for coarse
 diagnostic smoke checks, and use `--require-high-trust-detector` when fallback
-to a coarse detector should stop the run as a hard failure.
+to a coarse detector should stop the run as a hard failure. The runner now
+threads cut-topology and metric-correction receipts into panel unwrap and Gate
+7 manufacturing, where it emits both `manufacturing_receipt.json` and
+`finished_seam_receipt.json` when every upstream gate promotes. Pass `--images`
+to run the same chain against the curated P3 reference-image set.
 
 Current Afflec fixture status: MediaPipe Gate 0 execution now emits body
 artifacts, but the receipt is still diagnostic-only because measurement
 refinement pushes final shape betas outside the plausible range and the skull
 residual remains marginally above threshold. This is a body-fit calibration
-blocker, not an orchestrator or receipt-chain blocker.
+blocker for the bundled three-image smoke path, not an orchestrator or
+receipt-chain blocker. The curated seven-image P3 lane promotes through Gate 5c;
+the current blocking gate there is panel unwrap distortion/corrected residual,
+not missing receipt plumbing.
 
 ## Current focus: manufacturable panels and morphology attribution
 

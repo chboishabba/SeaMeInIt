@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -31,7 +32,17 @@ def _receipt(promotion: int = 1) -> SolverPromotionReceipt:
 
 
 def test_solver_promotion_receipt_json_round_trip(tmp_path: Path) -> None:
-    path = _receipt().to_json(tmp_path / "solver_promotion_receipt.json")
+    receipt = _receipt()
+    receipt = SolverPromotionReceipt(
+        **receipt.to_dict(),
+        requested_anchor_count=4,
+        candidate_anchor_count=4,
+        low_cost_anchor_component_count=2,
+        min_seam_edge_count=1,
+        min_seam_vertex_count=2,
+        solver_blockers=[],
+    )
+    path = receipt.to_json(tmp_path / "solver_promotion_receipt.json")
 
     loaded = load_solver_promotion_receipt(path)
 
@@ -40,6 +51,27 @@ def test_solver_promotion_receipt_json_round_trip(tmp_path: Path) -> None:
     assert not loaded.anchor_fallback_used
     assert loaded.panels_are_disks
     assert loaded.blocked_consumers == []
+    assert loaded.requested_anchor_count == 4
+    assert loaded.candidate_anchor_count == 4
+    assert loaded.low_cost_anchor_component_count == 2
+    assert loaded.min_seam_edge_count == 1
+    assert loaded.min_seam_vertex_count == 2
+    assert loaded.solver_blockers == []
+
+
+def test_solver_promotion_receipt_loads_legacy_payload_without_diagnostics(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "legacy_solver_promotion_receipt.json"
+    path.write_text(
+        json.dumps(_receipt().to_dict()),
+        encoding="utf-8",
+    )
+
+    loaded = load_solver_promotion_receipt(path)
+
+    assert loaded.requested_anchor_count is None
+    assert loaded.solver_blockers is None
 
 
 def test_unpromoted_solver_receipt_blocks_panel_unwrap() -> None:
@@ -57,6 +89,7 @@ def test_unpromoted_solver_receipt_blocks_panel_unwrap() -> None:
         ("anchor_count", -1),
         ("anchor_fallback_used", "no"),
         ("panels_are_disks", "yes"),
+        ("solver_blockers", "insufficient_seam_edges"),
     ],
 )
 def test_solver_promotion_receipt_rejects_invalid_values(

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass, replace
 from pathlib import Path
+from types import ModuleType
 from typing import Any, Iterable, Mapping, Sequence, TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle guard for typing only
@@ -15,13 +16,12 @@ import math
 
 import numpy as np
 
-from smii.measurements.from_mesh import infer_measurements_from_mesh
-
 HEADER_PREFIX = "# measurement:"
 
 
 def _is_pgm_fixture(path: Path) -> bool:
     return path.name.lower().endswith("pgm")
+
 
 # Mediapipe landmark indices used by the heuristic regressor.  Importing the
 # dependency at module import time would make the CLI fail on environments that
@@ -203,7 +203,9 @@ def _measurement_fixture_paths(paths: Iterable[Path]) -> list[Path]:
     return pgm_paths
 
 
-def _infer_measurements_from_images(paths: Sequence[Path], *, detector: str = "mediapipe") -> dict[str, float]:
+def _infer_measurements_from_images(
+    paths: Sequence[Path], *, detector: str = "mediapipe"
+) -> dict[str, float]:
     pgm_paths = [path for path in paths if _is_pgm_fixture(path)]
     rgb_paths = [path for path in paths if not _is_pgm_fixture(path)]
 
@@ -249,7 +251,9 @@ def fit_smplx_from_images(
         measurements = {name: float(value) for name, value in regression.measurements.items()}
     else:
         measurements = extract_measurements_from_afflec_images(_measurement_fixture_paths(paths))
-    regression_detector = getattr(regression, "detector", detector) if regression is not None else detector
+    regression_detector = (
+        getattr(regression, "detector", detector) if regression is not None else detector
+    )
     regression_source = (
         getattr(regression, "measurement_source", "raw_image_features")
         if regression is not None
@@ -260,10 +264,18 @@ def fit_smplx_from_images(
         if regression is not None
         else "pgm_measurement_refinement"
     )
-    regression_trust = getattr(regression, "trust_level", "high") if regression is not None else "fixture"
-    regression_status = getattr(regression, "consistency_status", "PASS") if regression is not None else "PASS"
-    regression_flags = getattr(regression, "consistency_flags", ()) if regression is not None else ()
-    regression_diagnostics = getattr(regression, "optimization_report", None) if regression is not None else None
+    regression_trust = (
+        getattr(regression, "trust_level", "high") if regression is not None else "fixture"
+    )
+    regression_status = (
+        getattr(regression, "consistency_status", "PASS") if regression is not None else "PASS"
+    )
+    regression_flags = (
+        getattr(regression, "consistency_flags", ()) if regression is not None else ()
+    )
+    regression_diagnostics = (
+        getattr(regression, "optimization_report", None) if regression is not None else None
+    )
 
     from smii.pipelines.fit_from_measurements import fit_smplx_from_measurements
 
@@ -304,7 +316,9 @@ def fit_smplx_from_images(
         provenance={
             "images_used": [str(path) for path in paths],
             "detector": detector,
-            "measurement_source": "raw_image_features" if any(not _is_pgm_fixture(path) for path in paths) else "pgm_fixture_headers",
+            "measurement_source": "raw_image_features"
+            if any(not _is_pgm_fixture(path) for path in paths)
+            else "pgm_fixture_headers",
             "refinement_applied": True,
         },
         raw_measurements={name: float(value) for name, value in measurements.items()},
@@ -352,10 +366,13 @@ class ImageFitObservation:
             "width": int(self.width),
             "height": int(self.height),
             "keypoints_2d": {
-                name: [float(value[0]), float(value[1])] for name, value in self.keypoints_2d.items()
+                name: [float(value[0]), float(value[1])]
+                for name, value in self.keypoints_2d.items()
             },
             "confidences": {name: float(value) for name, value in self.confidences.items()},
-            "silhouette_bbox": list(self.silhouette_bbox) if self.silhouette_bbox is not None else None,
+            "silhouette_bbox": list(self.silhouette_bbox)
+            if self.silhouette_bbox is not None
+            else None,
             "detector": self.detector,
         }
 
@@ -517,6 +534,48 @@ def _beta_summary(values: np.ndarray) -> dict[str, float]:
     }
 
 
+def _reference_quality_summary(result: SMPLXRegressionResult) -> dict[str, float | int | None]:
+    orientations = [
+        np.asarray(frame.global_orient, dtype=float).reshape(-1)[:3]
+        for frame in result.frames
+        if np.asarray(frame.global_orient, dtype=float).size >= 3
+    ]
+    if len(orientations) >= 2:
+        orientation_spread = float(np.max(np.ptp(np.stack(orientations, axis=0), axis=0)))
+    else:
+        orientation_spread = None
+
+    camera_scale_cv = None
+    if result.optimization_report is not None:
+        camera_scale = np.asarray(
+            result.optimization_report.get("camera_scale", ()), dtype=float
+        ).reshape(-1)
+        camera_scale = camera_scale[np.isfinite(camera_scale)]
+        if camera_scale.size >= 2:
+            mean_scale = float(np.mean(np.abs(camera_scale)))
+            if mean_scale > 1e-9:
+                camera_scale_cv = float(np.std(camera_scale) / mean_scale)
+
+    return {
+        "image_count": len(result.frames),
+        "orientation_spread": orientation_spread,
+        "camera_scale_cv": camera_scale_cv,
+    }
+
+
+def _reference_quality_flags(result: SMPLXRegressionResult) -> list[str]:
+    summary = _reference_quality_summary(result)
+    flags: list[str] = []
+    orientation_spread = summary["orientation_spread"]
+    camera_scale_cv = summary["camera_scale_cv"]
+
+    if isinstance(orientation_spread, float) and orientation_spread < 0.08:
+        flags.append("WARN:low_view_diversity")
+        if camera_scale_cv is None or camera_scale_cv < 0.03:
+            flags.append("WARN:long_lens_flattening_risk")
+    return flags
+
+
 def _measurement_value_iter(payload: Mapping[str, float]) -> Iterable[tuple[str, float]]:
     for name, value in payload.items():
         if isinstance(value, (int, float, np.integer, np.floating)):
@@ -619,6 +678,7 @@ def _regression_consistency_flags(result: SMPLXRegressionResult) -> tuple[str, .
     if result.detector == "bbox":
         flags.append("detector:bbox_coarse_fallback")
 
+    flags.extend(_reference_quality_flags(result))
     flags.extend(_measurement_flags(result.measurements, stage="raw"))
 
     raw_beta = _beta_summary(result.betas)
@@ -646,7 +706,12 @@ def _regression_consistency_flags(result: SMPLXRegressionResult) -> tuple[str, .
         scale = float(result.measurement_fit.scale)
         if not 0.5 <= scale <= 1.5:
             flags.append("refinement:scale_implausible")
-        beta_shift = float(np.linalg.norm(np.asarray(result.measurement_fit.betas, dtype=float) - np.asarray(result.betas, dtype=float)))
+        beta_shift = float(
+            np.linalg.norm(
+                np.asarray(result.measurement_fit.betas, dtype=float)
+                - np.asarray(result.betas, dtype=float)
+            )
+        )
         if beta_shift > 25.0:
             flags.append("refinement:large_beta_shift")
 
@@ -654,7 +719,13 @@ def _regression_consistency_flags(result: SMPLXRegressionResult) -> tuple[str, .
 
 
 def _consistency_status(flags: Sequence[str]) -> str:
-    severe_tokens = ("non_positive", "non_finite", "extreme_magnitude", "scale_implausible", "implausible_range")
+    severe_tokens = (
+        "non_positive",
+        "non_finite",
+        "extreme_magnitude",
+        "scale_implausible",
+        "implausible_range",
+    )
     if any(any(token in flag for token in severe_tokens) for flag in flags):
         return "FAIL"
     if flags:
@@ -707,6 +778,7 @@ def build_fit_diagnostics_report(result: SMPLXRegressionResult) -> dict[str, Any
             "trust_level": result.trust_level,
             "consistency_status": result.consistency_status,
             "consistency_flags": list(result.consistency_flags),
+            "reference_quality": _reference_quality_summary(result),
         },
         "raw_regression": {
             "measurements": {name: float(value) for name, value in result.measurements.items()},
@@ -715,21 +787,29 @@ def build_fit_diagnostics_report(result: SMPLXRegressionResult) -> dict[str, Any
             "per_view": [frame.to_dict() for frame in result.frames],
         },
         "observations": [item.to_dict() for item in result.observations],
-        "optimization_report": dict(result.optimization_report) if result.optimization_report is not None else None,
+        "optimization_report": dict(result.optimization_report)
+        if result.optimization_report is not None
+        else None,
         "measurement_refinement": refinement,
         "final_mesh_inputs": {
             "refined_betas_summary": _beta_summary(result.refined_betas()),
             "translation": np.asarray(
-                result.measurement_fit.translation if result.measurement_fit is not None else result.transl,
+                result.measurement_fit.translation
+                if result.measurement_fit is not None
+                else result.transl,
                 dtype=float,
-            ).reshape(-1).tolist(),
-            "scale": float(result.measurement_fit.scale) if result.measurement_fit is not None else 1.0,
+            )
+            .reshape(-1)
+            .tolist(),
+            "scale": float(result.measurement_fit.scale)
+            if result.measurement_fit is not None
+            else 1.0,
             "refined_measurements": refined_measurements,
         },
     }
 
 
-def _lazy_import_pillow() -> "module":
+def _lazy_import_pillow() -> ModuleType:
     try:
         from PIL import Image
     except ModuleNotFoundError as exc:  # pragma: no cover - optional dependency
@@ -739,7 +819,7 @@ def _lazy_import_pillow() -> "module":
     return Image
 
 
-def _lazy_import_torch() -> "module":
+def _lazy_import_torch() -> ModuleType:
     try:
         import torch
     except ModuleNotFoundError as exc:  # pragma: no cover - optional dependency
@@ -749,7 +829,7 @@ def _lazy_import_torch() -> "module":
     return torch
 
 
-def _lazy_import_mediapipe() -> "module":
+def _lazy_import_mediapipe() -> ModuleType:
     try:
         import mediapipe as mp
     except ModuleNotFoundError as exc:  # pragma: no cover - optional dependency
@@ -765,7 +845,9 @@ def _load_image(path: Path) -> np.ndarray:
     return np.asarray(image)
 
 
-def _bbox_mask_and_bounds(image: np.ndarray) -> tuple[np.ndarray, tuple[float, float, float, float]]:
+def _bbox_mask_and_bounds(
+    image: np.ndarray,
+) -> tuple[np.ndarray, tuple[float, float, float, float]]:
     gray = np.mean(image, axis=2)
     mask = gray < 250
     if not np.any(mask):
@@ -999,9 +1081,7 @@ def _compute_body_features(landmarks: PoseLandmarks) -> BodyFeatures:
     head_height = nose[1]
     height = abs(head_height - foot_height) + 0.05  # stabilise noisy detections
 
-    torso_length = (
-        0.5 * (_distance(left_shoulder, left_hip) + _distance(right_shoulder, right_hip))
-    )
+    torso_length = 0.5 * (_distance(left_shoulder, left_hip) + _distance(right_shoulder, right_hip))
 
     return BodyFeatures(
         height=height,
@@ -1151,8 +1231,14 @@ def _estimate_body_pose(landmarks: PoseLandmarks) -> np.ndarray:
 
     # Ankles capture flexion relative to the ground plane.
     ground_reference = np.array([0.0, -1.0, 0.0], dtype=float)
-    set_joint("left_ankle", _rotation_between(ground_reference, left_foot_direction(left_ankle, landmarks)))
-    set_joint("right_ankle", _rotation_between(ground_reference, right_foot_direction(right_ankle, landmarks)))
+    set_joint(
+        "left_ankle",
+        _rotation_between(ground_reference, left_foot_direction(left_ankle, landmarks)),
+    )
+    set_joint(
+        "right_ankle",
+        _rotation_between(ground_reference, right_foot_direction(right_ankle, landmarks)),
+    )
 
     return pose.reshape(-1).astype(np.float32, copy=False)
 
@@ -1221,7 +1307,9 @@ def _reprojection_fit_from_images(
 
     anchor_measurements = None
     if detector_used == "mediapipe":
-        bbox_frames = [regress_smplx_from_landmarks(_pose_landmarks_from_bbox(path)) for path in image_paths]
+        bbox_frames = [
+            regress_smplx_from_landmarks(_pose_landmarks_from_bbox(path)) for path in image_paths
+        ]
         anchor_measurements = aggregate_regression_frames(bbox_frames).measurements
 
     from avatar_model import BodyModel
@@ -1261,23 +1349,18 @@ def _reprojection_fit_from_images(
     cam_shift = torch.zeros((batch_size, 2), dtype=dtype, requires_grad=True)
 
     observed_names = sorted(
-        name for name in _REPROJECTION_JOINT_INDEX.keys()
+        name
+        for name in _REPROJECTION_JOINT_INDEX.keys()
         if all(name in item.keypoints_2d for item in observations)
     )
     if not observed_names:
         raise RuntimeError("No supported joints were available for reprojection fitting.")
     observed_points = torch.tensor(
-        [
-            [obs.keypoints_2d[name] for name in observed_names]
-            for obs in observations
-        ],
+        [[obs.keypoints_2d[name] for name in observed_names] for obs in observations],
         dtype=dtype,
     )
     observed_conf = torch.tensor(
-        [
-            [obs.confidences.get(name, 1.0) for name in observed_names]
-            for obs in observations
-        ],
+        [[obs.confidences.get(name, 1.0) for name in observed_names] for obs in observations],
         dtype=dtype,
     )
 
@@ -1292,7 +1375,9 @@ def _reprojection_fit_from_images(
     init_global_orient = global_orient.detach().clone()
     init_betas = betas.detach().clone()
 
-    optimizer = torch.optim.Adam([body_pose, global_orient, transl, betas, cam_scale, cam_shift], lr=0.05)
+    optimizer = torch.optim.Adam(
+        [body_pose, global_orient, transl, betas, cam_scale, cam_shift], lr=0.05
+    )
     loss_history: list[float] = []
     for _ in range(max(iterations, 1)):
         optimizer.zero_grad()
@@ -1316,8 +1401,14 @@ def _reprojection_fit_from_images(
         ).mean()
         pose_prior = ((body_pose - init_body_pose) ** 2).mean()
         orient_prior = ((global_orient - init_global_orient) ** 2).mean()
-        shape_prior = (betas ** 2).mean() + ((betas - init_betas) ** 2).mean()
-        loss = point_loss + 0.25 * bbox_loss + 0.01 * pose_prior + 0.01 * orient_prior + 0.01 * shape_prior
+        shape_prior = (betas**2).mean() + ((betas - init_betas) ** 2).mean()
+        loss = (
+            point_loss
+            + 0.25 * bbox_loss
+            + 0.01 * pose_prior
+            + 0.01 * orient_prior
+            + 0.01 * shape_prior
+        )
         loss.backward()
         optimizer.step()
         with torch.no_grad():
@@ -1330,15 +1421,22 @@ def _reprojection_fit_from_images(
     final_transl = transl.detach().cpu().numpy()
     final_betas = betas.detach().cpu().numpy()[0]
     body.set_shape(np.repeat(final_betas[None, :], batch_size, axis=0))
-    body.set_body_pose(body_pose=final_body_pose, global_orient=final_global_orient, transl=final_transl)
+    body.set_body_pose(
+        body_pose=final_body_pose, global_orient=final_global_orient, transl=final_transl
+    )
     joints = body.joints().detach().cpu().numpy()[:, :22, :]
     model_points = np.stack(
         [joints[:, _REPROJECTION_JOINT_INDEX[name], :] for name in observed_names],
         axis=1,
     )
     model_points = model_points - joints[:, 0:1, :]
-    projected = model_points[..., :2] * cam_scale.detach().cpu().numpy()[:, None, :] + cam_shift.detach().cpu().numpy()[:, None, :]
-    reprojection_error = np.sqrt(np.mean((projected - observed_points.detach().cpu().numpy()) ** 2, axis=(1, 2)))
+    projected = (
+        model_points[..., :2] * cam_scale.detach().cpu().numpy()[:, None, :]
+        + cam_shift.detach().cpu().numpy()[:, None, :]
+    )
+    reprojection_error = np.sqrt(
+        np.mean((projected - observed_points.detach().cpu().numpy()) ** 2, axis=(1, 2))
+    )
 
     frames = tuple(
         SMPLXRegressionFrame(
@@ -1399,7 +1497,9 @@ def _reprojection_fit_from_images(
                     "measurement_source": "reprojection_keypoints",
                     "refinement_applied": True,
                 },
-                raw_measurements={name: float(value) for name, value in result.measurements.items()},
+                raw_measurements={
+                    name: float(value) for name, value in result.measurements.items()
+                },
                 fit_mode="reprojection_plus_measurement_refinement",
                 trust_level="high" if detector_used != "bbox" else "coarse",
                 consistency_status="PASS",
@@ -1516,7 +1616,9 @@ def regress_smplx_from_images(
     if fallback_reason:
         result = replace(
             result,
-            consistency_status="WARN" if result.consistency_status == "PASS" else result.consistency_status,
+            consistency_status="WARN"
+            if result.consistency_status == "PASS"
+            else result.consistency_status,
             consistency_flags=tuple(dict.fromkeys((*result.consistency_flags, fallback_reason))),
         )
     return result
@@ -1581,9 +1683,13 @@ def create_body_mesh_from_regression(
     if result.jaw_pose is not None:
         parameters["jaw_pose"] = np.asarray(result.jaw_pose, dtype=np.float32).reshape(1, -1)
     if result.left_hand_pose is not None:
-        parameters["left_hand_pose"] = np.asarray(result.left_hand_pose, dtype=np.float32).reshape(1, -1)
+        parameters["left_hand_pose"] = np.asarray(result.left_hand_pose, dtype=np.float32).reshape(
+            1, -1
+        )
     if result.right_hand_pose is not None:
-        parameters["right_hand_pose"] = np.asarray(result.right_hand_pose, dtype=np.float32).reshape(1, -1)
+        parameters["right_hand_pose"] = np.asarray(
+            result.right_hand_pose, dtype=np.float32
+        ).reshape(1, -1)
     if parameters:
         body.set_parameters(parameters)
 

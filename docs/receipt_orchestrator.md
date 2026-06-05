@@ -17,8 +17,11 @@ BodyCarrierReceipt
   -> ROMFieldReceipt
   -> SeamCostReceipt
   -> SolverPromotionReceipt
+  -> CutTopologyReceipt
+  -> MetricCorrectionReceipt
   -> PanelUnwrapReceipt
   -> ManufacturingReceipt
+  -> FinishedSeamReceipt
 ```
 
 Every receipt carries:
@@ -32,6 +35,28 @@ Every receipt carries:
 An unreceipted object is diagnostic-only. A downstream stage may read it for
 inspection, reporting, or comparison, but may not silently promote from it.
 
+The pipeline should be read as an adaptive body atlas compiler:
+
+```text
+input evidence
+  -> admissible body/ROM/fabric carrier
+  -> projected surface fields
+  -> seam-cost graph
+  -> seam topology
+  -> panel topology
+  -> flattening residuals
+  -> darts/ease/gussets/splits
+  -> manufacturing allowances
+  -> finished pattern receipt
+```
+
+Darts, ease, gussets, relief cuts, splits, stretch zones, and variable knit are
+metric-correction operators. Branches in the seam/cut graph are therefore
+correction-tree/operator nodes when typed; they are not intrinsically blockers.
+They do not promote merely because a diagnostic candidate exists.
+`FinishedSeamReceipt` records the final body/ROM/fabric/seam atlas
+serialization boundary after the ordinary receipt chain has promoted.
+
 ## Lane Gates
 
 | Lane | Receipt | Entry gate | Promotion gate |
@@ -41,7 +66,8 @@ inspection, reporting, or comparison, but may not silently promote from it.
 | Field basis | `BasisReceipt` | promoted physical carrier | `A_field_basis=+1` with stable vertex-aligned basis `B_0` |
 | ROM aggregation | `ROMFieldReceipt` | basis plus ROM samples | `A_field=+1` with fields aligned to the seam graph vertex count |
 | Topology/solver | `SeamCostReceipt`, `SolverPromotionReceipt` | body and field gates pass | `A_seam_cost=+1`, then `A_seam=+1` only under the solver promotion rule |
-| Panel/manufacture | `PanelUnwrapReceipt`, `ManufacturingReceipt` | promoted seam topology | manufacturable artifacts, or explicit non-promotion boundary |
+| Cut topology / metric correction | `CutTopologyReceipt`, `MetricCorrectionReceipt` | promoted solver seam artifact | ordinary boundaries or authorized correction-tree/operator nodes; untyped fragmentation and missing correction evidence block |
+| Panel/manufacture | `PanelUnwrapReceipt`, `ManufacturingReceipt`, `FinishedSeamReceipt` | promoted cut topology plus metric correction when required | fabric-relative panel metrics, manufacturable artifacts, then final body/ROM/fabric atlas serialization receipt |
 
 The solver promotion rule is deliberately strict:
 
@@ -117,16 +143,19 @@ promote.
 ## Demo Runner
 
 The first execution layer is a thin Afflec demo runner, not a general task
-scheduler. `scripts/run_afflec_receipted_demo.py` executes the existing Gate
-0-7 CLIs in dependency order for the native `A_v3240` solve path, stops at the
-first non-promoted receipt, and writes `run_manifest.json` with per-gate
-promotion state, receipt hashes, timestamps, and final manufacturing
-eligibility.
+scheduler. `scripts/run_afflec_receipted_demo.py` executes the existing native
+`A_v3240` receipt chain in dependency order, including cut-topology and
+metric-correction gates before panel unwrap. Gate 7 invokes manufacturing with
+the upstream receipt paths needed to emit both `manufacturing_receipt.json` and
+`finished_seam_receipt.json`. The runner stops at the first non-promoted
+receipt and writes `run_manifest.json` with per-gate promotion state, receipt
+hashes, timestamps, and final manufacturing eligibility.
 
 Gate 0 detector selection is part of the run contract: `mediapipe` is the
 default for the runner, `--detector bbox` is an explicit coarse diagnostic
 mode, and `--require-high-trust-detector` is forwarded to `afflec-demo` when a
-fallback should be treated as a hard failure.
+fallback should be treated as a hard failure. `--images` is forwarded to Gate 0
+so the same receipt chain can validate curated P3 reference-image sets.
 
 MediaPipe runtime diagnosis: static MediaPipe initialisation and single-image
 inference complete locally, and direct Gate 0 execution emits body artifacts.
@@ -138,6 +167,12 @@ orchestrator task.
 
 Dry runs must only print the planned command chain. They must not create run
 directories, receipts, manifests, or manufacturing artifacts.
+
+Current curated P3 validation promotes body, basis, ROM field, seam cost,
+solver, cut topology, and metric correction. It blocks at panel unwrap because
+the bootstrap panel distortion is still above the declared threshold and the
+corrected metric residuals exceed the panel gate. That is a panelization/unwrap
+quality issue, not a missing receipt-chain integration.
 
 The native demo path intentionally skips Gate 1 correspondence promotion
 because no transfer-backed seam claim is made. Transfer-backed runs still need
@@ -247,18 +282,44 @@ a promoted `solver_promotion_receipt.json`, verifies that the referenced
 topology before flattening, and writes `panel_uvs.npz` plus
 `panel_unwrap_receipt.json`.
 
-The current emitter is a dependency-light bootstrap unwrapper: it accepts the
-`lscm`, `abf`, and `arap` method labels for the receipt-facing interface, then
-uses deterministic panel-local projection and edge-length distortion checks to
-gate promotion. The full conformal exporter backends remain a downstream
-integration target for richer production pattern artifacts.
+The emitter supports the dependency-light `bootstrap_projection` backend and a
+real NumPy `lscm` backend for face-backed panels. ABF and ARAP remain pending and
+must not be exposed as fake promotion labels. Both backends feed the same
+edge-length distortion checks, cut-topology hash checks, and metric-correction
+gate before promotion.
 
 `panels_are_disks=false` is a topology error, not an unwrapper failure. The CLI
 must say this explicitly so the fix is to add or repair seam cuts before
 flattening. A promoted panel unwrap receipt requires every extracted panel to
-stay within the configured distortion threshold after any allowed subdivision
-iterations. The receipt records per-panel distortion, worst/mean distortion,
-subdivision usage, grain directions, the UV hash, and the solver seam hash.
+stay within the configured fabric-relative distortion threshold after any
+allowed subdivision iterations. The receipt records per-panel distortion,
+worst/mean distortion, subdivision usage, grain directions, the UV hash, and
+the solver seam hash.
+
+The formal panel metric sidecars are `CorrectionTreeReceipt`,
+`CorrectionOperatorScoringReceipt`, `RealizedCorrectionOperatorReceipt`, and
+`FabricAwarePanelMetricReceipt`.
+`CorrectionTreeReceipt` names
+`correction_tree_id`, `root_panel_label`, `operator_nodes`,
+`parent_node_id`, `operator_type`, `branch_degree`,
+`delta_metric_meaning`, `metric_propagation_law`, `energy_terms`,
+`result_state`, and node blockers. `CorrectionOperatorScoringReceipt` prices
+unresolved branch nodes as candidate construction operators such as
+`stretch_zone`, `dart_apex`, `gusset_corner`, `ease_convergence`,
+`grain_rotation`, `seam_junction`, or `diagnostic_carry`; its promotion means
+each branch has a priced operator that beats diagnostic carry under the
+declared fabric estimator, not that cloth simulation has proved the shape.
+`RealizedCorrectionOperatorReceipt` is the first artifact-changing layer: it
+realizes priced `stretch_zone` operators as local fabric-strain-cone overrides,
+adds `gusset_corner` companion residual-relief patches when stretch alone
+cannot satisfy the residual gate, and emits cut-sheet annotations. It explicitly
+does not claim full polygon deformation or cloth simulation authority.
+`FabricAwarePanelMetricReceipt` names
+`fabric_receipt_hash`, `panel_label`, `fabric_profile_id`, `grain_direction`,
+`stretch_compliance`, `shear_compliance`, `raw_metric_residual`,
+`corrected_metric_residual`, `fabric_relative_threshold`, and
+`fabric_metric_gate`. Gate 6 promotion consumes those fields when present; it
+must not treat a fabric-free residual as a universal manufacturing claim.
 Non-promoted unwraps block `manufacturing`.
 
 ## Manufacturing Policy
@@ -270,10 +331,21 @@ matches `PanelUnwrapReceipt.uv_hash`, derives a variable seam-allowance field
 from ROM pressure/shear gradients, and writes `seam_allowance.npz`,
 `cutting_layout.svg`, and `manufacturing_receipt.json`.
 
-The manufacturing receipt is the end of the Gate 0-7 chain. It records the
+When supplied the upstream body/ROM/fabric/basis hashes plus seam-cost, solver,
+cut-topology, and optional metric-correction receipt paths, the same script
+also writes `finished_seam_receipt.json`. That receipt is the canonical final
+body/ROM/fabric atlas serialization boundary. It validates against
+`schemas/finished_seam_receipt.schema.json` and keeps the export/geometry,
+global-optimum, isometry, true-inverse, and ungated-manufacturing-authority
+claims explicitly false. The Afflec demo runner now passes these upstream
+receipt paths into Gate 7 automatically for the native demo chain.
+
+The manufacturing receipt is the final artifact-export gate. It records the
 panel unwrap receipt hash, panel count, manufacturing method, accessibility
 level, seam allowance summary statistics, per-panel UV hashes, cutting-layout
-hash, grain directions, notches, labels, and final promotion state.
+hash, grain directions, notches, labels, and export promotion state.
+`FinishedSeamReceipt` then wraps that manufacturing receipt with the body,
+ROM, fabric, basis, seam, topology, correction, and panel evidence.
 
 `allowance_varies=false` is a named diagnostic rather than a silent fallback.
 A flat allowance field is the pre-formal behavior and does not promote by

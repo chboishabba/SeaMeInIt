@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 from smii.meshing.body_carrier_receipt import BodyCarrierReceipt
@@ -7,18 +8,35 @@ from smii.meshing.correspondence_receipt import CorrespondenceReceipt
 from smii.orchestrator.receipt_dag import read_receipt_dag
 from smii.rom.basis_receipt import BasisReceipt
 from smii.rom.rom_field_receipt import ROMFieldReceipt
+from smii.seams.cut_topology_receipt import CutTopologyReceipt
 from smii.seams.manufacturing_receipt import ManufacturingReceipt
+from smii.seams.metric_correction_receipt import MetricCorrectionReceipt
 from smii.seams.panel_unwrap_receipt import PanelUnwrapReceipt
 from smii.seams.seam_cost_receipt import SeamCostReceipt
 from smii.seams.solver_promotion_receipt import SolverPromotionReceipt
 
+_ROM_HASH_A = "a" * 64
+_ROM_HASH_B = "b" * 64
+_ROM_HASH_C = "c" * 64
+_ROM_HASH_D = "d" * 64
+_BODY_HASH_A = "e" * 64
+_BODY_HASH_B = "f" * 64
+_BODY_HASH_C = "1" * 64
+_BODY_HASH_D = "2" * 64
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    digest.update(path.read_bytes())
+    return digest.hexdigest()
+
 
 def _body_payload(promotion: int = 1) -> dict[str, object]:
     return {
-        "source_hash": "source-abc",
-        "raw_reprojection_hash": "raw-def",
-        "refined_pre_repair_hash": "refined-ghi",
-        "repaired_export_hash": "repaired-jkl",
+        "source_hash": _BODY_HASH_A,
+        "raw_reprojection_hash": _BODY_HASH_B,
+        "refined_pre_repair_hash": _BODY_HASH_C,
+        "repaired_export_hash": _BODY_HASH_D,
         "vertex_count": 10475,
         "face_count": 20908,
         "topology_label": "smplx_body_v1",
@@ -62,10 +80,10 @@ def _basis_payload(promotion: int = 1) -> dict[str, object]:
 
 def _rom_field_payload(promotion: int = 1) -> dict[str, object]:
     return {
-        "basis_receipt_hash": "basis-receipt-sha256",
-        "samples_hash": "samples-sha256",
-        "aggregation_summary_hash": "aggregation-sha256",
-        "fields_hash": "fields-sha256",
+        "basis_receipt_hash": _ROM_HASH_A,
+        "samples_hash": _ROM_HASH_B,
+        "aggregation_summary_hash": _ROM_HASH_C,
+        "fields_hash": _ROM_HASH_D,
         "pose_count": 6,
         "total_samples": 6,
         "pose_source": "rom_corpus_aggregated",
@@ -136,6 +154,61 @@ def _panel_unwrap_payload(promotion: int = 1) -> dict[str, object]:
     }
 
 
+def _cut_topology_payload(promotion: int = 1) -> dict[str, object]:
+    return {
+        "solver_receipt_hash": "solver-receipt-sha256",
+        "mesh_hash": "mesh-sha256",
+        "seam_edges_hash": "seam-sha256",
+        "seam_edge_segment_count": 32,
+        "seam_vertex_count": 40,
+        "seam_connected_component_count": 1,
+        "seam_endpoint_count": 0,
+        "seam_branch_vertex_count": 0,
+        "panel_count": 4,
+        "panel_face_counts": [100, 100, 100, 100],
+        "panel_boundary_edge_counts": [40, 40, 40, 40],
+        "panels_are_disks": True,
+        "typed_dart_count": 0,
+        "typed_gusset_count": 0,
+        "promotion": promotion,
+        "blocked_consumers": [],
+        "cut_topology_blockers": [] if promotion == 1 else ["seam_graph_not_cut_graph"],
+    }
+
+
+def _metric_correction_payload(
+    *,
+    solver_receipt_hash: str = "solver-receipt-sha256",
+    cut_topology_receipt_hash: str = "cut-topology-receipt-sha256",
+    seam_edges_hash: str = "seam-sha256",
+    promotion: int = 1,
+) -> dict[str, object]:
+    return {
+        "solver_receipt_hash": solver_receipt_hash,
+        "cut_topology_receipt_hash": cut_topology_receipt_hash,
+        "seam_edges_hash": seam_edges_hash,
+        "panels_requiring_correction": [0],
+        "corrections": [
+            {
+                "panel_label": 0,
+                "correction_type": "dart",
+                "delta_metric_meaning": "local first-fundamental-form relaxation",
+                "raw_residual": 0.04,
+                "corrected_residual": 0.01,
+                "energy_terms": {"shape": 0.01},
+                "result_state": "correctionOk",
+                "blockers": [],
+            }
+        ],
+        "raw_residual_total": 0.04,
+        "corrected_residual_total": 0.01,
+        "residual_gate": 0.05,
+        "promotion": promotion,
+        "blocked_consumers": [],
+        "metric_correction_blockers": [],
+    }
+
+
 def _manufacturing_payload(promotion: int = 1) -> dict[str, object]:
     return {
         "panel_unwrap_receipt_hash": "panel-receipt-sha256",
@@ -164,9 +237,7 @@ def _manufacturing_payload(promotion: int = 1) -> dict[str, object]:
 
 
 def _write_known_receipts(run_dir: Path) -> None:
-    BodyCarrierReceipt.from_mapping(_body_payload()).to_json(
-        run_dir / "body_carrier_receipt.json"
-    )
+    BodyCarrierReceipt.from_mapping(_body_payload()).to_json(run_dir / "body_carrier_receipt.json")
     CorrespondenceReceipt.from_mapping(_correspondence_payload()).to_json(
         run_dir / "correspondence_receipt.json"
     )
@@ -193,16 +264,31 @@ def test_reads_known_receipts_and_defaults_future_gates_to_zero(tmp_path: Path) 
     assert not state.is_solver_eligible()
 
 
+def test_receipt_dag_reports_hash_chain_mismatches(tmp_path: Path) -> None:
+    BodyCarrierReceipt.from_mapping(_body_payload()).to_json(tmp_path / "body_carrier_receipt.json")
+    BasisReceipt.from_mapping(_basis_payload()).to_json(tmp_path / "basis_receipt.json")
+
+    state = read_receipt_dag(tmp_path)
+
+    assert not state.hash_chain_valid()
+    assert any("basis.carrier_receipt_hash mismatch" in item for item in state.hash_chain_errors)
+
+    basis_payload = _basis_payload()
+    basis_payload["carrier_receipt_hash"] = _sha256_file(tmp_path / "body_carrier_receipt.json")
+    BasisReceipt.from_mapping(basis_payload).to_json(tmp_path / "basis_receipt.json")
+
+    state = read_receipt_dag(tmp_path)
+
+    assert state.hash_chain_valid()
+    assert state.hash_chain_errors == ()
+
+
 def test_solver_eligibility_requires_body_basis_rom_seam_cost_and_correspondence(
     tmp_path: Path,
 ) -> None:
     _write_known_receipts(tmp_path)
-    ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(
-        tmp_path / "rom_field_receipt.json"
-    )
-    SeamCostReceipt.from_mapping(_seam_cost_payload()).to_json(
-        tmp_path / "seam_cost_receipt.json"
-    )
+    ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(tmp_path / "rom_field_receipt.json")
+    SeamCostReceipt.from_mapping(_seam_cost_payload()).to_json(tmp_path / "seam_cost_receipt.json")
 
     state = read_receipt_dag(tmp_path)
 
@@ -215,12 +301,8 @@ def test_solver_eligibility_requires_body_basis_rom_seam_cost_and_correspondence
 
 def test_solver_receipt_enables_panel_unwrap_gate(tmp_path: Path) -> None:
     _write_known_receipts(tmp_path)
-    ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(
-        tmp_path / "rom_field_receipt.json"
-    )
-    SeamCostReceipt.from_mapping(_seam_cost_payload()).to_json(
-        tmp_path / "seam_cost_receipt.json"
-    )
+    ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(tmp_path / "rom_field_receipt.json")
+    SeamCostReceipt.from_mapping(_seam_cost_payload()).to_json(tmp_path / "seam_cost_receipt.json")
     SolverPromotionReceipt.from_mapping(_solver_payload()).to_json(
         tmp_path / "solver_promotion_receipt.json"
     )
@@ -229,18 +311,68 @@ def test_solver_receipt_enables_panel_unwrap_gate(tmp_path: Path) -> None:
 
     assert state.solver == 1
     assert state.solver_promotion_receipt is not None
+    assert state.first_blocker == "cut_topology"
+    assert not state.can_unwrap_panels()
+
+
+def test_cut_topology_receipt_enables_panel_unwrap_gate(tmp_path: Path) -> None:
+    _write_known_receipts(tmp_path)
+    ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(tmp_path / "rom_field_receipt.json")
+    SeamCostReceipt.from_mapping(_seam_cost_payload()).to_json(tmp_path / "seam_cost_receipt.json")
+    SolverPromotionReceipt.from_mapping(_solver_payload()).to_json(
+        tmp_path / "solver_promotion_receipt.json"
+    )
+    CutTopologyReceipt.from_mapping(_cut_topology_payload()).to_json(
+        tmp_path / "cut_topology_receipt.json"
+    )
+
+    state = read_receipt_dag(tmp_path)
+
+    assert state.cut_topology == 1
+    assert state.cut_topology_receipt is not None
     assert state.first_blocker == "panel"
     assert state.can_unwrap_panels()
 
 
+def test_typed_cut_topology_requires_metric_correction_for_unwrap_gate(
+    tmp_path: Path,
+) -> None:
+    _write_known_receipts(tmp_path)
+    ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(tmp_path / "rom_field_receipt.json")
+    SeamCostReceipt.from_mapping(_seam_cost_payload()).to_json(tmp_path / "seam_cost_receipt.json")
+    solver_path = tmp_path / "solver_promotion_receipt.json"
+    cut_topology_path = tmp_path / "cut_topology_receipt.json"
+    metric_correction_path = tmp_path / "metric_correction_receipt.json"
+    SolverPromotionReceipt.from_mapping(_solver_payload()).to_json(solver_path)
+    typed_cut_payload = _cut_topology_payload()
+    typed_cut_payload["typed_dart_count"] = 1
+    typed_cut_payload["typed_operator_count"] = 1
+    typed_cut_payload["seam_graph_classifications"] = ["typed_correction_operator"]
+    CutTopologyReceipt.from_mapping(typed_cut_payload).to_json(cut_topology_path)
+
+    state_without_metric = read_receipt_dag(tmp_path)
+
+    assert state_without_metric.cut_topology == 1
+    assert not state_without_metric.can_unwrap_panels()
+
+    MetricCorrectionReceipt.from_mapping(
+        _metric_correction_payload(
+            solver_receipt_hash=_sha256_file(solver_path),
+            cut_topology_receipt_hash=_sha256_file(cut_topology_path),
+        )
+    ).to_json(metric_correction_path)
+
+    state_with_metric = read_receipt_dag(tmp_path)
+
+    assert state_with_metric.metric_correction == 1
+    assert state_with_metric.metric_correction_receipt is not None
+    assert state_with_metric.can_unwrap_panels()
+
+
 def test_solver_receipt_overrides_manual_solver_gate(tmp_path: Path) -> None:
     _write_known_receipts(tmp_path)
-    ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(
-        tmp_path / "rom_field_receipt.json"
-    )
-    SeamCostReceipt.from_mapping(_seam_cost_payload()).to_json(
-        tmp_path / "seam_cost_receipt.json"
-    )
+    ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(tmp_path / "rom_field_receipt.json")
+    SeamCostReceipt.from_mapping(_seam_cost_payload()).to_json(tmp_path / "seam_cost_receipt.json")
     SolverPromotionReceipt.from_mapping(_solver_payload(promotion=0)).to_json(
         tmp_path / "solver_promotion_receipt.json"
     )
@@ -254,14 +386,13 @@ def test_solver_receipt_overrides_manual_solver_gate(tmp_path: Path) -> None:
 
 def test_panel_unwrap_receipt_enables_manufacturing_gate(tmp_path: Path) -> None:
     _write_known_receipts(tmp_path)
-    ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(
-        tmp_path / "rom_field_receipt.json"
-    )
-    SeamCostReceipt.from_mapping(_seam_cost_payload()).to_json(
-        tmp_path / "seam_cost_receipt.json"
-    )
+    ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(tmp_path / "rom_field_receipt.json")
+    SeamCostReceipt.from_mapping(_seam_cost_payload()).to_json(tmp_path / "seam_cost_receipt.json")
     SolverPromotionReceipt.from_mapping(_solver_payload()).to_json(
         tmp_path / "solver_promotion_receipt.json"
+    )
+    CutTopologyReceipt.from_mapping(_cut_topology_payload()).to_json(
+        tmp_path / "cut_topology_receipt.json"
     )
     PanelUnwrapReceipt.from_mapping(_panel_unwrap_payload()).to_json(
         tmp_path / "panel_unwrap_receipt.json"
@@ -277,14 +408,13 @@ def test_panel_unwrap_receipt_enables_manufacturing_gate(tmp_path: Path) -> None
 
 def test_manufacturing_receipt_completes_receipt_chain(tmp_path: Path) -> None:
     _write_known_receipts(tmp_path)
-    ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(
-        tmp_path / "rom_field_receipt.json"
-    )
-    SeamCostReceipt.from_mapping(_seam_cost_payload()).to_json(
-        tmp_path / "seam_cost_receipt.json"
-    )
+    ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(tmp_path / "rom_field_receipt.json")
+    SeamCostReceipt.from_mapping(_seam_cost_payload()).to_json(tmp_path / "seam_cost_receipt.json")
     SolverPromotionReceipt.from_mapping(_solver_payload()).to_json(
         tmp_path / "solver_promotion_receipt.json"
+    )
+    CutTopologyReceipt.from_mapping(_cut_topology_payload()).to_json(
+        tmp_path / "cut_topology_receipt.json"
     )
     PanelUnwrapReceipt.from_mapping(_panel_unwrap_payload()).to_json(
         tmp_path / "panel_unwrap_receipt.json"
@@ -303,14 +433,13 @@ def test_manufacturing_receipt_completes_receipt_chain(tmp_path: Path) -> None:
 
 def test_manufacturing_receipt_overrides_manual_manufacture_gate(tmp_path: Path) -> None:
     _write_known_receipts(tmp_path)
-    ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(
-        tmp_path / "rom_field_receipt.json"
-    )
-    SeamCostReceipt.from_mapping(_seam_cost_payload()).to_json(
-        tmp_path / "seam_cost_receipt.json"
-    )
+    ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(tmp_path / "rom_field_receipt.json")
+    SeamCostReceipt.from_mapping(_seam_cost_payload()).to_json(tmp_path / "seam_cost_receipt.json")
     SolverPromotionReceipt.from_mapping(_solver_payload()).to_json(
         tmp_path / "solver_promotion_receipt.json"
+    )
+    CutTopologyReceipt.from_mapping(_cut_topology_payload()).to_json(
+        tmp_path / "cut_topology_receipt.json"
     )
     PanelUnwrapReceipt.from_mapping(_panel_unwrap_payload()).to_json(
         tmp_path / "panel_unwrap_receipt.json"
@@ -328,14 +457,13 @@ def test_manufacturing_receipt_overrides_manual_manufacture_gate(tmp_path: Path)
 
 def test_panel_unwrap_receipt_overrides_manual_panel_gate(tmp_path: Path) -> None:
     _write_known_receipts(tmp_path)
-    ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(
-        tmp_path / "rom_field_receipt.json"
-    )
-    SeamCostReceipt.from_mapping(_seam_cost_payload()).to_json(
-        tmp_path / "seam_cost_receipt.json"
-    )
+    ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(tmp_path / "rom_field_receipt.json")
+    SeamCostReceipt.from_mapping(_seam_cost_payload()).to_json(tmp_path / "seam_cost_receipt.json")
     SolverPromotionReceipt.from_mapping(_solver_payload()).to_json(
         tmp_path / "solver_promotion_receipt.json"
+    )
+    CutTopologyReceipt.from_mapping(_cut_topology_payload()).to_json(
+        tmp_path / "cut_topology_receipt.json"
     )
     PanelUnwrapReceipt.from_mapping(_panel_unwrap_payload(promotion=0)).to_json(
         tmp_path / "panel_unwrap_receipt.json"
@@ -350,9 +478,7 @@ def test_panel_unwrap_receipt_overrides_manual_panel_gate(tmp_path: Path) -> Non
 
 def test_solver_eligibility_blocks_without_seam_cost_receipt(tmp_path: Path) -> None:
     _write_known_receipts(tmp_path)
-    ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(
-        tmp_path / "rom_field_receipt.json"
-    )
+    ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(tmp_path / "rom_field_receipt.json")
 
     state = read_receipt_dag(tmp_path)
 
@@ -362,9 +488,7 @@ def test_solver_eligibility_blocks_without_seam_cost_receipt(tmp_path: Path) -> 
 
 def test_seam_cost_receipt_overrides_manual_seam_cost_gate(tmp_path: Path) -> None:
     _write_known_receipts(tmp_path)
-    ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(
-        tmp_path / "rom_field_receipt.json"
-    )
+    ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(tmp_path / "rom_field_receipt.json")
     SeamCostReceipt.from_mapping(_seam_cost_payload(promotion=0)).to_json(
         tmp_path / "seam_cost_receipt.json"
     )
@@ -402,19 +526,13 @@ def test_missing_receipts_are_unpromoted_and_record_first_blocker(
 
 
 def test_transform_receipt_is_used_as_correspondence_fallback(tmp_path: Path) -> None:
-    BodyCarrierReceipt.from_mapping(_body_payload()).to_json(
-        tmp_path / "body_carrier_receipt.json"
-    )
+    BodyCarrierReceipt.from_mapping(_body_payload()).to_json(tmp_path / "body_carrier_receipt.json")
     CorrespondenceReceipt.from_mapping(_correspondence_payload()).to_json(
         tmp_path / "transform_receipt.json"
     )
     BasisReceipt.from_mapping(_basis_payload()).to_json(tmp_path / "basis_receipt.json")
-    ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(
-        tmp_path / "rom_field_receipt.json"
-    )
-    SeamCostReceipt.from_mapping(_seam_cost_payload()).to_json(
-        tmp_path / "seam_cost_receipt.json"
-    )
+    ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(tmp_path / "rom_field_receipt.json")
+    SeamCostReceipt.from_mapping(_seam_cost_payload()).to_json(tmp_path / "seam_cost_receipt.json")
 
     state = read_receipt_dag(tmp_path)
 
@@ -424,16 +542,10 @@ def test_transform_receipt_is_used_as_correspondence_fallback(tmp_path: Path) ->
 
 
 def test_a_v3240_solver_domain_bypasses_correspondence_gate(tmp_path: Path) -> None:
-    BodyCarrierReceipt.from_mapping(_body_payload()).to_json(
-        tmp_path / "body_carrier_receipt.json"
-    )
+    BodyCarrierReceipt.from_mapping(_body_payload()).to_json(tmp_path / "body_carrier_receipt.json")
     BasisReceipt.from_mapping(_basis_payload()).to_json(tmp_path / "basis_receipt.json")
-    ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(
-        tmp_path / "rom_field_receipt.json"
-    )
-    SeamCostReceipt.from_mapping(_seam_cost_payload()).to_json(
-        tmp_path / "seam_cost_receipt.json"
-    )
+    ROMFieldReceipt.from_mapping(_rom_field_payload()).to_json(tmp_path / "rom_field_receipt.json")
+    SeamCostReceipt.from_mapping(_seam_cost_payload()).to_json(tmp_path / "seam_cost_receipt.json")
 
     state = read_receipt_dag(tmp_path, solve_domain="A_v3240")
 

@@ -16,7 +16,9 @@ from smii.pipelines.fit_from_images import (
     SMPLXRegressionFrame,
     _calibrate_reprojection_measurements,
     aggregate_regression_frames,
+    build_fit_diagnostics_report,
     extract_measurements_from_afflec_images,
+    finalize_regression_diagnostics,
     fit_smplx_from_images,
     regress_smplx_from_images,
 )
@@ -31,6 +33,7 @@ if "jsonschema" not in sys.modules:
     jsonschema_stub.Draft202012Validator = object
     jsonschema_stub.ValidationError = _ValidationError
     sys.modules["jsonschema"] = jsonschema_stub
+
 
 @dataclasses.dataclass(frozen=True)
 class DummyFitResult:
@@ -53,6 +56,7 @@ class DummyFitResult:
                 "values": self.measurement_report.visualization_payload(),
             },
         }
+
 
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "afflec"
 AFFLEC_PHOTOS = [
@@ -127,7 +131,9 @@ def test_parse_measurements_requires_metadata(tmp_path: Path):
         extractor.parse_measurements(missing)
 
 
-def test_fit_from_images_uses_embedded_metadata_when_regressor_missing(monkeypatch: pytest.MonkeyPatch):
+def test_fit_from_images_uses_embedded_metadata_when_regressor_missing(
+    monkeypatch: pytest.MonkeyPatch,
+):
     called: dict[str, object] = {}
     if PGM_FRONT is None or PGM_SIDE is None:
         pytest.skip("Afflec PGM fixtures missing")
@@ -144,7 +150,9 @@ def test_fit_from_images_uses_embedded_metadata_when_regressor_missing(monkeypat
     monkeypatch.delitem(sys.modules, "pipelines.afflec_regression", raising=False)
     monkeypatch.setattr(
         "smii.pipelines.fit_from_images.regress_smplx_from_images",
-        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("regression should not be called")),
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("regression should not be called")
+        ),
     )
 
     result = fit_smplx_from_images([PGM_FRONT, PGM_SIDE])
@@ -259,7 +267,9 @@ def test_fit_from_images_runs_regression_when_photos_present(monkeypatch: pytest
     assert called["kwargs"]["fit_mode"] == "image_regression_plus_measurement_refinement"
 
 
-def test_fit_from_images_derives_measurements_from_photos_when_no_pgm(monkeypatch: pytest.MonkeyPatch):
+def test_fit_from_images_derives_measurements_from_photos_when_no_pgm(
+    monkeypatch: pytest.MonkeyPatch,
+):
     missing = [p for p in AFFLEC_PHOTOS if not p.exists()]
     if missing:
         pytest.skip(f"Afflec photo fixtures missing: {', '.join(str(m) for m in missing)}")
@@ -267,6 +277,7 @@ def test_fit_from_images_derives_measurements_from_photos_when_no_pgm(monkeypatc
     called: dict[str, object] = {}
 
     monkeypatch.delitem(sys.modules, "pipelines.afflec_regression", raising=False)
+
     def fake_regress(paths, detector="mediapipe", refine_with_measurements=False, **kwargs):
         called["regress_paths"] = tuple(paths)
         called["regress_kwargs"] = kwargs
@@ -304,6 +315,8 @@ def test_fit_from_images_derives_measurements_from_photos_when_no_pgm(monkeypatc
     }
     assert called["kwargs"]["backend"] == "smplx"
     assert called["kwargs"]["fit_mode"] == "image_regression_plus_measurement_refinement"
+
+
 def _regression_frame(seed: float) -> SMPLXRegressionFrame:
     return SMPLXRegressionFrame(
         image_path=Path(f"frame_{seed:.0f}.jpg"),
@@ -354,7 +367,26 @@ def test_regression_result_includes_measurement_refinement():
     assert "measurement_refinement" in payload
 
 
-def test_reprojection_fit_emits_optimization_report(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+def test_regression_diagnostics_warn_on_low_view_diversity() -> None:
+    frame_a = dataclasses.replace(_regression_frame(1.0), global_orient=np.array([0.0, 0.01, 0.0]))
+    frame_b = dataclasses.replace(_regression_frame(2.0), global_orient=np.array([0.0, 0.02, 0.0]))
+    result = finalize_regression_diagnostics(
+        dataclasses.replace(
+            aggregate_regression_frames([frame_a, frame_b]),
+            optimization_report={"camera_scale": [1.0, 1.01]},
+        )
+    )
+    report = build_fit_diagnostics_report(result)
+
+    assert result.consistency_status == "WARN"
+    assert "WARN:low_view_diversity" in result.consistency_flags
+    assert "WARN:long_lens_flattening_risk" in result.consistency_flags
+    assert report["summary"]["reference_quality"]["image_count"] == 2
+
+
+def test_reprojection_fit_emits_optimization_report(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
     torch = pytest.importorskip("torch")
 
     image_path = tmp_path / "frame.jpg"
@@ -381,11 +413,26 @@ def test_reprojection_fit_emits_optimization_report(monkeypatch: pytest.MonkeyPa
             "head": (0.5, 0.06),
             "pelvis": (0.5, 0.62),
         },
-        confidences={name: 1.0 for name in {
-            "left_shoulder", "right_shoulder", "left_elbow", "right_elbow",
-            "left_wrist", "right_wrist", "left_hip", "right_hip", "left_knee",
-            "right_knee", "left_ankle", "right_ankle", "neck", "head", "pelvis"
-        }},
+        confidences={
+            name: 1.0
+            for name in {
+                "left_shoulder",
+                "right_shoulder",
+                "left_elbow",
+                "right_elbow",
+                "left_wrist",
+                "right_wrist",
+                "left_hip",
+                "right_hip",
+                "left_knee",
+                "right_knee",
+                "left_ankle",
+                "right_ankle",
+                "neck",
+                "head",
+                "pelvis",
+            }
+        },
         silhouette_bbox=(0.2, 0.05, 0.8, 0.98),
         detector="bbox",
     )
@@ -461,8 +508,12 @@ def test_reprojection_fit_emits_optimization_report(monkeypatch: pytest.MonkeyPa
     dummy_avatar_module = ModuleType("avatar_model")
     dummy_avatar_module.BodyModel = DummyBodyModel
     monkeypatch.setitem(sys.modules, "avatar_model", dummy_avatar_module)
-    monkeypatch.setattr("smii.pipelines.fit_from_images._build_observations", fake_build_observations)
-    monkeypatch.setattr("smii.pipelines.fit_from_images._pose_landmarks_from_bbox", fake_pose_landmarks)
+    monkeypatch.setattr(
+        "smii.pipelines.fit_from_images._build_observations", fake_build_observations
+    )
+    monkeypatch.setattr(
+        "smii.pipelines.fit_from_images._pose_landmarks_from_bbox", fake_pose_landmarks
+    )
     monkeypatch.setattr(
         "smii.pipelines.fit_from_measurements.fit_smplx_from_measurements",
         lambda measurements, **kwargs: DummyFitResult(

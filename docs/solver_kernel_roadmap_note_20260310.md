@@ -17,6 +17,11 @@ guidance for the ROM kernel and seam solver work:
 - `Seam Graph Generation Debug`
   - online UUID: `699050a6-e13c-839a-9a66-be7653b4db13`
   - canonical: `6d14ca5f93671d7fb8e923db48654ecb5ef63b42`
+- Follow-up context refresh on 2026-06-04 also resolved:
+  - `Repo planning blockers`
+    - online UUID: `6a03e573-caa4-83ec-83ed-af05b723ed4c`
+    - canonical: `9382ee2cba0c06880b8d351e2055acb49e97a12d`
+    - relevant stitched range: `16670-16830`
 
 ## Decisions
 
@@ -62,7 +67,76 @@ guidance for the ROM kernel and seam solver work:
   - add flattenability-aware scoring,
   - do not accept “low distortion” alone as success.
 
-6. Morphology outcomes and artifact labels must be separated explicitly.
+6. Darts and shaping are typed metric-correction operators, not just seam graph noise.
+- The archived `Repo planning blockers` range frames darts, gathers, easing,
+  panel shaping, stretch zoning, variable knit, pleats, gussets, and bias
+  orientation as implementations of controlled metric mismatch injection.
+- A 2026-06-04 check of `../../dashi_agda` found that the current
+  SeaMeInIt-facing Agda surface is still receipt-thin and graph/panelization
+  oriented: `SeamGraph`, `SeamCutPanelization`, `topologyGate`, and
+  `panelizationGate` exist, but no `Dart`, `MetricCorrection`, `Delta g`,
+  wedge-removal, or curvature-insertion type exists yet.
+- The adjacent DASHI `MeasurementSurface -> ProjectionResult` contract is the
+  useful template for adding this: Delta semantics, metric propagation,
+  diagnostics, degraded/rejected states, and claim boundaries must be explicit
+  before theorem-adjacent consumers can use the result.
+- `DASHI/Physics/Closure/CrossDomainVariationalSpine.agda` provides the closest
+  conceptual reusable shape: typed objects with delta/projection/defect/gate
+  and observation quotient. Metric corrections should mirror that vocabulary
+  without importing a domain-specific clothing theorem that does not exist.
+- Reusable DASHI lemma/surface stack for future formal work:
+  - `QuotientSetoidSurface`: quotient-stable ROM compression, equivalent pose
+    regions, panel equivalence, and seam-cost/norm invariance.
+  - `ObservationTransportSpine`: observation/transport/non-claim governance for
+    body fit, garment fit, projected fields, and non-inverse recovery claims.
+  - `FibrePressureMetricBridge`: residual budgets and candidate-only promotion
+    gates for seam/fabric pressure and tension obligations.
+  - `UniversalOperatorBasis`: join and coordinate-transport vocabulary for
+    merging seam costs or body-space/ROM-space constraints.
+  - `AuthorityBoundary`: citation/reference authority does not imply artifact
+    or manufacturing authority.
+  - `TriadicVideoCodecObservationQuotient`: side-information-backed witness and
+    non-promotion certificate patterns for ROM compression side information.
+- Roadmap implication:
+  - model garment panels as `(u, Delta g)`, not as a UV map alone,
+  - treat darts as discrete curvature operators / local wedge-removal
+    compensation,
+  - classify cut-graph branches as ordinary boundaries, typed
+    dart/relief/gusset/easing operators, or invalid fragmentation before
+    promoting unwrap,
+  - add a receipt-level metric-correction contract before allowing typed
+    dart/relief/gusset/easing structures to satisfy panel unwrap gates,
+  - define local result states `correctionOk`, `correctionDegraded`,
+    `correctionRejected`, and `correctionAbstained`,
+  - define typed blockers such as `missingDeltaMetricMeaning`,
+    `missingMetricPropagationLaw`, `missingShapingIntentReceipt`,
+    `missingPanelUnwrapCompatibility`, and
+    `missingManufacturingReviewReceipt`,
+  - distinguish `correctionRequired=false` from an admissible correction so
+    ordinary disk-like panels do not pretend to carry shaping operators,
+  - avoid solving `open_or_branched_seam_graph` by pruning all branches without
+    preserving typed garment intent.
+
+7. Animalexic is the runtime reconstruction-governance analogue, not the SMII topology model.
+- `../animalexic` has no Agda surface, but its docs/runtime provide a concrete
+  candidate/promotion discipline: kernels emit candidates, host/DASHI owns
+  promotion, abstain/reject are explicit, and replayable guards check residual,
+  temporal, multi-view, confidence, and hard invariants.
+- Its math is extrinsic reconstruction:
+  image/stereo/depth evidence, camera projection, voxel/surfel accumulation,
+  residual thresholds, temporal support, neighbor support, and optional Poisson
+  reconstruction.
+- SMII's math is intrinsic garment development:
+  receipted body surface, body-attached basis, ROM/projected fields,
+  seam/cut topology, metric corrections, panel unwrap, and manufacturing gates.
+- Roadmap implication:
+  - animalexic can feed a candidate or promoted `BodyCarrier`,
+  - it must not bypass SMII gates for seam topology, darts, unwrap, or
+    manufacturing,
+  - copy its candidate-first runtime discipline for seam solver output and dart
+    candidates.
+
+8. Morphology outcomes and artifact labels must be separated explicitly.
 - Historical runs produced visually distinct outcomes now described as:
   - `ogre-like`: stretched/compressed face-heavy or non-human-looking aggregate
     body appearance,
@@ -85,18 +159,30 @@ guidance for the ROM kernel and seam solver work:
 - Compare `seam_sensitivity` against at least one alternate candidate field on the
   same topology before changing solver objectives.
 
-2. Solver track:
+2. Cut-topology / metric-correction track:
+- Add a receipt schema for garment metric corrections before panel unwrap
+  consumes branchy/open topology as authorized dart or relief intent.
+- Suggested minimum vocabulary: `dart`, `relief_cut`, `gusset`, `easing`,
+  `stretch_zone`, `variable_knit`, `pleat`, and `bias_orientation`.
+- Suggested minimum fields: affected panel/faces/edges, correction kind,
+  local `Delta g` or declared proxy, metric propagation/energy diagnostics,
+  gate state, blocker list, and source receipt hashes.
+- Aggregate `metricCorrectionGate` should be derived from required correction
+  gates where feasible; if stored, it must be accompanied by an aggregation
+  receipt explaining how it was computed.
+
+3. Solver track:
 - Investigate shortest-path insensitivity under fixed topology.
 - Prioritize:
   - anchor/component fallback debugging,
   - comparison against `mincut` and `pda`,
   - loop/panel constraints as problem-definition controls.
 
-3. Sewability track:
+4. Sewability track:
 - Add explicit flattenability / fragmentation terms to the seam roadmap.
 - Treat “porcupine seams” as a failure of the objective, not a weird but acceptable output.
 
-4. Morphology debugging track:
+5. Morphology debugging track:
 - Add a dedicated note/report section that logs, per run:
   - whether the output looks neutral-human, ogre-like, or flailing,
   - whether that appearance comes from body geometry, posed samples, field

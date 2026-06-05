@@ -6,3 +6,6 @@ __pycache__/
 .venv/
 assets/
 outputs/
+exports/*
+!exports/test_dummy/
+!exports/test_dummy/**

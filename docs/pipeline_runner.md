@@ -1,5 +1,10 @@
 # Afflec end-to-end runner (mesh-first)
 
+Status note: this is the legacy mesh-first diagnostic runner. The production
+receipted runner is `scripts/run_afflec_receipted_demo.py` and defaults Gate 0
+to `--detector mediapipe`. The `bbox` detector remains useful for fast smoke
+checks, but bbox-derived body receipts are not the production trust default.
+
 This is the enforced, mesh-based pipeline for the Afflec fixture. It ensures every stage shares the same SMPL-X mesh and measurements derived from that mesh (no pseudo paths).
 
 For mesh lineage and topology-family disambiguation (3240 vs 9438 historical
@@ -24,7 +29,7 @@ export SEAMS_DIR=outputs/seams_run/afflec_fixture/${TS}
 PYTHONPATH=src python -m smii.app afflec-demo \
   --images tests/fixtures/afflec \
   --output "${BODY_DIR}" \
-  --detector bbox   # default; use --detector mediapipe if you prefer the full model
+  --detector bbox   # diagnostic smoke path; use mediapipe for production-style receipt runs
 # add --force to override existing files without deleting the directory
 ```
 Outputs: `${BODY_DIR}/afflec_body.npz`, `${BODY_DIR}/afflec_smplx_params.json`, measurement report.

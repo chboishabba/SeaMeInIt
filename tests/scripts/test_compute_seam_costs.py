@@ -13,6 +13,11 @@ from smii.meshing.body_carrier_receipt import BodyCarrierReceipt
 from smii.meshing.correspondence_receipt import CorrespondenceReceipt
 from smii.rom.rom_field_receipt import ROMFieldReceipt
 
+BODY_HASH_A = "a" * 64
+BODY_HASH_B = "b" * 64
+BODY_HASH_C = "c" * 64
+BODY_HASH_D = "d" * 64
+
 
 def _sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
@@ -44,10 +49,10 @@ def _write_mesh(path: Path) -> None:
 
 def _write_body_receipt(path: Path, *, promotion: int = 1) -> None:
     BodyCarrierReceipt(
-        source_hash="source",
-        raw_reprojection_hash="raw",
-        refined_pre_repair_hash="refined",
-        repaired_export_hash="repaired",
+        source_hash=BODY_HASH_A,
+        raw_reprojection_hash=BODY_HASH_B,
+        refined_pre_repair_hash=BODY_HASH_C,
+        repaired_export_hash=BODY_HASH_D,
         vertex_count=4,
         face_count=4,
         topology_label="A_v3240",
@@ -73,9 +78,9 @@ def _write_rom_fields(path: Path, *, flat: bool = False) -> None:
 
 def _write_rom_receipt(path: Path, fields_path: Path, *, promotion: int = 1) -> None:
     ROMFieldReceipt(
-        basis_receipt_hash="basis",
-        samples_hash="samples",
-        aggregation_summary_hash="summary",
+        basis_receipt_hash="a" * 64,
+        samples_hash="b" * 64,
+        aggregation_summary_hash="c" * 64,
         fields_hash=_sha256_file(fields_path),
         pose_count=2,
         total_samples=2,

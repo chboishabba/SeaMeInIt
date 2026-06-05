@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://seameinit.local/schemas/finished_seam_receipt.schema.json",
+  "title": "SeaMeInIt Finished Seam Receipt",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "input_hashes",
+    "body_gate",
+    "rom_gate",
+    "fabric_gate",
+    "basis_gate",
+    "seam_atlas",
+    "panel_atlas",
+    "flattening",
+    "flattening_metrics",
+    "correction_ops",
+    "allowance_fields",
+    "manufacturing_exports",
+    "promotion",
+    "promotion_state",
+    "claim_boundary"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "smii.finished_seam_receipt.v1"
+    },
+    "input_hashes": {
+      "type": "object",
+      "required": ["body", "rom", "fabric", "basis"],
+      "additionalProperties": {"type": "string", "minLength": 1}
+    },
+    "body_gate": {"$ref": "#/$defs/gate"},
+    "rom_gate": {"$ref": "#/$defs/gate"},
+    "fabric_gate": {"$ref": "#/$defs/gate"},
+    "basis_gate": {"$ref": "#/$defs/gate"},
+    "seam_atlas": {
+      "type": "object",
+      "required": ["selected_seam_count"],
+      "properties": {
+        "selected_seam_count": {"type": "integer", "minimum": 0},
+        "stage_hash": {"type": ["string", "null"]}
+      },
+      "additionalProperties": true
+    },
+    "panel_atlas": {
+      "type": "object",
+      "required": ["panel_count"],
+      "properties": {
+        "panel_count": {"type": "integer", "minimum": 0},
+        "stage_hash": {"type": ["string", "null"]}
+      },
+      "additionalProperties": true
+    },
+    "flattening": {
+      "type": "object",
+      "required": ["panel_unwrap_hash"],
+      "properties": {
+        "panel_unwrap_hash": {"type": ["string", "null"]}
+      },
+      "additionalProperties": true
+    },
+    "flattening_metrics": {
+      "type": "object",
+      "required": ["panel_count"],
+      "properties": {
+        "panel_count": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": true
+    },
+    "correction_ops": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "count"],
+        "properties": {
+          "type": {"type": "string", "minLength": 1},
+          "count": {"type": "integer", "minimum": 1}
+        },
+        "additionalProperties": true
+      }
+    },
+    "allowance_fields": {
+      "type": "object",
+      "required": ["policy"],
+      "properties": {
+        "policy": {"type": "string", "minLength": 1},
+        "stage_hash": {"type": ["string", "null"]}
+      },
+      "additionalProperties": true
+    },
+    "manufacturing_exports": {
+      "type": "object",
+      "required": ["hash"],
+      "properties": {
+        "hash": {"type": ["string", "null"]},
+        "stage_hash": {"type": ["string", "null"]}
+      },
+      "additionalProperties": true
+    },
+    "promotion": {"type": "integer", "enum": [-1, 0, 1]},
+    "promotion_state": {
+      "type": "string",
+      "enum": ["rejected", "diagnostic_only", "promoted"]
+    },
+    "claim_boundary": {
+      "type": "object",
+      "required": [
+        "export_is_geometry_truth",
+        "claims_global_optimum",
+        "claims_isometry",
+        "claims_true_inverse",
+        "claims_manufacturing_authority_without_gate"
+      ],
+      "properties": {
+        "export_is_geometry_truth": {"const": false},
+        "claims_global_optimum": {"const": false},
+        "claims_isometry": {"const": false},
+        "claims_true_inverse": {"const": false},
+        "claims_manufacturing_authority_without_gate": {"const": false}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "gate": {
+      "type": "object",
+      "required": ["receipt_hash", "promotion"],
+      "properties": {
+        "receipt_hash": {"type": "string", "minLength": 1},
+        "promotion": {
+          "type": "string",
+          "enum": ["rejected", "diagnostic_only", "promoted"]
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

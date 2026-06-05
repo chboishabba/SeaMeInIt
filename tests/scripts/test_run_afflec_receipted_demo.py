@@ -56,6 +56,9 @@ def test_dry_run_prints_plan_without_writing_artifacts(tmp_path: Path) -> None:
     assert "[DRY-RUN]" in result.stdout
     assert "--detector mediapipe" in result.stdout
     assert "diagnostic_seam_costs.npz" in result.stdout
+    assert "validate_cut_topology.py" in result.stdout
+    assert "emit_metric_correction_receipt.py" in result.stdout
+    assert "--out-finished-seam-receipt" in result.stdout
     assert "run_manifest.json" not in result.stdout
     assert not out_dir.exists()
 
@@ -122,6 +125,27 @@ def test_runner_can_use_bbox_diagnostic_detector_with_high_trust_flag(tmp_path: 
     assert "--require-high-trust-detector" in gate_zero
 
 
+def test_runner_passes_custom_images_to_gate_zero(tmp_path: Path) -> None:
+    runner_module = _load_runner_module()
+    image_a = tmp_path / "a.jpg"
+    image_b = tmp_path / "b.jpg"
+
+    steps = runner_module.build_steps(
+        run_dir=tmp_path / "run",
+        python=sys.executable,
+        allow_synthetic_promotion=False,
+        manufacturing_method="home_sewing",
+        force=False,
+        detector="mediapipe",
+        require_high_trust_detector=False,
+        images=(image_a, image_b),
+    )
+
+    gate_zero = steps[0].command
+    image_flag = gate_zero.index("--images")
+    assert gate_zero[image_flag + 1 : image_flag + 3] == (str(image_a), str(image_b))
+
+
 def test_runner_writes_manifest_for_promoted_chain(tmp_path: Path) -> None:
     runner_module = _load_runner_module()
     out_dir = tmp_path / "run"
@@ -139,6 +163,10 @@ def test_runner_writes_manifest_for_promoted_chain(tmp_path: Path) -> None:
             _write_receipt(_flag_value(command, "--out-seam-cost-receipt"))
         elif _has_command(command, "solve_seams.py"):
             _write_receipt(_flag_value(command, "--out-solver-receipt"))
+        elif _has_command(command, "validate_cut_topology.py"):
+            _write_receipt(_flag_value(command, "--out-cut-topology-receipt"))
+        elif _has_command(command, "emit_metric_correction_receipt.py"):
+            _write_receipt(_flag_value(command, "--out-metric-correction-receipt"))
         elif _has_command(command, "unwrap_panels.py"):
             _write_receipt(_flag_value(command, "--out-panel-receipt"))
         elif _has_command(command, "generate_manufacturing_artifacts.py"):
@@ -160,14 +188,23 @@ def test_runner_writes_manifest_for_promoted_chain(tmp_path: Path) -> None:
     )
 
     assert exit_code == 0
-    assert len(calls) == 7
+    assert len(calls) == 9
     assert calls[0][calls[0].index("--detector") + 1] == "mediapipe"
+    manufacture_command = calls[-1]
+    assert "--out-finished-seam-receipt" in manufacture_command
+    assert "--body-receipt" in manufacture_command
+    assert "--rom-receipt" in manufacture_command
+    assert "--basis-receipt" in manufacture_command
+    assert "--cut-topology-receipt" in manufacture_command
+    assert "--metric-correction-receipt" in manufacture_command
     manifest = json.loads((out_dir / "run_manifest.json").read_text("utf-8"))
     assert manifest["exit_code"] == 0
     assert manifest["first_blocker"] is None
     assert manifest["can_manufacture"]
     assert manifest["gates"]["correspondence"]["promotion"] == 0
     assert "native A_v3240" in manifest["gates"]["correspondence"]["notes"]
+    assert manifest["gates"]["cut_topology"]["promotion"] == 1
+    assert manifest["gates"]["metric_correction"]["promotion"] == 1
     assert manifest["gates"]["manufacture"]["receipt"] == "manufacturing/manufacturing_receipt.json"
     assert manifest["gates"]["manufacture"]["receipt_hash"]
 

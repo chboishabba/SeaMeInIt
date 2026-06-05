@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import math
+import re
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal, Mapping, cast
@@ -13,8 +15,13 @@ DEFAULT_BODY_BLOCKED_CONSUMERS = (
     "seam_cost_field",
     "panel_unwrap",
 )
+BODY_PROMOTION_CONFIDENCE_THRESHOLD = 0.75
+BODY_PROMOTION_SKULL_RESIDUAL_THRESHOLD = 0.35
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 __all__ = [
+    "BODY_PROMOTION_CONFIDENCE_THRESHOLD",
+    "BODY_PROMOTION_SKULL_RESIDUAL_THRESHOLD",
     "BodyCarrierReceipt",
     "DEFAULT_BODY_BLOCKED_CONSUMERS",
     "Promotion",
@@ -54,6 +61,15 @@ def _coerce_required_str(payload: Mapping[str, Any], key: str) -> str:
     return value
 
 
+def _coerce_sha256_value(value: object, key: str) -> str:
+    value = _coerce_str_value(value, key)
+    if _SHA256_RE.fullmatch(value) is None:
+        raise ValueError(
+            f"BodyCarrierReceipt field '{key}' must be a lowercase SHA-256 hex digest."
+        )
+    return value
+
+
 def _coerce_str_value(value: object, key: str) -> str:
     if not isinstance(value, str):
         raise TypeError(f"BodyCarrierReceipt field '{key}' must be a string.")
@@ -82,6 +98,13 @@ def _coerce_non_negative_int_value(value: object, key: str) -> int:
     return coerced
 
 
+def _coerce_positive_int_value(value: object, key: str) -> int:
+    coerced = _coerce_non_negative_int_value(value, key)
+    if coerced <= 0:
+        raise ValueError(f"BodyCarrierReceipt field '{key}' must be positive.")
+    return coerced
+
+
 def _coerce_float(payload: Mapping[str, Any], key: str) -> float:
     try:
         return float(payload[key])
@@ -93,9 +116,12 @@ def _coerce_float(payload: Mapping[str, Any], key: str) -> float:
 
 def _coerce_float_value(value: object, key: str) -> float:
     try:
-        return float(value)  # type: ignore[arg-type]
+        coerced = float(value)  # type: ignore[arg-type]
     except (TypeError, ValueError) as exc:
         raise TypeError(f"BodyCarrierReceipt field '{key}' must be numeric.") from exc
+    if not math.isfinite(coerced):
+        raise ValueError(f"BodyCarrierReceipt field '{key}' must be finite.")
+    return coerced
 
 
 def _coerce_landmark_residuals(payload: Mapping[str, Any]) -> dict[str, float]:
@@ -113,16 +139,20 @@ def _coerce_landmark_residuals(payload: Mapping[str, Any]) -> dict[str, float]:
 def _coerce_landmark_residual_values(residuals: object) -> dict[str, float]:
     if not isinstance(residuals, Mapping):
         raise TypeError("BodyCarrierReceipt field 'landmark_residuals' must be an object.")
-    return {str(name): float(value) for name, value in residuals.items()}
+    coerced: dict[str, float] = {}
+    for name, value in residuals.items():
+        residual = _coerce_float_value(value, f"landmark_residuals.{name}")
+        if residual < 0:
+            raise ValueError("BodyCarrierReceipt landmark residuals must be non-negative.")
+        coerced[str(name)] = residual
+    return coerced
 
 
 def _coerce_blocked_consumers(payload: Mapping[str, Any]) -> list[str]:
     try:
         blocked_consumers = payload["blocked_consumers"]
     except KeyError as exc:
-        raise KeyError(
-            "BodyCarrierReceipt is missing required field 'blocked_consumers'."
-        ) from exc
+        raise KeyError("BodyCarrierReceipt is missing required field 'blocked_consumers'.") from exc
     if not isinstance(blocked_consumers, list):
         raise TypeError("BodyCarrierReceipt field 'blocked_consumers' must be a list.")
     return _coerce_blocked_consumer_values(blocked_consumers)
@@ -150,6 +180,27 @@ def _blocked_consumers_for_promotion(
     return blocked_consumers
 
 
+def _validate_promotion_invariants(receipt: "BodyCarrierReceipt") -> None:
+    if not 0.0 <= receipt.body_fit_confidence <= 1.0:
+        raise ValueError("BodyCarrierReceipt body_fit_confidence must be in [0, 1].")
+    if receipt.skull_rigidity_residual < 0:
+        raise ValueError("BodyCarrierReceipt skull_rigidity_residual must be non-negative.")
+    if receipt.promotion != 1:
+        return
+    if receipt.vertex_count <= 0 or receipt.face_count <= 0:
+        raise ValueError("Promoted BodyCarrierReceipt requires positive vertex and face counts.")
+    if receipt.blocked_consumers:
+        raise ValueError("Promoted BodyCarrierReceipt must not block downstream consumers.")
+    if receipt.body_fit_confidence < BODY_PROMOTION_CONFIDENCE_THRESHOLD:
+        raise ValueError(
+            "Promoted BodyCarrierReceipt body_fit_confidence is below the promotion threshold."
+        )
+    if receipt.skull_rigidity_residual > BODY_PROMOTION_SKULL_RESIDUAL_THRESHOLD:
+        raise ValueError(
+            "Promoted BodyCarrierReceipt skull_rigidity_residual exceeds the promotion threshold."
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class BodyCarrierReceipt:
     """Hash-linked mesh receipt used to gate downstream body consumers."""
@@ -171,32 +222,32 @@ class BodyCarrierReceipt:
         object.__setattr__(
             self,
             "source_hash",
-            _coerce_str_value(self.source_hash, "source_hash"),
+            _coerce_sha256_value(self.source_hash, "source_hash"),
         )
         object.__setattr__(
             self,
             "raw_reprojection_hash",
-            _coerce_str_value(self.raw_reprojection_hash, "raw_reprojection_hash"),
+            _coerce_sha256_value(self.raw_reprojection_hash, "raw_reprojection_hash"),
         )
         object.__setattr__(
             self,
             "refined_pre_repair_hash",
-            _coerce_str_value(self.refined_pre_repair_hash, "refined_pre_repair_hash"),
+            _coerce_sha256_value(self.refined_pre_repair_hash, "refined_pre_repair_hash"),
         )
         object.__setattr__(
             self,
             "repaired_export_hash",
-            _coerce_str_value(self.repaired_export_hash, "repaired_export_hash"),
+            _coerce_sha256_value(self.repaired_export_hash, "repaired_export_hash"),
         )
         object.__setattr__(
             self,
             "vertex_count",
-            _coerce_non_negative_int_value(self.vertex_count, "vertex_count"),
+            _coerce_positive_int_value(self.vertex_count, "vertex_count"),
         )
         object.__setattr__(
             self,
             "face_count",
-            _coerce_non_negative_int_value(self.face_count, "face_count"),
+            _coerce_positive_int_value(self.face_count, "face_count"),
         )
         object.__setattr__(
             self,
@@ -225,6 +276,7 @@ class BodyCarrierReceipt:
             "blocked_consumers",
             _blocked_consumers_for_promotion(self.promotion, blocked_consumers),
         )
+        _validate_promotion_invariants(self)
 
     @classmethod
     def from_mapping(cls, payload: Mapping[str, Any]) -> "BodyCarrierReceipt":
@@ -328,6 +380,10 @@ def can_consume_receipt(receipt: BodyCarrierReceipt, consumer: str | None = None
     """Return whether a receipt is promoted and not blocked for the consumer."""
 
     if receipt.promotion != 1:
+        return False
+    try:
+        _validate_promotion_invariants(receipt)
+    except ValueError:
         return False
     if consumer is None:
         return not receipt.blocked_consumers

@@ -19,6 +19,11 @@ if not hasattr(suit_pkg, "UnderSuitGenerator"):
 import smii.pipelines.generate_undersuit as cli
 from smii.meshing import BodyCarrierReceipt
 
+HASH_A = "a" * 64
+HASH_B = "b" * 64
+HASH_C = "c" * 64
+HASH_D = "d" * 64
+
 
 def _write_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload), encoding="utf-8")
@@ -62,10 +67,10 @@ def _build_cylinder_body() -> tuple[list[list[float]], list[list[int]]]:
 
 def _receipt_payload(promotion: int = 1, blocked_consumers: list[str] | None = None) -> dict:
     return {
-        "source_hash": "source-abc",
-        "raw_reprojection_hash": "raw-def",
-        "refined_pre_repair_hash": "refined-ghi",
-        "repaired_export_hash": "repaired-jkl",
+        "source_hash": HASH_A,
+        "raw_reprojection_hash": HASH_B,
+        "refined_pre_repair_hash": HASH_C,
+        "repaired_export_hash": HASH_D,
         "vertex_count": 110,
         "face_count": 216,
         "topology_label": "A_v3240",

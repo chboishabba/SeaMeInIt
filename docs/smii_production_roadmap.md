@@ -2,9 +2,17 @@
 
 Generated: 2026-05-14
 
+Canonical planning entrypoint: `docs/roadmap/index.md`.
+
 Status: Gates 0-7 are implemented as a constraint system. The follow-up work
 below upgrades bootstrap implementations into production-grade geometry,
 field, and manufacturing outputs without changing the receipt order.
+
+Current production blocker: Gate 0 body trust on real Afflec data. The
+production-style MediaPipe path emits artifacts, but measurement refinement
+still pushes final shape betas outside the plausible range and the skull
+residual remains above the conservative threshold. Treat Gate 6/7 geometry work
+as diagnostic or synthetic until a promoted carrier exists.
 
 ## Receipt Chain
 

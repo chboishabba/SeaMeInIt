@@ -1,5 +1,87 @@
 ## Unreleased
 
+- Added the finished seam/body atlas receipt surface:
+  - added `smii.seams.seam_derivation.FinishedSeamReceipt` and
+    `derive_finished_seams` to compose promoted body, ROM, fabric, basis,
+    seam-cost, solver, cut-topology, metric-correction, panel-unwrap, and
+    manufacturing evidence into a final pattern atlas receipt,
+  - wired `scripts/generate_manufacturing_artifacts.py` to emit
+    `finished_seam_receipt.json` when supplied the upstream receipt hashes and
+    paths,
+  - wired `scripts/run_afflec_receipted_demo.py` through cut-topology and
+    metric-correction gates and into the finished seam receipt emission path,
+  - added `--images` support to the Afflec receipt runner, aligned its demo
+    basis width with the bundled four-coefficient ROM sample payload, and
+    inferred typed cut-topology operators from metric-panelization correction
+    payloads,
+  - added `schemas/finished_seam_receipt.schema.json` for the emitted receipt
+    and claim-boundary flags,
+  - added sibling Agda `DASHI.Interop.SeaMeInItROMSeamAtlas` to formalize the
+    adaptive body atlas bridge over existing ROM kernel, unwrap competitor, and
+    garment pattern receipts,
+  - documented that exported patterns are serializations of the certified
+    body/ROM/fabric seam atlas, not the geometry or a manufacturing authority
+    claim by themselves.
+- Added an external unwrap competitor harness:
+  - added `smii.unwrap.external_competitors` with JSON-serializable run
+    receipts, common benchmark metrics, declared-slice winner selection, and
+    graceful unavailable receipts for optional tools,
+  - measures dependency-light sphere candidates for BT369, cylindrical
+    equal-area, equirectangular, cubed-sphere, octahedral, and HEALPix carriers
+    when their dependencies are installed,
+  - added an adversarial synthetic field suite with per-field winners and a
+    winner histogram,
+  - documents the competitor matrix and keeps the claim boundary at
+    declared-benchmark winner, not global optimum or sphere-plane isometry.
+- Added the BT369 sphere unwrap export surface:
+  - added `smii.unwrap.sphere_bt369` with equal-area inverse pullback sampling,
+    residual trits, 6-sector tangent orientation, ternary cell prefixes,
+    seam/braid counts, MDL-bounded refinement depth, and JSON-serializable
+    certificates,
+  - recorded the theorem boundary in DASHI/Agda as a benchmark-gated
+    approximation receipt, not a global isometry claim.
+- Added a graph/ultrametric unwrap benchmark surface:
+  - added `smii.seams.unwrap_benchmark` to generate a deterministic
+    sphere-to-rectangle comparison mesh,
+  - ranks graph/ultrametric rectangle unwrap, LSCM, bootstrap projection, and
+    orthographic projection candidates across edge-length, area, angle,
+    foldover, aggregate residual, and agreement-depth metrics,
+  - added tests proving the graph/ultrametric rectangle strategy wins the
+    declared benchmark without claiming a zero-distortion sphere flattening,
+  - documented that the graph/ultrametric scoring layer is the formal gate above
+    numerical UV backends.
+- Implemented the P3 metric-correction and real Gate 6 unwrap lane:
+  - added `scripts/emit_metric_correction_receipt.py` to emit
+    `MetricCorrectionReceipt` from solver, cut-topology, seam-edge, and
+    correction payload hashes,
+  - wired `scripts/run_p3_afflec_transfer_chain.py` to stop at an explicit
+    `metric_correction` stage when typed operators lack promoted correction
+    evidence,
+  - added a shared seam unwrap backend module and a real NumPy `lscm` path for
+    `scripts/unwrap_panels.py`,
+  - updated `PanelUnwrapReceipt` to accept `lscm` as a non-bootstrap backend,
+  - documented cut-topology, metric-correction, and panel-unwrap receipt fields.
+- Added visible progress and rough ETA reporting to
+  `scripts/run_p3_afflec_transfer_chain.py` so long P3/Afflec validation runs
+  show the active stage, command, elapsed time, estimated remaining time, and
+  command-level finish/failure markers.
+- Documented the dart / metric-correction formalism gap:
+  - recorded the local archive thread IDs and formulas framing garment panels
+    as `(u, Delta g)` and darts as discrete curvature operators,
+  - cross-checked `../../dashi_agda` and noted that its current SeaMeInIt Agda
+    surface formalizes seam graph/panelization receipts but not darts,
+    `MetricCorrection`, or `Delta g`,
+  - incorporated the reusable DASHI patterns for typed variational objects,
+    projection-style result states, sidecar carriers, typed blockers, and
+    required-vs-admissible correction gates,
+  - added the wider reusable DASHI lemma/surface stack for quotient stability,
+    observation transport, residual budgets, coordinate joins, authority
+    boundaries, and side-information-backed non-promotion certificates,
+  - recorded `../animalexic` as the runtime governance analogue for
+    candidate-first reconstruction feeding SMII body carriers without bypassing
+    SMII seam/dart/panel/manufacturing gates,
+  - updated P3 docs/TODOs to require a receipt-level metric-correction contract
+    before branchy/open topology can authorize panel unwrap or manufacturing.
 - Added the Afflec receipted demo runner and production roadmap:
   - added `scripts/run_afflec_receipted_demo.py` to execute the native
     `A_v3240` Gate 0-7 chain as one command,

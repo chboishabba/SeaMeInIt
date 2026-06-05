@@ -17,12 +17,14 @@ DEFAULT_CORRESPONDENCE_BLOCKED_CONSUMERS = (
     "solver_promotion",
     "panel_unwrap",
 )
+TRANSFER_MODES = ("true_inverse", "pseudo_inverse", "approximate_correspondence")
 
 __all__ = [
     "CorrespondenceReceipt",
     "DEFAULT_CORRESPONDENCE_BLOCKED_CONSUMERS",
     "Promotion",
     "TransformReceipt",
+    "TRANSFER_MODES",
     "can_consume_correspondence_receipt",
     "is_diagnostic_nn_collapse",
     "load_correspondence_receipt",
@@ -58,6 +60,13 @@ def _coerce_required_str(payload: Mapping[str, Any], key: str) -> str:
         value = payload[key]
     except KeyError as exc:
         raise _missing(key) from exc
+    return _coerce_str_value(value, key)
+
+
+def _coerce_optional_str(payload: Mapping[str, Any], key: str) -> str | None:
+    value = payload.get(key)
+    if value is None:
+        return None
     return _coerce_str_value(value, key)
 
 
@@ -100,6 +109,15 @@ def _coerce_non_negative_float_value(value: object, key: str) -> float:
     return coerced
 
 
+def _coerce_optional_non_negative_float(
+    payload: Mapping[str, Any], key: str
+) -> float | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    return _coerce_non_negative_float_value(value, key)
+
+
 def _coerce_ratio(payload: Mapping[str, Any], key: str) -> float:
     value = _coerce_finite_float(payload, key)
     if not 0.0 <= value <= 1.0:
@@ -114,6 +132,22 @@ def _coerce_ratio_value(value: object, key: str) -> float:
         message = f"CorrespondenceReceipt field '{key}' must be between 0 and 1."
         raise ValueError(message)
     return coerced
+
+
+def _coerce_optional_ratio(payload: Mapping[str, Any], key: str) -> float | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    return _coerce_ratio_value(value, key)
+
+
+def _coerce_optional_bool(payload: Mapping[str, Any], key: str) -> bool | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, bool):
+        raise TypeError(f"CorrespondenceReceipt field '{key}' must be a boolean.")
+    return value
 
 
 def _coerce_non_negative_int(payload: Mapping[str, Any], key: str) -> int:
@@ -198,6 +232,18 @@ class CorrespondenceReceipt:
     promotion: Promotion
     notes: list[str]
     blocked_consumers: list[str]
+    source_topology_label: str | None = None
+    target_topology_label: str | None = None
+    source_topology_hash: str | None = None
+    target_body_receipt_hash: str | None = None
+    forward_object_hash: str | None = None
+    transfer_mode: str | None = None
+    approximate_transfer: bool | None = None
+    round_trip_mean_distance: float | None = None
+    round_trip_max_distance: float | None = None
+    round_trip_retention_ratio: float | None = None
+    load_metric: float | None = None
+    output_label: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -276,6 +322,52 @@ class CorrespondenceReceipt:
             "blocked_consumers",
             _blocked_consumers_for_promotion(self.promotion, blocked_consumers),
         )
+        for key in (
+            "source_topology_label",
+            "target_topology_label",
+            "source_topology_hash",
+            "target_body_receipt_hash",
+            "forward_object_hash",
+            "output_label",
+        ):
+            value = getattr(self, key)
+            if value is not None:
+                object.__setattr__(self, key, _coerce_str_value(value, key))
+        if self.transfer_mode is not None:
+            transfer_mode = _coerce_str_value(self.transfer_mode, "transfer_mode")
+            if transfer_mode not in TRANSFER_MODES:
+                raise ValueError(
+                    "CorrespondenceReceipt field 'transfer_mode' must be one of "
+                    f"{', '.join(TRANSFER_MODES)}."
+                )
+            object.__setattr__(self, "transfer_mode", transfer_mode)
+        if self.approximate_transfer is not None and not isinstance(
+            self.approximate_transfer, bool
+        ):
+            raise TypeError(
+                "CorrespondenceReceipt field 'approximate_transfer' must be a boolean."
+            )
+        for key in (
+            "round_trip_mean_distance",
+            "round_trip_max_distance",
+            "load_metric",
+        ):
+            value = getattr(self, key)
+            if value is not None:
+                object.__setattr__(
+                    self,
+                    key,
+                    _coerce_non_negative_float_value(value, key),
+                )
+        if self.round_trip_retention_ratio is not None:
+            object.__setattr__(
+                self,
+                "round_trip_retention_ratio",
+                _coerce_ratio_value(
+                    self.round_trip_retention_ratio,
+                    "round_trip_retention_ratio",
+                ),
+            )
 
     @classmethod
     def from_mapping(cls, payload: Mapping[str, Any]) -> "CorrespondenceReceipt":
@@ -307,6 +399,32 @@ class CorrespondenceReceipt:
             promotion=_coerce_promotion(payload),
             notes=_coerce_notes(payload),
             blocked_consumers=_coerce_blocked_consumers(payload),
+            source_topology_label=_coerce_optional_str(
+                payload, "source_topology_label"
+            ),
+            target_topology_label=_coerce_optional_str(
+                payload, "target_topology_label"
+            ),
+            source_topology_hash=_coerce_optional_str(payload, "source_topology_hash"),
+            target_body_receipt_hash=_coerce_optional_str(
+                payload, "target_body_receipt_hash"
+            ),
+            forward_object_hash=_coerce_optional_str(payload, "forward_object_hash"),
+            transfer_mode=_coerce_optional_str(payload, "transfer_mode"),
+            approximate_transfer=_coerce_optional_bool(
+                payload, "approximate_transfer"
+            ),
+            round_trip_mean_distance=_coerce_optional_non_negative_float(
+                payload, "round_trip_mean_distance"
+            ),
+            round_trip_max_distance=_coerce_optional_non_negative_float(
+                payload, "round_trip_max_distance"
+            ),
+            round_trip_retention_ratio=_coerce_optional_ratio(
+                payload, "round_trip_retention_ratio"
+            ),
+            load_metric=_coerce_optional_non_negative_float(payload, "load_metric"),
+            output_label=_coerce_optional_str(payload, "output_label"),
         )
 
     @classmethod
@@ -322,7 +440,7 @@ class CorrespondenceReceipt:
     def to_dict(self) -> dict[str, object]:
         """Return a JSON-serialisable receipt payload."""
 
-        return {
+        payload: dict[str, object] = {
             "source_mesh_hash": self.source_mesh_hash,
             "target_mesh_hash": self.target_mesh_hash,
             "transform_type": self.transform_type,
@@ -338,6 +456,24 @@ class CorrespondenceReceipt:
             "notes": list(self.notes),
             "blocked_consumers": list(self.blocked_consumers),
         }
+        optional_fields = {
+            "source_topology_label": self.source_topology_label,
+            "target_topology_label": self.target_topology_label,
+            "source_topology_hash": self.source_topology_hash,
+            "target_body_receipt_hash": self.target_body_receipt_hash,
+            "forward_object_hash": self.forward_object_hash,
+            "transfer_mode": self.transfer_mode,
+            "approximate_transfer": self.approximate_transfer,
+            "round_trip_mean_distance": self.round_trip_mean_distance,
+            "round_trip_max_distance": self.round_trip_max_distance,
+            "round_trip_retention_ratio": self.round_trip_retention_ratio,
+            "load_metric": self.load_metric,
+            "output_label": self.output_label,
+        }
+        payload.update(
+            {key: value for key, value in optional_fields.items() if value is not None}
+        )
+        return payload
 
     def to_json(self, path: str | Path) -> Path:
         """Write the receipt as stable JSON and return the target path."""

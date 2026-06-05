@@ -6,6 +6,8 @@ from __future__ import annotations
 import argparse
 import heapq
 import hashlib
+import json
+import sys
 from collections import defaultdict, deque
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
@@ -14,9 +16,13 @@ import numpy as np
 
 from smii.rom import load_seam_cost_field
 from smii.seams import (
+    CORRECTION_FAMILIES,
+    MetricEnergyWeights,
     SolverPromotionReceipt,
+    build_metric_panelization_payload,
     can_consume_seam_cost_receipt,
     load_seam_cost_receipt,
+    normalize_families,
 )
 
 
@@ -29,6 +35,12 @@ def _sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _write_json(path: Path, payload: Mapping[str, object]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path
 
 
 def _load_mesh(path: Path) -> tuple[np.ndarray, np.ndarray]:
@@ -58,6 +70,11 @@ def _mesh_edges(faces: np.ndarray) -> tuple[Edge, ...]:
             if edge[0] != edge[1]:
                 edges.add(edge)
     return tuple(sorted(edges))
+
+
+def _face_edges(face: Sequence[int]) -> tuple[Edge, Edge, Edge]:
+    a, b, c = (int(face[0]), int(face[1]), int(face[2]))
+    return (_normalize_edge(a, b), _normalize_edge(b, c), _normalize_edge(c, a))
 
 
 def _adjacency(edges: Sequence[Edge]) -> dict[int, set[int]]:
@@ -160,6 +177,203 @@ def _edge_cost_lookup(edges: Sequence[Edge], edge_costs: np.ndarray) -> dict[Edg
     return {edge: float(edge_costs[idx]) for idx, edge in enumerate(edges)}
 
 
+def _face_topology(
+    faces: np.ndarray,
+) -> tuple[dict[Edge, list[int]], dict[int, list[tuple[int, Edge]]]]:
+    edge_to_faces: dict[Edge, list[int]] = defaultdict(list)
+    for face_idx, face in enumerate(np.asarray(faces, dtype=int)):
+        for edge in _face_edges(face):
+            edge_to_faces[edge].append(int(face_idx))
+
+    face_graph: dict[int, list[tuple[int, Edge]]] = defaultdict(list)
+    for edge, face_indices in edge_to_faces.items():
+        if len(face_indices) != 2:
+            continue
+        a, b = int(face_indices[0]), int(face_indices[1])
+        face_graph[a].append((b, edge))
+        face_graph[b].append((a, edge))
+    return edge_to_faces, face_graph
+
+
+def _load_dart_candidate_edges(
+    path: Path | None,
+    *,
+    max_candidates: int,
+) -> tuple[set[Edge], str | None]:
+    if path is None:
+        return set(), None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        raw_candidates = payload.get("candidates", []) if isinstance(payload, Mapping) else []
+        if not isinstance(raw_candidates, list):
+            return set(), "invalid_dart_relief_candidates"
+        candidate_edges: set[Edge] = set()
+        for candidate in raw_candidates[: max(0, int(max_candidates))]:
+            if not isinstance(candidate, Mapping):
+                continue
+            raw_edges = candidate.get("path_edges", [])
+            if not isinstance(raw_edges, list):
+                continue
+            for raw_edge in raw_edges:
+                if (
+                    isinstance(raw_edge, list)
+                    and len(raw_edge) == 2
+                    and not isinstance(raw_edge[0], bool)
+                    and not isinstance(raw_edge[1], bool)
+                ):
+                    candidate_edges.add(_normalize_edge(int(raw_edge[0]), int(raw_edge[1])))
+        return candidate_edges, None
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return set(), "invalid_dart_relief_candidates"
+
+
+def _face_costs(
+    faces: np.ndarray,
+    edge_cost_lookup: Mapping[Edge, float],
+    vertex_costs: np.ndarray,
+) -> np.ndarray:
+    costs = np.zeros(int(faces.shape[0]), dtype=float)
+    for face_idx, face in enumerate(np.asarray(faces, dtype=int)):
+        edge_mean = float(np.mean([edge_cost_lookup.get(edge, 0.0) for edge in _face_edges(face)]))
+        vertex_mean = float(np.mean([vertex_costs[int(vertex)] for vertex in face]))
+        costs[int(face_idx)] = edge_mean + vertex_mean
+    return costs
+
+
+def _face_centroids(vertices: np.ndarray, faces: np.ndarray) -> np.ndarray:
+    return np.asarray([np.mean(vertices[np.asarray(face, dtype=int)], axis=0) for face in faces])
+
+
+def _select_seed_faces(
+    *,
+    vertices: np.ndarray,
+    faces: np.ndarray,
+    anchors: Sequence[int],
+    face_costs: np.ndarray,
+    target_panel_count: int,
+) -> list[int]:
+    if int(faces.shape[0]) == 0:
+        return []
+    vertex_to_faces: dict[int, list[int]] = defaultdict(list)
+    for face_idx, face in enumerate(np.asarray(faces, dtype=int)):
+        for vertex in face:
+            vertex_to_faces[int(vertex)].append(int(face_idx))
+
+    candidate_faces: list[int] = []
+    for anchor in anchors:
+        attached = vertex_to_faces.get(int(anchor), [])
+        if attached:
+            candidate_faces.append(
+                min(attached, key=lambda idx: (float(face_costs[int(idx)]), int(idx)))
+            )
+    for idx in np.argsort(face_costs, kind="stable"):
+        candidate_faces.append(int(idx))
+
+    centroids = _face_centroids(vertices, faces)
+    bbox_extent = max(float(np.linalg.norm(np.ptp(vertices, axis=0))), 1e-9)
+    seeds: list[int] = []
+    for face_idx in candidate_faces:
+        if face_idx in seeds:
+            continue
+        if seeds and len(seeds) < target_panel_count:
+            min_dist = min(
+                float(np.linalg.norm(centroids[face_idx] - centroids[seed])) for seed in seeds
+            )
+            if min_dist < bbox_extent / max(2.0, float(target_panel_count)):
+                continue
+        seeds.append(int(face_idx))
+        if len(seeds) >= target_panel_count:
+            break
+    for idx in range(int(faces.shape[0])):
+        if len(seeds) >= target_panel_count:
+            break
+        if idx not in seeds:
+            seeds.append(idx)
+    return seeds
+
+
+def _assign_face_regions(
+    *,
+    face_count: int,
+    seeds: Sequence[int],
+    face_graph: Mapping[int, Sequence[tuple[int, Edge]]],
+    edge_cost_lookup: Mapping[Edge, float],
+    dart_edges: set[Edge],
+) -> np.ndarray:
+    labels = np.full(int(face_count), -1, dtype=int)
+    heap: list[tuple[float, int, int]] = []
+    for label, seed in enumerate(seeds):
+        labels[int(seed)] = int(label)
+        heapq.heappush(heap, (0.0, int(label), int(seed)))
+    while heap:
+        distance, label, face_idx = heapq.heappop(heap)
+        if labels[int(face_idx)] != int(label):
+            continue
+        for neighbor, edge in sorted(face_graph.get(int(face_idx), ()), key=lambda item: item[0]):
+            if labels[int(neighbor)] != -1:
+                continue
+            base_cost = max(float(edge_cost_lookup.get(edge, 1.0)), 1e-9)
+            # Lower crossing cost makes dart-advisory edges attractive as region boundaries.
+            next_distance = distance + (base_cost * (0.2 if edge in dart_edges else 1.0))
+            labels[int(neighbor)] = int(label)
+            heapq.heappush(heap, (next_distance, int(label), int(neighbor)))
+    for face_idx in range(int(face_count)):
+        if labels[face_idx] == -1:
+            labels[face_idx] = int(len(seeds))
+    return labels
+
+
+def _connected_face_region_count(
+    labels: np.ndarray,
+    face_graph: Mapping[int, Sequence[tuple[int, Edge]]],
+) -> int:
+    remaining = set(range(int(labels.shape[0])))
+    component_count = 0
+    while remaining:
+        component_count += 1
+        start = min(remaining)
+        remaining.remove(start)
+        label = int(labels[start])
+        queue: deque[int] = deque([start])
+        while queue:
+            face_idx = queue.popleft()
+            for neighbor, _edge in face_graph.get(face_idx, ()):
+                if neighbor in remaining and int(labels[int(neighbor)]) == label:
+                    remaining.remove(int(neighbor))
+                    queue.append(int(neighbor))
+    return component_count
+
+
+def _cut_graph_from_face_regions(
+    *,
+    faces: np.ndarray,
+    edge_to_faces: Mapping[Edge, Sequence[int]],
+    labels: np.ndarray,
+    edge_cost_lookup: Mapping[Edge, float],
+) -> tuple[tuple[Edge, ...], float, int, list[int], list[int]]:
+    seam_edges: set[Edge] = set()
+    for edge, face_indices in edge_to_faces.items():
+        if len(face_indices) != 2:
+            continue
+        a, b = int(face_indices[0]), int(face_indices[1])
+        if int(labels[a]) != int(labels[b]):
+            seam_edges.add(edge)
+
+    panel_labels = sorted({int(label) for label in labels})
+    face_counts = [int(np.sum(labels == label)) for label in panel_labels]
+    boundary_counts = []
+    for label in panel_labels:
+        boundary_count = 0
+        region_faces = {idx for idx, value in enumerate(labels) if int(value) == label}
+        for edge, face_indices in edge_to_faces.items():
+            inside_count = sum(1 for idx in face_indices if int(idx) in region_faces)
+            if inside_count == 1:
+                boundary_count += 1
+        boundary_counts.append(boundary_count)
+    total_cost = float(sum(edge_cost_lookup.get(edge, 0.0) for edge in seam_edges))
+    return tuple(sorted(seam_edges)), total_cost, len(panel_labels), face_counts, boundary_counts
+
+
 def _anchor_components(
     anchors: Sequence[int],
     edges: Sequence[Edge],
@@ -171,6 +385,35 @@ def _anchor_components(
     threshold = float(np.percentile(finite, 65.0)) if finite.size else float("inf")
     allowed_edges = [edge for idx, edge in enumerate(edges) if float(edge_costs[idx]) <= threshold]
     graph = _adjacency(allowed_edges)
+    anchor_set = {int(anchor) for anchor in anchors}
+    remaining = set(anchor_set)
+    components: list[set[int]] = []
+    while remaining:
+        start = remaining.pop()
+        seen_vertices = {start}
+        seen_anchors = {start}
+        queue: deque[int] = deque([start])
+        while queue:
+            node = queue.popleft()
+            for neighbor in graph.get(node, ()):
+                if neighbor in seen_vertices:
+                    continue
+                seen_vertices.add(neighbor)
+                queue.append(neighbor)
+                if neighbor in remaining:
+                    remaining.remove(neighbor)
+                    seen_anchors.add(neighbor)
+        components.append(seen_anchors)
+    return components
+
+
+def _anchor_components_on_edges(
+    anchors: Sequence[int],
+    edges: Sequence[Edge],
+) -> list[set[int]]:
+    if not anchors:
+        return []
+    graph = _adjacency(edges)
     anchor_set = {int(anchor) for anchor in anchors}
     remaining = set(anchor_set)
     components: list[set[int]] = []
@@ -318,6 +561,20 @@ def solve_seams(
     anchor_count: int = 8,
     min_geodesic_separation: float = 0.1,
     manual_anchors: str | None = None,
+    min_solver_anchors: int = 2,
+    min_seam_edges: int = 1,
+    min_seam_vertices: int = 2,
+    target_panel_count: int = 4,
+    min_panel_faces: int = 16,
+    dart_relief_candidates_path: Path | None = None,
+    max_dart_candidates: int = 6,
+    max_corrections_per_panel: int = 3,
+    correction_families: str | Sequence[str] | None = None,
+    residual_weight: float = 1.0,
+    seam_weight: float = 1.0,
+    correction_weight: float = 1.0,
+    complexity_weight: float = 1.0,
+    manufacture_weight: float = 1.0,
     receipt_path: Path | None = None,
 ) -> SolverPromotionReceipt:
     """Solve seam topology and emit its promotion receipt."""
@@ -360,6 +617,10 @@ def solve_seams(
         edge_costs,
         np.asarray(cost_field.vertex_costs, dtype=float),
     )
+    requested_anchor_count = max(0, int(anchor_count))
+    min_solver_anchors = max(0, int(min_solver_anchors))
+    min_seam_edges = max(0, int(min_seam_edges))
+    min_seam_vertices = max(0, int(min_seam_vertices))
     if anchor_source == "field_minima":
         anchors = _select_field_minima_anchors(
             vertices,
@@ -374,28 +635,134 @@ def solve_seams(
     else:
         raise ValueError("anchor_source must be field_minima, geometric, or manual.")
 
-    anchor_components = _anchor_components(anchors, cost_edges, edge_costs)
-    connected_component_count = len(anchor_components)
+    candidate_anchor_count = len(anchors)
+    low_cost_anchor_components = _anchor_components(anchors, cost_edges, edge_costs)
+    full_graph_anchor_components = _anchor_components_on_edges(anchors, cost_edges)
+    connected_component_count = len(full_graph_anchor_components)
     anchor_fallback_used = connected_component_count > 1
-    if anchor_fallback_used and anchor_components:
+    if anchor_fallback_used and full_graph_anchor_components:
         anchors = sorted(
-            max(anchor_components, key=lambda component: (len(component), -min(component)))
+            max(
+                full_graph_anchor_components,
+                key=lambda component: (len(component), -min(component)),
+            )
         )
 
-    seam_edges, total_cost = _solve_low_cost_paths(anchors, cost_edges, edge_costs)
-    panels_are_disks, panel_count = _panels_are_disk_proxy(
-        vertex_count=int(vertices.shape[0]),
-        faces=faces,
-        mesh_edges=mesh_edges,
-        seam_edges=seam_edges,
+    dart_edges, dart_warning = _load_dart_candidate_edges(
+        dart_relief_candidates_path,
+        max_candidates=max_dart_candidates,
     )
+    if dart_warning is not None:
+        print(f"Warning: {dart_warning}; ignoring --dart-relief-candidates.", file=sys.stderr)
+
+    cut_panel_face_counts: list[int] | None = None
+    cut_panel_boundary_counts: list[int] | None = None
+    correction_payload: dict[str, object] | None = None
+    correction_payload_hash: str | None = None
+    raw_residual_total: float | None = None
+    corrected_residual_total: float | None = None
+    selected_correction_count: int | None = None
+    face_labels: np.ndarray | None = None
+    if solver_mode in {"cut_graph", "metric_panelization"}:
+        edge_to_faces, face_graph = _face_topology(faces)
+        edge_lookup = _edge_cost_lookup(cost_edges, edge_costs)
+        face_costs = _face_costs(faces, edge_lookup, vertex_costs)
+        requested_panels = max(2, min(6, int(target_panel_count), int(faces.shape[0])))
+        seeds = _select_seed_faces(
+            vertices=vertices,
+            faces=faces,
+            anchors=anchors,
+            face_costs=face_costs,
+            target_panel_count=requested_panels,
+        )
+        labels = _assign_face_regions(
+            face_count=int(faces.shape[0]),
+            seeds=seeds,
+            face_graph=face_graph,
+            edge_cost_lookup=edge_lookup,
+            dart_edges=dart_edges,
+        )
+        face_labels = np.asarray(labels, dtype=int)
+        connected_component_count = _connected_face_region_count(labels, face_graph)
+        (
+            seam_edges,
+            total_cost,
+            panel_count,
+            cut_panel_face_counts,
+            cut_panel_boundary_counts,
+        ) = _cut_graph_from_face_regions(
+            faces=faces,
+            edge_to_faces=edge_to_faces,
+            labels=labels,
+            edge_cost_lookup=edge_lookup,
+        )
+        if solver_mode == "metric_panelization":
+            correction_payload = build_metric_panelization_payload(
+                vertices=vertices,
+                faces=faces,
+                labels=labels,
+                seam_edges=seam_edges,
+                families=normalize_families(correction_families),
+                max_corrections_per_panel=max_corrections_per_panel,
+                weights=MetricEnergyWeights(
+                    residual=float(residual_weight),
+                    seam=float(seam_weight),
+                    correction=float(correction_weight),
+                    complexity=float(complexity_weight),
+                    manufacture=float(manufacture_weight),
+                ),
+            )
+            energy = correction_payload["energy"]
+            if isinstance(energy, Mapping):
+                raw_residual_total = float(energy.get("raw_residual_total", 0.0))
+                corrected_residual_total = float(energy.get("corrected_residual_total", 0.0))
+            selected_correction_count = int(correction_payload.get("selected_count", 0))
+        panels_are_disks = True
+    else:
+        seam_edges, total_cost = _solve_low_cost_paths(anchors, cost_edges, edge_costs)
+        panels_are_disks, panel_count = _panels_are_disk_proxy(
+            vertex_count=int(vertices.shape[0]),
+            faces=faces,
+            mesh_edges=mesh_edges,
+            seam_edges=seam_edges,
+        )
 
     output_dir.mkdir(parents=True, exist_ok=True)
     seam_path = output_dir / "seam_edges.npz"
-    np.savez_compressed(seam_path, seam_edges=np.asarray(seam_edges, dtype=int))
+    seam_edge_array = np.asarray(seam_edges, dtype=int).reshape((-1, 2))
+    if face_labels is not None:
+        np.savez_compressed(seam_path, seam_edges=seam_edge_array, face_labels=face_labels)
+    else:
+        np.savez_compressed(seam_path, seam_edges=seam_edge_array)
     seam_hash = _sha256_file(seam_path)
+    if correction_payload is not None:
+        correction_path = output_dir / "corrections.json"
+        _write_json(correction_path, correction_payload)
+        correction_payload_hash = _sha256_file(correction_path)
     seam_vertices = sorted({vertex for edge in seam_edges for vertex in edge})
-    promotion = 1 if panels_are_disks else 0
+    solver_blockers: list[str] = []
+    if len(anchors) < min_solver_anchors:
+        solver_blockers.append("insufficient_solver_anchors")
+    if len(seam_edges) < min_seam_edges:
+        solver_blockers.append("insufficient_seam_edges")
+    if len(seam_vertices) < min_seam_vertices:
+        solver_blockers.append("insufficient_seam_vertices")
+    if not np.isfinite(total_cost):
+        solver_blockers.append("non_finite_total_seam_cost")
+    if not panels_are_disks:
+        solver_blockers.append("panels_not_disks")
+    if solver_mode in {"cut_graph", "metric_panelization"}:
+        if panel_count < 2:
+            solver_blockers.append("insufficient_cut_panels")
+        if cut_panel_boundary_counts is None or any(
+            count <= 0 for count in cut_panel_boundary_counts
+        ):
+            solver_blockers.append("insufficient_cut_boundaries")
+        if cut_panel_face_counts is None or any(
+            count < max(1, int(min_panel_faces)) for count in cut_panel_face_counts
+        ):
+            solver_blockers.append("undersized_cut_panel")
+    promotion = 1 if not solver_blockers else 0
 
     receipt = SolverPromotionReceipt(
         seam_cost_receipt_hash=_sha256_file(seam_cost_receipt_path),
@@ -412,10 +779,22 @@ def solve_seams(
         seam_hash=seam_hash,
         promotion=promotion,
         blocked_consumers=[] if promotion == 1 else [],
+        requested_anchor_count=requested_anchor_count,
+        candidate_anchor_count=candidate_anchor_count,
+        low_cost_anchor_component_count=len(low_cost_anchor_components),
+        min_seam_edge_count=min_seam_edges,
+        min_seam_vertex_count=min_seam_vertices,
+        solver_blockers=solver_blockers,
+        correction_payload_hash=correction_payload_hash,
+        corrected_residual_total=corrected_residual_total,
+        raw_residual_total=raw_residual_total,
+        selected_correction_count=selected_correction_count,
     )
     target_receipt_path = receipt_path or (output_dir / "solver_promotion_receipt.json")
     receipt.to_json(target_receipt_path)
     print(f"Wrote seam edges to {seam_path}")
+    if correction_payload_hash is not None:
+        print(f"Wrote metric corrections to {output_dir / 'corrections.json'}")
     print(f"Wrote solver promotion receipt to {target_receipt_path}")
     return receipt
 
@@ -439,7 +818,7 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--solver-mode",
-        choices=["shortest_path", "min_cut", "pda_mst"],
+        choices=["shortest_path", "min_cut", "pda_mst", "cut_graph", "metric_panelization"],
         default="shortest_path",
     )
     parser.add_argument(
@@ -460,6 +839,30 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Comma-separated vertex indices when --anchor-source=manual.",
     )
+    parser.add_argument("--min-solver-anchors", type=int, default=2)
+    parser.add_argument("--min-seam-edges", type=int, default=1)
+    parser.add_argument("--min-seam-vertices", type=int, default=2)
+    parser.add_argument("--target-panel-count", type=int, default=4)
+    parser.add_argument("--min-panel-faces", type=int, default=16)
+    parser.add_argument(
+        "--dart-relief-candidates",
+        type=Path,
+        default=None,
+        help="Optional JSON emitted by propose_dart_relief_cuts.py.",
+    )
+    parser.add_argument("--max-dart-candidates", type=int, default=6)
+    parser.add_argument("--max-corrections-per-panel", type=int, default=3)
+    parser.add_argument(
+        "--correction-families",
+        type=str,
+        default=",".join(CORRECTION_FAMILIES),
+        help="Comma-separated metric correction families.",
+    )
+    parser.add_argument("--residual-weight", type=float, default=1.0)
+    parser.add_argument("--seam-weight", type=float, default=1.0)
+    parser.add_argument("--correction-weight", type=float, default=1.0)
+    parser.add_argument("--complexity-weight", type=float, default=1.0)
+    parser.add_argument("--manufacture-weight", type=float, default=1.0)
     return parser.parse_args(argv)
 
 
@@ -475,6 +878,20 @@ def main(argv: Iterable[str] | None = None) -> None:
         anchor_count=args.anchor_count,
         min_geodesic_separation=args.min_geodesic_separation,
         manual_anchors=args.manual_anchors,
+        min_solver_anchors=args.min_solver_anchors,
+        min_seam_edges=args.min_seam_edges,
+        min_seam_vertices=args.min_seam_vertices,
+        target_panel_count=args.target_panel_count,
+        min_panel_faces=args.min_panel_faces,
+        dart_relief_candidates_path=args.dart_relief_candidates,
+        max_dart_candidates=args.max_dart_candidates,
+        max_corrections_per_panel=args.max_corrections_per_panel,
+        correction_families=args.correction_families,
+        residual_weight=args.residual_weight,
+        seam_weight=args.seam_weight,
+        correction_weight=args.correction_weight,
+        complexity_weight=args.complexity_weight,
+        manufacture_weight=args.manufacture_weight,
         receipt_path=args.out_solver_receipt,
     )
 

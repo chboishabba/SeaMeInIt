@@ -12,13 +12,18 @@ from smii.meshing.body_carrier_receipt import (
     with_promotion,
 )
 
+HASH_A = "a" * 64
+HASH_B = "b" * 64
+HASH_C = "c" * 64
+HASH_D = "d" * 64
+
 
 def _receipt_payload() -> dict[str, object]:
     return {
-        "source_hash": "source-abc",
-        "raw_reprojection_hash": "raw-def",
-        "refined_pre_repair_hash": "refined-ghi",
-        "repaired_export_hash": "repaired-jkl",
+        "source_hash": HASH_A,
+        "raw_reprojection_hash": HASH_B,
+        "refined_pre_repair_hash": HASH_C,
+        "repaired_export_hash": HASH_D,
         "vertex_count": 10475,
         "face_count": 20908,
         "topology_label": "smplx_body_v1",
@@ -49,6 +54,36 @@ def test_body_carrier_receipt_rejects_invalid_promotion() -> None:
     payload["promotion"] = 2
 
     with pytest.raises(ValueError, match="promotion"):
+        BodyCarrierReceipt.from_mapping(payload)
+
+
+def test_body_carrier_receipt_rejects_invalid_hash() -> None:
+    payload = _receipt_payload()
+    payload["source_hash"] = "source-abc"
+
+    with pytest.raises(ValueError, match="SHA-256"):
+        BodyCarrierReceipt.from_mapping(payload)
+
+
+def test_promoted_body_carrier_receipt_requires_promotion_quality() -> None:
+    payload = _receipt_payload()
+    payload["body_fit_confidence"] = 0.74
+
+    with pytest.raises(ValueError, match="confidence"):
+        BodyCarrierReceipt.from_mapping(payload)
+
+    payload = _receipt_payload()
+    payload["skull_rigidity_residual"] = 0.36
+
+    with pytest.raises(ValueError, match="skull"):
+        BodyCarrierReceipt.from_mapping(payload)
+
+
+def test_body_carrier_receipt_rejects_non_finite_metrics() -> None:
+    payload = _receipt_payload()
+    payload["landmark_residuals"] = {"nose": float("nan")}
+
+    with pytest.raises(ValueError, match="finite"):
         BodyCarrierReceipt.from_mapping(payload)
 
 
@@ -91,11 +126,14 @@ def test_non_promoted_receipt_defaults_to_explicit_downstream_blocks() -> None:
 
 def test_can_consume_receipt_without_consumer_requires_no_blocks() -> None:
     receipt = BodyCarrierReceipt.from_mapping(_receipt_payload())
-    blocked = with_blocked_consumers(receipt, ["hard_shell"])
 
     assert can_consume_receipt(receipt)
+    with pytest.raises(ValueError, match="block"):
+        with_blocked_consumers(receipt, ["hard_shell"])
+
+    blocked = with_blocked_consumers(receipt, ["hard_shell"], promotion=0)
     assert not can_consume_receipt(blocked)
-    assert can_consume_receipt(blocked, "undersuit")
+    assert not can_consume_receipt(blocked, "undersuit")
 
 
 def test_normalize_promotion_rejects_unknown_state() -> None:

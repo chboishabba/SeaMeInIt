@@ -4,21 +4,25 @@ from __future__ import annotations
 
 import json
 import math
-from dataclasses import dataclass, replace
+import re
+from dataclasses import InitVar, dataclass, replace
 from pathlib import Path
 from typing import Any, Literal, Mapping, cast
 
 Promotion = Literal[-1, 0, 1]
+ROM_FIELD_PROMOTION_UNIFORMITY_THRESHOLD = 0.95
 DEFAULT_ROM_FIELD_BLOCKED_CONSUMERS = (
     "seam_cost_field",
     "solver_promotion",
     "panel_unwrap",
 )
+_SHA256_HEX_RE = re.compile(r"^[0-9a-f]{64}$")
 
 __all__ = [
     "DEFAULT_ROM_FIELD_BLOCKED_CONSUMERS",
     "Promotion",
     "ROMFieldReceipt",
+    "ROM_FIELD_PROMOTION_UNIFORMITY_THRESHOLD",
     "can_consume_rom_field_receipt",
     "load_rom_field_receipt",
     "normalize_promotion",
@@ -58,6 +62,23 @@ def _coerce_str_value(value: object, key: str) -> str:
     if not value:
         raise ValueError(f"ROMFieldReceipt field '{key}' must be non-empty.")
     return value
+
+
+def _coerce_sha256_value(value: object, key: str) -> str:
+    digest = _coerce_str_value(value, key)
+    if not _SHA256_HEX_RE.fullmatch(digest):
+        raise ValueError(
+            f"ROMFieldReceipt field '{key}' must be a lowercase SHA-256 hex digest."
+        )
+    return digest
+
+
+def _coerce_required_sha256(payload: Mapping[str, Any], key: str) -> str:
+    try:
+        value = payload[key]
+    except KeyError as exc:
+        raise KeyError(f"ROMFieldReceipt is missing required field '{key}'.") from exc
+    return _coerce_sha256_value(value, key)
 
 
 def _coerce_non_negative_finite_float_value(value: object, key: str) -> float:
@@ -134,6 +155,13 @@ def _coerce_bool(payload: Mapping[str, Any], key: str) -> bool:
     return value
 
 
+def _coerce_optional_bool(payload: Mapping[str, Any], key: str) -> bool:
+    value = payload.get(key, False)
+    if not isinstance(value, bool):
+        raise TypeError(f"ROMFieldReceipt field '{key}' must be boolean.")
+    return value
+
+
 def _coerce_promotion(payload: Mapping[str, Any]) -> Promotion:
     try:
         value = payload["promotion"]
@@ -161,6 +189,27 @@ def _blocked_consumers_for_promotion(
     return blocked_consumers
 
 
+def _validate_promotion_invariants(
+    *,
+    promotion: Promotion,
+    field_uniformity: float,
+    synthetic: bool,
+    synthetic_promotion_acknowledged: bool,
+) -> None:
+    if promotion != 1:
+        return
+    if field_uniformity >= ROM_FIELD_PROMOTION_UNIFORMITY_THRESHOLD:
+        raise ValueError(
+            "ROMFieldReceipt promotion requires field_uniformity "
+            f"< {ROM_FIELD_PROMOTION_UNIFORMITY_THRESHOLD}."
+        )
+    if synthetic and not synthetic_promotion_acknowledged:
+        raise ValueError(
+            "ROMFieldReceipt promoted synthetic payload requires "
+            "synthetic_promotion_acknowledged=true."
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class ROMFieldReceipt:
     """Hash-linked receipt for vertex-aligned ROM field aggregation."""
@@ -180,22 +229,24 @@ class ROMFieldReceipt:
     synthetic: bool
     promotion: Promotion
     blocked_consumers: list[str]
+    synthetic_promotion_acknowledged: bool = False
+    _strict_loaded: InitVar[bool] = False
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, _strict_loaded: bool) -> None:
         object.__setattr__(
             self,
             "basis_receipt_hash",
-            _coerce_str_value(self.basis_receipt_hash, "basis_receipt_hash"),
+            _coerce_sha256_value(self.basis_receipt_hash, "basis_receipt_hash"),
         )
         object.__setattr__(
             self,
             "samples_hash",
-            _coerce_str_value(self.samples_hash, "samples_hash"),
+            _coerce_sha256_value(self.samples_hash, "samples_hash"),
         )
         object.__setattr__(
             self,
             "aggregation_summary_hash",
-            _coerce_str_value(
+            _coerce_sha256_value(
                 self.aggregation_summary_hash,
                 "aggregation_summary_hash",
             ),
@@ -203,7 +254,7 @@ class ROMFieldReceipt:
         object.__setattr__(
             self,
             "fields_hash",
-            _coerce_str_value(self.fields_hash, "fields_hash"),
+            _coerce_sha256_value(self.fields_hash, "fields_hash"),
         )
         object.__setattr__(
             self,
@@ -250,7 +301,25 @@ class ROMFieldReceipt:
         object.__setattr__(self, "field_uniformity", uniformity)
         if not isinstance(self.synthetic, bool):
             raise TypeError("ROMFieldReceipt field 'synthetic' must be boolean.")
-        object.__setattr__(self, "promotion", normalize_promotion(self.promotion))
+        if not isinstance(self.synthetic_promotion_acknowledged, bool):
+            raise TypeError(
+                "ROMFieldReceipt field 'synthetic_promotion_acknowledged' must be boolean."
+            )
+        promotion = normalize_promotion(self.promotion)
+        if (
+            self.synthetic
+            and promotion == 1
+            and not self.synthetic_promotion_acknowledged
+            and not _strict_loaded
+        ):
+            object.__setattr__(self, "synthetic_promotion_acknowledged", True)
+        _validate_promotion_invariants(
+            promotion=promotion,
+            field_uniformity=uniformity,
+            synthetic=self.synthetic,
+            synthetic_promotion_acknowledged=self.synthetic_promotion_acknowledged,
+        )
+        object.__setattr__(self, "promotion", promotion)
         blocked_consumers = _coerce_blocked_consumer_values(self.blocked_consumers)
         object.__setattr__(
             self,
@@ -263,13 +332,13 @@ class ROMFieldReceipt:
         """Build a validated receipt from a JSON-like mapping."""
 
         return cls(
-            basis_receipt_hash=_coerce_required_str(payload, "basis_receipt_hash"),
-            samples_hash=_coerce_required_str(payload, "samples_hash"),
-            aggregation_summary_hash=_coerce_required_str(
+            basis_receipt_hash=_coerce_required_sha256(payload, "basis_receipt_hash"),
+            samples_hash=_coerce_required_sha256(payload, "samples_hash"),
+            aggregation_summary_hash=_coerce_required_sha256(
                 payload,
                 "aggregation_summary_hash",
             ),
-            fields_hash=_coerce_required_str(payload, "fields_hash"),
+            fields_hash=_coerce_required_sha256(payload, "fields_hash"),
             pose_count=_coerce_positive_int(payload, "pose_count"),
             total_samples=_coerce_positive_int(payload, "total_samples"),
             pose_source=_coerce_required_str(payload, "pose_source"),
@@ -287,6 +356,11 @@ class ROMFieldReceipt:
             synthetic=_coerce_bool(payload, "synthetic"),
             promotion=_coerce_promotion(payload),
             blocked_consumers=_coerce_blocked_consumers(payload),
+            synthetic_promotion_acknowledged=_coerce_optional_bool(
+                payload,
+                "synthetic_promotion_acknowledged",
+            ),
+            _strict_loaded=True,
         )
 
     @classmethod
@@ -318,6 +392,9 @@ class ROMFieldReceipt:
             "synthetic": bool(self.synthetic),
             "promotion": int(self.promotion),
             "blocked_consumers": list(self.blocked_consumers),
+            "synthetic_promotion_acknowledged": bool(
+                self.synthetic_promotion_acknowledged
+            ),
         }
 
     def to_json(self, path: str | Path) -> Path:
@@ -357,6 +434,15 @@ def can_consume_rom_field_receipt(
     """Return whether a ROM field receipt is promoted for downstream consumers."""
 
     if receipt.promotion != 1:
+        return False
+    try:
+        _validate_promotion_invariants(
+            promotion=receipt.promotion,
+            field_uniformity=receipt.field_uniformity,
+            synthetic=receipt.synthetic,
+            synthetic_promotion_acknowledged=receipt.synthetic_promotion_acknowledged,
+        )
+    except ValueError:
         return False
     if consumer is None:
         return not receipt.blocked_consumers

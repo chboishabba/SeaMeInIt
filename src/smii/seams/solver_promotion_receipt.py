@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Literal, Mapping, cast
 
 Promotion = Literal[-1, 0, 1]
-SOLVER_MODES = ("shortest_path", "min_cut", "pda_mst")
+SOLVER_MODES = ("shortest_path", "min_cut", "pda_mst", "cut_graph", "metric_panelization")
 ANCHOR_SOURCES = ("field_minima", "geometric", "manual")
 DEFAULT_SOLVER_BLOCKED_CONSUMERS = (
     "panel_unwrap",
@@ -99,6 +99,20 @@ def _coerce_non_negative_int(payload: Mapping[str, Any], key: str) -> int:
     return _coerce_non_negative_int_value(value, key)
 
 
+def _coerce_optional_non_negative_int(payload: Mapping[str, Any], key: str) -> int | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    return _coerce_non_negative_int_value(value, key)
+
+
+def _coerce_optional_str(payload: Mapping[str, Any], key: str) -> str | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    return _coerce_str_value(value, key)
+
+
 def _coerce_positive_int_value(value: object, key: str) -> int:
     coerced = _coerce_non_negative_int_value(value, key)
     if coerced <= 0:
@@ -137,9 +151,36 @@ def _coerce_non_negative_float(payload: Mapping[str, Any], key: str) -> float:
     return coerced
 
 
+def _coerce_non_negative_float_value(value: object, key: str) -> float:
+    coerced = _coerce_finite_float_value(value, key)
+    if coerced < 0.0:
+        raise ValueError(f"SolverPromotionReceipt field '{key}' must be non-negative.")
+    return coerced
+
+
+def _coerce_optional_non_negative_float(payload: Mapping[str, Any], key: str) -> float | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    return _coerce_non_negative_float_value(value, key)
+
+
 def _coerce_blocked_consumers(payload: Mapping[str, Any]) -> list[str]:
     blocked_consumers = payload.get("blocked_consumers", [])
     return _coerce_blocked_consumer_values(blocked_consumers)
+
+
+def _coerce_string_list_value(value: object, key: str) -> list[str]:
+    if not isinstance(value, list):
+        raise TypeError(f"SolverPromotionReceipt field '{key}' must be a list.")
+    return [str(entry) for entry in value]
+
+
+def _coerce_optional_string_list(payload: Mapping[str, Any], key: str) -> list[str] | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    return _coerce_string_list_value(value, key)
 
 
 def _coerce_blocked_consumer_values(blocked_consumers: object) -> list[str]:
@@ -182,6 +223,16 @@ class SolverPromotionReceipt:
     seam_hash: str
     promotion: Promotion
     blocked_consumers: list[str]
+    requested_anchor_count: int | None = None
+    candidate_anchor_count: int | None = None
+    low_cost_anchor_component_count: int | None = None
+    min_seam_edge_count: int | None = None
+    min_seam_vertex_count: int | None = None
+    solver_blockers: list[str] | None = None
+    correction_payload_hash: str | None = None
+    corrected_residual_total: float | None = None
+    raw_residual_total: float | None = None
+    selected_correction_count: int | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -252,6 +303,41 @@ class SolverPromotionReceipt:
             "blocked_consumers",
             _blocked_consumers_for_promotion(self.promotion, blocked_consumers),
         )
+        for key in (
+            "requested_anchor_count",
+            "candidate_anchor_count",
+            "low_cost_anchor_component_count",
+            "min_seam_edge_count",
+            "min_seam_vertex_count",
+        ):
+            value = getattr(self, key)
+            if value is not None:
+                object.__setattr__(self, key, _coerce_non_negative_int_value(value, key))
+        if self.solver_blockers is not None:
+            object.__setattr__(
+                self,
+                "solver_blockers",
+                _coerce_string_list_value(self.solver_blockers, "solver_blockers"),
+            )
+        if self.correction_payload_hash is not None:
+            object.__setattr__(
+                self,
+                "correction_payload_hash",
+                _coerce_str_value(self.correction_payload_hash, "correction_payload_hash"),
+            )
+        for key in ("corrected_residual_total", "raw_residual_total"):
+            value = getattr(self, key)
+            if value is not None:
+                object.__setattr__(self, key, _coerce_non_negative_float_value(value, key))
+        if self.selected_correction_count is not None:
+            object.__setattr__(
+                self,
+                "selected_correction_count",
+                _coerce_non_negative_int_value(
+                    self.selected_correction_count,
+                    "selected_correction_count",
+                ),
+            )
 
     @classmethod
     def from_mapping(cls, payload: Mapping[str, Any]) -> "SolverPromotionReceipt":
@@ -275,6 +361,37 @@ class SolverPromotionReceipt:
             seam_hash=_coerce_required_str(payload, "seam_hash"),
             promotion=_coerce_promotion(payload),
             blocked_consumers=_coerce_blocked_consumers(payload),
+            requested_anchor_count=_coerce_optional_non_negative_int(
+                payload,
+                "requested_anchor_count",
+            ),
+            candidate_anchor_count=_coerce_optional_non_negative_int(
+                payload,
+                "candidate_anchor_count",
+            ),
+            low_cost_anchor_component_count=_coerce_optional_non_negative_int(
+                payload,
+                "low_cost_anchor_component_count",
+            ),
+            min_seam_edge_count=_coerce_optional_non_negative_int(
+                payload,
+                "min_seam_edge_count",
+            ),
+            min_seam_vertex_count=_coerce_optional_non_negative_int(
+                payload,
+                "min_seam_vertex_count",
+            ),
+            solver_blockers=_coerce_optional_string_list(payload, "solver_blockers"),
+            correction_payload_hash=_coerce_optional_str(payload, "correction_payload_hash"),
+            corrected_residual_total=_coerce_optional_non_negative_float(
+                payload,
+                "corrected_residual_total",
+            ),
+            raw_residual_total=_coerce_optional_non_negative_float(payload, "raw_residual_total"),
+            selected_correction_count=_coerce_optional_non_negative_int(
+                payload,
+                "selected_correction_count",
+            ),
         )
 
     @classmethod
@@ -290,7 +407,7 @@ class SolverPromotionReceipt:
     def to_dict(self) -> dict[str, object]:
         """Return a JSON-serialisable receipt payload."""
 
-        return {
+        payload: dict[str, object] = {
             "seam_cost_receipt_hash": self.seam_cost_receipt_hash,
             "solver_mode": self.solver_mode,
             "anchor_count": int(self.anchor_count),
@@ -306,6 +423,20 @@ class SolverPromotionReceipt:
             "promotion": int(self.promotion),
             "blocked_consumers": list(self.blocked_consumers),
         }
+        optional_fields = {
+            "requested_anchor_count": self.requested_anchor_count,
+            "candidate_anchor_count": self.candidate_anchor_count,
+            "low_cost_anchor_component_count": self.low_cost_anchor_component_count,
+            "min_seam_edge_count": self.min_seam_edge_count,
+            "min_seam_vertex_count": self.min_seam_vertex_count,
+            "solver_blockers": self.solver_blockers,
+            "correction_payload_hash": self.correction_payload_hash,
+            "corrected_residual_total": self.corrected_residual_total,
+            "raw_residual_total": self.raw_residual_total,
+            "selected_correction_count": self.selected_correction_count,
+        }
+        payload.update({key: value for key, value in optional_fields.items() if value is not None})
+        return payload
 
     def to_json(self, path: str | Path) -> Path:
         """Write the receipt as stable JSON and return the target path."""
@@ -325,9 +456,7 @@ def load_solver_promotion_receipt(path: str | Path) -> SolverPromotionReceipt:
     return SolverPromotionReceipt.from_json(path)
 
 
-def with_promotion(
-    receipt: SolverPromotionReceipt, promotion: object
-) -> SolverPromotionReceipt:
+def with_promotion(receipt: SolverPromotionReceipt, promotion: object) -> SolverPromotionReceipt:
     """Return a copy of a receipt with a validated promotion value."""
 
     next_promotion = normalize_promotion(promotion)

@@ -122,6 +122,7 @@ def build_steps(
     force: bool,
     detector: str,
     require_high_trust_detector: bool,
+    images: Sequence[Path] = (),
 ) -> list[GateStep]:
     """Build the native `A_v3240` demo command sequence."""
 
@@ -130,6 +131,8 @@ def build_steps(
     rom_dir = run_dir / "rom"
     seams_dir = run_dir / "seams"
     solver_dir = run_dir / "solver"
+    topology_dir = run_dir / "topology"
+    corrections_dir = run_dir / "corrections"
     panels_dir = run_dir / "panels"
     manufacturing_dir = run_dir / "manufacturing"
 
@@ -138,8 +141,11 @@ def build_steps(
     rom_receipt = rom_dir / "rom_field_receipt.json"
     seam_cost_receipt = seams_dir / "seam_cost_receipt.json"
     solver_receipt = solver_dir / "solver_promotion_receipt.json"
+    cut_topology_receipt = topology_dir / "cut_topology_receipt.json"
+    metric_correction_receipt = corrections_dir / "metric_correction_receipt.json"
     panel_receipt = panels_dir / "panel_unwrap_receipt.json"
     manufacturing_receipt = manufacturing_dir / "manufacturing_receipt.json"
+    finished_seam_receipt = manufacturing_dir / "finished_seam_receipt.json"
 
     afflec_command = [
         python,
@@ -153,6 +159,9 @@ def build_steps(
     ]
     if require_high_trust_detector:
         afflec_command.append("--require-high-trust-detector")
+    if images:
+        afflec_command.append("--images")
+        afflec_command.extend(str(path) for path in images)
     if force:
         afflec_command.append("--force")
 
@@ -194,6 +203,8 @@ def build_steps(
                 str(body_dir / "afflec_body.npz"),
                 "--body-receipt",
                 str(body_receipt),
+                "--components",
+                "4",
                 "--output",
                 str(basis_dir / "canonical_basis.npz"),
                 "--receipt-output",
@@ -247,8 +258,50 @@ def build_steps(
                 str(solver_dir),
                 "--out-solver-receipt",
                 str(solver_receipt),
+                "--solver-mode",
+                "metric_panelization",
+                "--correction-families",
+                "dart,relief_cut,ease,gusset,stretch_zone",
             ),
             receipt_path=solver_receipt,
+        ),
+        GateStep(
+            key="cut_topology",
+            label="Gate 5b: cut topology",
+            command=(
+                python,
+                "scripts/validate_cut_topology.py",
+                "--solver-receipt",
+                str(solver_receipt),
+                "--seam-edges",
+                str(solver_dir / "seam_edges.npz"),
+                "--mesh",
+                str(body_dir / "afflec_body.npz"),
+                "--corrections",
+                str(solver_dir / "corrections.json"),
+                "--out-cut-topology-receipt",
+                str(cut_topology_receipt),
+            ),
+            receipt_path=cut_topology_receipt,
+        ),
+        GateStep(
+            key="metric_correction",
+            label="Gate 5c: metric correction",
+            command=(
+                python,
+                "scripts/emit_metric_correction_receipt.py",
+                "--solver-receipt",
+                str(solver_receipt),
+                "--cut-topology-receipt",
+                str(cut_topology_receipt),
+                "--seam-edges",
+                str(solver_dir / "seam_edges.npz"),
+                "--corrections",
+                str(solver_dir / "corrections.json"),
+                "--out-metric-correction-receipt",
+                str(metric_correction_receipt),
+            ),
+            receipt_path=metric_correction_receipt,
         ),
         GateStep(
             key="panel_unwrap",
@@ -264,6 +317,12 @@ def build_steps(
                 str(body_dir / "afflec_body.npz"),
                 "--out-dir",
                 str(panels_dir),
+                "--cut-topology-receipt",
+                str(cut_topology_receipt),
+                "--metric-correction-receipt",
+                str(metric_correction_receipt),
+                "--corrections",
+                str(solver_dir / "corrections.json"),
                 "--out-panel-receipt",
                 str(panel_receipt),
             ),
@@ -271,7 +330,7 @@ def build_steps(
         ),
         GateStep(
             key="manufacture",
-            label="Gate 7: manufacturing artifacts",
+            label="Gate 7: manufacturing artifacts and finished seam receipt",
             command=(
                 python,
                 "scripts/generate_manufacturing_artifacts.py",
@@ -287,6 +346,24 @@ def build_steps(
                 str(manufacturing_receipt),
                 "--manufacturing-method",
                 manufacturing_method,
+                "--out-finished-seam-receipt",
+                str(finished_seam_receipt),
+                "--body-receipt",
+                str(body_receipt),
+                "--rom-receipt",
+                str(rom_receipt),
+                "--fabric-receipt-hash",
+                "inline-demo-fabric-profile",
+                "--basis-receipt",
+                str(basis_receipt),
+                "--seam-cost-receipt",
+                str(seam_cost_receipt),
+                "--solver-receipt",
+                str(solver_receipt),
+                "--cut-topology-receipt",
+                str(cut_topology_receipt),
+                "--metric-correction-receipt",
+                str(metric_correction_receipt),
             ),
             receipt_path=manufacturing_receipt,
         ),
@@ -306,6 +383,13 @@ def initial_gate_records() -> dict[str, dict[str, object]]:
         "rom_field": {"promotion": 0, "receipt": None, "receipt_hash": None, "notes": ""},
         "seam_cost": {"promotion": 0, "receipt": None, "receipt_hash": None, "notes": ""},
         "solver": {"promotion": 0, "receipt": None, "receipt_hash": None, "notes": ""},
+        "cut_topology": {"promotion": 0, "receipt": None, "receipt_hash": None, "notes": ""},
+        "metric_correction": {
+            "promotion": 0,
+            "receipt": None,
+            "receipt_hash": None,
+            "notes": "",
+        },
         "panel_unwrap": {"promotion": 0, "receipt": None, "receipt_hash": None, "notes": ""},
         "manufacture": {"promotion": 0, "receipt": None, "receipt_hash": None, "notes": ""},
     }
@@ -318,6 +402,8 @@ def _can_manufacture(gates: Mapping[str, Mapping[str, object]]) -> bool:
         "rom_field",
         "seam_cost",
         "solver",
+        "cut_topology",
+        "metric_correction",
         "panel_unwrap",
         "manufacture",
     )
@@ -358,6 +444,7 @@ def run_demo(
     detector: str,
     require_high_trust_detector: bool,
     dry_run: bool,
+    images: Sequence[Path] = (),
     runner: Callable[[Sequence[str], Path], int] | None = None,
 ) -> int:
     started = _utc_now()
@@ -370,6 +457,7 @@ def run_demo(
         force=force,
         detector=detector,
         require_high_trust_detector=require_high_trust_detector,
+        images=tuple(images),
     )
 
     if dry_run:
@@ -390,7 +478,9 @@ def run_demo(
         print("  " + " ".join(step.command))
         return_code = command_runner(step.command, Path.cwd())
         if return_code != 0:
-            gates[step.key]["notes"] = f"{Path(step.command[1]).name if len(step.command) > 1 else step.key} exited {return_code}"
+            gates[step.key]["notes"] = (
+                f"{Path(step.command[1]).name if len(step.command) > 1 else step.key} exited {return_code}"
+            )
             first_blocker = step.key
             manifest_path = write_manifest(
                 run_dir=run_dir,
@@ -508,6 +598,13 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
         help="Pass --require-high-trust-detector to afflec-demo.",
     )
     parser.add_argument(
+        "--images",
+        type=Path,
+        nargs="+",
+        default=(),
+        help="Optional Afflec image set passed through to Gate 0 afflec-demo.",
+    )
+    parser.add_argument(
         "--python",
         default=sys.executable,
         help="Python executable used for subcommands (default: current interpreter).",
@@ -526,6 +623,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         detector=args.detector,
         require_high_trust_detector=args.require_high_trust_detector,
         dry_run=args.dry_run,
+        images=tuple(args.images),
     )
 
 

@@ -10,6 +10,10 @@ from pathlib import Path
 import numpy as np
 
 from smii.seams import PanelUnwrapReceipt
+from smii.seams.cut_topology_receipt import CutTopologyReceipt
+from smii.seams.metric_correction_receipt import MetricCorrectionEntry, MetricCorrectionReceipt
+from smii.seams.seam_cost_receipt import SeamCostReceipt
+from smii.seams.solver_promotion_receipt import SolverPromotionReceipt
 
 
 def _sha256_file(path: Path) -> str:
@@ -55,6 +59,96 @@ def _write_panel_receipt(
         promotion=promotion,
         blocked_consumers=[],
     ).to_json(path)
+
+
+def _write_upstream_receipts(tmp_path: Path) -> dict[str, Path]:
+    seam_cost_path = tmp_path / "seam_cost_receipt.json"
+    solver_path = tmp_path / "solver_promotion_receipt.json"
+    cut_topology_path = tmp_path / "cut_topology_receipt.json"
+    metric_correction_path = tmp_path / "metric_correction_receipt.json"
+
+    SeamCostReceipt(
+        rom_field_receipt_hash="rom-field-sha256",
+        body_receipt_hash="body-sha256",
+        correspondence_receipt_hash=None,
+        solve_domain="A_v3240",
+        vertex_count=4,
+        edge_count=5,
+        finite_cost_coverage=1.0,
+        cost_uniformity=0.4,
+        peak_cost=2.0,
+        mean_cost=1.0,
+        weight_vector={"w_P": 1.0, "w_S": 0.8},
+        costs_hash="costs-sha256",
+        promotion=1,
+        blocked_consumers=[],
+    ).to_json(seam_cost_path)
+    SolverPromotionReceipt(
+        seam_cost_receipt_hash=_sha256_file(seam_cost_path),
+        solver_mode="shortest_path",
+        anchor_count=4,
+        anchor_source="field_minima",
+        connected_component_count=1,
+        anchor_fallback_used=False,
+        seam_edge_count=3,
+        seam_vertex_count=4,
+        total_seam_cost=2.5,
+        panel_count=2,
+        panels_are_disks=True,
+        seam_hash="seam-sha256",
+        promotion=1,
+        blocked_consumers=[],
+    ).to_json(solver_path)
+    CutTopologyReceipt(
+        solver_receipt_hash=_sha256_file(solver_path),
+        mesh_hash="mesh-sha256",
+        seam_edges_hash="seam-edges-sha256",
+        seam_edge_segment_count=8,
+        seam_vertex_count=8,
+        seam_connected_component_count=1,
+        seam_endpoint_count=0,
+        seam_branch_vertex_count=0,
+        panel_count=2,
+        panel_face_counts=[12, 12],
+        panel_boundary_edge_counts=[4, 4],
+        panels_are_disks=True,
+        typed_dart_count=0,
+        typed_gusset_count=0,
+        promotion=1,
+        blocked_consumers=[],
+        cut_topology_blockers=[],
+    ).to_json(cut_topology_path)
+    MetricCorrectionReceipt(
+        solver_receipt_hash=_sha256_file(solver_path),
+        cut_topology_receipt_hash=_sha256_file(cut_topology_path),
+        seam_edges_hash="seam-edges-sha256",
+        panels_requiring_correction=[0],
+        corrections=[
+            MetricCorrectionEntry(
+                panel_label=0,
+                correction_type="dart",
+                delta_metric_meaning="local first-fundamental-form relaxation",
+                raw_residual=0.08,
+                corrected_residual=0.02,
+                energy_terms={"shape": 0.02},
+                result_state="correctionOk",
+                blockers=[],
+            )
+        ],
+        raw_residual_total=0.08,
+        corrected_residual_total=0.02,
+        residual_gate=0.05,
+        promotion=1,
+        blocked_consumers=[],
+        metric_correction_blockers=[],
+        correction_payload_hash="metric-correction-sha256",
+    ).to_json(metric_correction_path)
+    return {
+        "seam_cost": seam_cost_path,
+        "solver": solver_path,
+        "cut_topology": cut_topology_path,
+        "metric_correction": metric_correction_path,
+    }
 
 
 def _run_manufacture(*args: str) -> subprocess.CompletedProcess[str]:
@@ -111,6 +205,72 @@ def test_generate_manufacturing_artifacts_emits_promoted_receipt(
 
     allowance = np.load(out_dir / "seam_allowance.npz")["allowance"]
     assert float(allowance.std()) > 1e-4
+
+
+def test_generate_manufacturing_artifacts_emits_finished_seam_receipt(
+    tmp_path: Path,
+) -> None:
+    panel_uvs_path = tmp_path / "panel_uvs.npz"
+    rom_fields_path = tmp_path / "rom_fields.npz"
+    panel_receipt_path = tmp_path / "panel_unwrap_receipt.json"
+    out_dir = tmp_path / "out"
+    manufacturing_receipt_path = out_dir / "manufacturing_receipt.json"
+    finished_receipt_path = out_dir / "finished_seam_receipt.json"
+
+    _write_panel_uvs(panel_uvs_path)
+    _write_rom_fields(rom_fields_path)
+    _write_panel_receipt(panel_receipt_path, panel_uvs_path)
+    upstream = _write_upstream_receipts(tmp_path)
+
+    result = _run_manufacture(
+        "--panel-receipt",
+        str(panel_receipt_path),
+        "--panel-uvs",
+        str(panel_uvs_path),
+        "--rom-fields",
+        str(rom_fields_path),
+        "--out-dir",
+        str(out_dir),
+        "--out-manufacturing-receipt",
+        str(manufacturing_receipt_path),
+        "--out-finished-seam-receipt",
+        str(finished_receipt_path),
+        "--body-receipt-hash",
+        "body-sha256",
+        "--rom-receipt-hash",
+        "rom-sha256",
+        "--fabric-receipt-hash",
+        "fabric-sha256",
+        "--basis-receipt-hash",
+        "basis-sha256",
+        "--seam-cost-receipt",
+        str(upstream["seam_cost"]),
+        "--solver-receipt",
+        str(upstream["solver"]),
+        "--cut-topology-receipt",
+        str(upstream["cut_topology"]),
+        "--metric-correction-receipt",
+        str(upstream["metric_correction"]),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert manufacturing_receipt_path.exists()
+    assert finished_receipt_path.exists()
+    receipt = json.loads(finished_receipt_path.read_text(encoding="utf-8"))
+    assert receipt["schema_version"] == "smii.finished_seam_receipt.v1"
+    assert receipt["promotion"] == 1
+    assert receipt["body_gate"]["receipt_hash"] == "body-sha256"
+    assert receipt["rom_gate"]["receipt_hash"] == "rom-sha256"
+    assert receipt["fabric_gate"]["receipt_hash"] == "fabric-sha256"
+    assert receipt["basis_gate"]["receipt_hash"] == "basis-sha256"
+    assert receipt["seam_atlas"]["selected_seam_count"] == 3
+    assert receipt["panel_atlas"]["panel_count"] == 2
+    assert receipt["flattening"]["panel_unwrap_hash"] == _sha256_file(panel_uvs_path)
+    assert {"type": "dart", "count": 1} in receipt["correction_ops"]
+    assert receipt["allowance_fields"]["policy"] == "variable_boundary_field"
+    assert receipt["manufacturing_exports"]["hash"] == _sha256_file(out_dir / "cutting_layout.svg")
+    assert receipt["claim_boundary"]["export_is_geometry_truth"] is False
+    assert receipt["claim_boundary"]["claims_true_inverse"] is False
 
 
 def test_constant_allowance_is_named_diagnostic(

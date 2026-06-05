@@ -28,18 +28,88 @@ Afflec local reference-image manifest: `docs/roadmap/afflec_reference_images_202
   constrain measurement refinement, preserve export-stage checkpoints, and
   acceptance-test the known skull/head non-promotion case. See
   `docs/roadmap/gate0_reference_and_p3_handoff.md`.
+- P3 expanded Afflec evidence is recorded in
+  `docs/roadmap/p3_afflec_gate0_evidence_20260604.md`: the curated seven-image
+  MediaPipe lane promotes under the current skull threshold, while all-ref
+  lanes fail on no-pose inputs. Proceed assuming the refined final-export
+  topology change to `9384` vertices / `18764` faces is acceptable for now;
+  add an export/topology diagnostic later before treating topology mutation as a
+  quality blocker.
 - Define the P3 back-transfer spec against the exact forward object and cutting
   constraints before replacing bootstrap unwrap/manufacturing behavior:
   topology/hashes, transfer mode, round-trip checks, seam retention/collapse,
   collision/load metrics, morphology preservation, grain/notch/label/cut-line
   promotion gates.
+- P3 garment metric-correction/topology-gated unwrap is implemented locally:
+  `CutTopologyReceipt` classifies ordinary boundaries, correction-tree/operator
+  nodes, and invalid fragmentation; branches are not intrinsically blockers
+  once typed. `MetricCorrectionReceipt` records selected corrections, residual
+  gates, blockers, source hashes, and `correctionOk` /
+  `correctionDegraded` / `correctionRejected` / `correctionAbstained`;
+  schema guidance names `CorrectionTreeReceipt` fields such as
+  `operator_nodes`, `operator_type`, `delta_metric_meaning`, and
+  `metric_propagation_law`, plus `FabricAwarePanelMetricReceipt` fields such as
+  `fabric_receipt_hash`, `grain_direction`, `fabric_relative_threshold`, and
+  `fabric_metric_gate`. `scripts/emit_metric_correction_receipt.py` emits the
+  bridge receipt; `scripts/unwrap_panels.py` requires a promoted metric receipt
+  when typed operators are present; panel promotion is fabric-relative;
+  `FinishedSeamReceipt` now composes promoted
+  body/ROM/fabric/basis/seam/panel/correction/manufacturing receipts into a
+  final adaptive body atlas serialization receipt; and
+  `scripts/generate_manufacturing_artifacts.py` can emit
+  `finished_seam_receipt.json` from supplied upstream receipts. The Afflec
+  receipted demo runner now includes cut-topology and metric-correction gates
+  and passes the finished-receipt arguments into Gate 7. Curated P3/Afflec
+  validation now promotes through Gate 5c and blocks at Gate 6 because bootstrap
+  panel distortion is ~0.21 against the 0.05 threshold and corrected residuals
+  are ~0.15 against the 0.05 gate. Next, improve panelization/unwrap/correction
+  quality rather than loosening the gate.
+- Gate 6c parent surgery now records serializer-derived failure fields inside
+  `serialization_competition_receipt.failure_fields` and offers a measured
+  `failure_relief_path` variant when high-distortion or foldover faces form a
+  strict face subset. This keeps the acceptance lemma unchanged
+  (serializable, score-improving, no worst-distortion regression) while making
+  the next parent split come from measured residual/foldover evidence instead of
+  assuming branch-local isolation is sufficient.
+- Fresh P3/Afflec evidence is recorded at
+  `outputs/p3_afflec_failure_relief_20260605/panel_unwrap_fabric_full/panel_unwrap_receipt.json`:
+  the full fabric/materialization-aware run emitted parent failure fields and
+  competed `failure_relief_path`. P2 improved worst distortion (`5.41` to
+  `4.97`) but regressed score, so it was correctly rejected. P0 reduced score
+  but produced invalid chart domains. Accepted parents remain P1 `cutout_r1`
+  and P3 `relief_split`; next parent surgery should be a stronger
+  backend-valid multi-path relief tree rather than another branch-local split.
+- Follow-up evidence is recorded at
+  `outputs/p3_afflec_failure_relief_20260605/panel_unwrap_fabric_tree/panel_unwrap_receipt.json`:
+  the materialized competition now emits a real `failure_relief_tree` variant
+  alongside the older single-path family. It is still rejected on the current
+  Afflec panels, but the receipt shows the next shape of the search space is now
+  explicit rather than implied.
+- Graph/ultrametric unwrap scoring now has a local benchmark surface:
+  `smii.seams.unwrap_benchmark` compares sphere-to-rectangle candidates across
+  edge-length, area, angle, foldover, aggregate residual, and agreement-depth
+  metrics. This is the formal ranking layer above numerical backends such as
+  LSCM; it does not claim an isometric sphere-to-rectangle flattening.
+- BT369 sphere serialization is implemented in `smii.unwrap.sphere_bt369`:
+  `unwrap_sphere_bt369` samples via equal-area inverse pullback, records
+  triadic cell prefixes, residual trits, 6-sector tangent orientation, seam
+  tokens, MDL-bounded depth, and an export certificate. Next, replace the
+  current deterministic triadic address helper with a real geodesic icosahedral
+  carrier when production sphere fields need transport across assets.
+- External unwrap competitor receipts are implemented in
+  `smii.unwrap.external_competitors`: the sphere slice now measures BT369,
+  equal-area, equirectangular, cubed-sphere, octahedral, and HEALPix when
+  `healpy` is installed; it also runs an adversarial field suite over smooth,
+  localized, seam-crossing, and discontinuous fields. Next, add xatlas and
+  libigl LSCM/SLIM adapters behind the same receipt boundary.
 
 ## Existing Backlog
 
 - R0. Build the receipt orchestrator as a promotion DAG, not a task list:
   `BodyCarrierReceipt -> Transform/CorrespondenceReceipt -> BasisReceipt ->
   ROMFieldReceipt -> SeamCostReceipt -> SolverPromotionReceipt ->
-  PanelUnwrapReceipt -> ManufacturingReceipt`.
+  CutTopologyReceipt -> MetricCorrectionReceipt -> PanelUnwrapReceipt ->
+  ManufacturingReceipt -> FinishedSeamReceipt`.
   - R0.1 Carrier trust: `BodyCarrierReceipt` is implemented and
     `generate_undersuit` now blocks unpromoted carriers before artifact
     emission; `afflec-demo` now emits export-stage checkpoints plus
@@ -77,11 +147,25 @@ Afflec local reference-image manifest: `docs/roadmap/afflec_reference_images_202
     promoted seam-cost receipt; it records field-minima anchors, component
     fallback usage, seam hashes, and panel-topology promotion state. Next, wire
     the legacy solver examples to consume the solver receipt when promoting.
-  - R0.6 Panel/manufacture: `PanelUnwrapReceipt` is implemented and
-    `scripts/unwrap_panels.py` emits `panel_unwrap_receipt.json` only from a
-    promoted solver receipt whose panels are topological disks. Distortion and
-    grain direction are receipted per panel, failed flattening produces an
-    explicit non-promotion boundary. `ManufacturingReceipt` is implemented and
+  - R0.6 Panel/manufacture: `CutTopologyReceipt`, `MetricCorrectionReceipt`,
+    and `PanelUnwrapReceipt` are implemented. `scripts/unwrap_panels.py` emits
+    `panel_unwrap_receipt.json` only from promoted solver/cut topology, requires
+    promoted metric correction when typed operators are present, and now supports
+    real NumPy LSCM in addition to the bootstrap projection. Distortion and grain
+    direction are receipted per panel, failed flattening produces an explicit
+    non-promotion boundary. `smii.seams.correction_operator_scoring` now prices
+    unresolved branch nodes as candidate darts/gussets/ease/stretch/grain/seam
+    operators before final fabric-relative metric gating; it is an estimator
+    receipt, not a cloth-simulation authority. Priced `stretch_zone` operators
+    now realize as local fabric-cone overrides plus diagnostic cut-sheet
+    annotations, and `gusset_corner` companion operators realize residual relief
+    when stretch alone cannot satisfy the metric gate; true polygon geometry for
+    dart/ease/grain/seam remains future work.
+    `smii.seams.unwrap_benchmark`
+    now provides the graph/ultrametric multi-metric comparison surface used to
+    rank rectangle unwrap strategies before treating any numerical backend as
+    promotable.
+    `ManufacturingReceipt` is implemented and
     `scripts/generate_manufacturing_artifacts.py` emits final manufacturing
     receipts only from promoted panel unwrap artifacts with hash-matched UVs.
     Variable seam allowance fields, method accessibility, notches, labels, and
@@ -89,21 +173,26 @@ Afflec local reference-image manifest: `docs/roadmap/afflec_reference_images_202
     non-promotion diagnostic. Next, add an orchestrator task runner for the
     complete Gate 0-7 chain.
   - R0.7 Afflec receipted demo runner: `scripts/run_afflec_receipted_demo.py`
-    now executes Gates 0-7 in order for the native `A_v3240` demo path, stops
-    at first non-promotion, emits `run_manifest.json`, and keeps `--dry-run`
-    artifact-free. It defaults Gate 0 to `--detector mediapipe`, exposes
-    `--detector bbox` only as an explicit coarse diagnostic mode, and forwards
-    `--require-high-trust-detector` when a run should hard-fail detector
-    fallback. Do not commit generated demo outputs; regenerate them locally
-    with the runner command. A bounded MediaPipe Gate 0 run completed under
+    now executes the native `A_v3240` receipt chain through cut topology,
+    metric correction, panel unwrap, manufacturing, and
+    `finished_seam_receipt.json`, stops at first non-promotion, emits
+    `run_manifest.json`, and keeps `--dry-run` artifact-free. It defaults Gate
+    0 to `--detector mediapipe`, exposes `--detector bbox` only as an explicit
+    coarse diagnostic mode, forwards `--require-high-trust-detector` when a
+    run should hard-fail detector fallback, and accepts `--images` for the
+    curated P3 reference set. Do not commit generated demo outputs; regenerate
+    them locally with the runner command. A bounded
+    MediaPipe Gate 0 run completed under
     `outputs/demo/mp_cpu_test`: raw regression stayed plausible
     (`beta_max_abs=1.95`, high-trust detector), but measurement refinement
     pushed final betas to `max_abs=11.84` and the skull residual remained just
     above threshold (`0.3602 > 0.35`), so the receipt correctly stayed
-    diagnostic-only. Next, tune/constrain the measurement-refinement handoff
-    before expecting the full runner to pass Gate 0 on Afflec.
+    diagnostic-only. The curated seven-image P3 lane promotes Gate 0 and the
+    full runner now promotes through Gate 5c before Gate 6 blocks on real panel
+    distortion/correction budgets.
 - Production upgrade roadmap after the receipt chain:
-  1. replace the Gate 6 bootstrap projection with real LSCM/ABF/ARAP unwrap,
+  1. validate Gate 6 graph/ultrametric unwrap scoring on P3/Afflec runs, then
+     use it to compare LSCM/ABF/ARAP backend candidates,
   2. wire Gate 7 to the pattern exporter for SVG/PDF/DXF cut and stitch lines,
   3. replace synthetic Gate 3 fields with `sampler_real` corpus aggregation,
   4. replace the Gate 2 sinusoidal/QR basis with cotangent Laplace-Beltrami

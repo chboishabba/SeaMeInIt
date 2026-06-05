@@ -14,7 +14,12 @@ import numpy as np
 from smii.seams import (
     ManufacturingReceipt,
     can_consume_panel_unwrap_receipt,
+    derive_finished_seams,
+    load_cut_topology_receipt,
+    load_metric_correction_receipt,
     load_panel_unwrap_receipt,
+    load_seam_cost_receipt,
+    load_solver_promotion_receipt,
 )
 
 ALLOWANCE_BY_METHOD = {
@@ -137,7 +142,7 @@ def _generate_cutting_layout_svg(
             f'<svg xmlns="http://www.w3.org/2000/svg" width="{width:.1f}" '
             f'height="{height:.1f}" viewBox="0 0 {width:.1f} {height:.1f}">'
         ),
-        f'  <title>SMII cutting layout - {manufacturing_method}</title>',
+        f"  <title>SMII cutting layout - {manufacturing_method}</title>",
         '  <g id="panels" fill="none" stroke="#222" stroke-width="1.2">',
     ]
     for idx, panel in enumerate(panels):
@@ -182,13 +187,25 @@ def generate_manufacturing_artifacts(
     manufacturing_method: str = "home_sewing",
     variable_allowance: bool = True,
     receipt_path: Path | None = None,
+    finished_seam_receipt_path: Path | None = None,
+    body_receipt_hash: str | None = None,
+    body_receipt_path: Path | None = None,
+    rom_receipt_hash: str | None = None,
+    rom_receipt_path: Path | None = None,
+    fabric_receipt_hash: str | None = None,
+    fabric_receipt_path: Path | None = None,
+    basis_receipt_hash: str | None = None,
+    basis_receipt_path: Path | None = None,
+    seam_cost_receipt_path: Path | None = None,
+    solver_receipt_path: Path | None = None,
+    cut_topology_receipt_path: Path | None = None,
+    metric_correction_receipt_path: Path | None = None,
 ) -> ManufacturingReceipt:
     """Generate manufacturing artifacts and emit the final receipt."""
 
     if manufacturing_method not in ALLOWANCE_BY_METHOD:
         raise ValueError(
-            "manufacturing_method must be one of "
-            f"{', '.join(sorted(ALLOWANCE_BY_METHOD))}."
+            f"manufacturing_method must be one of {', '.join(sorted(ALLOWANCE_BY_METHOD))}."
         )
     panel_receipt = load_panel_unwrap_receipt(panel_receipt_path)
     if not can_consume_panel_unwrap_receipt(panel_receipt, "manufacturing"):
@@ -255,9 +272,61 @@ def generate_manufacturing_artifacts(
     )
     target_receipt_path = receipt_path or (output_dir / "manufacturing_receipt.json")
     receipt.to_json(target_receipt_path)
+    if finished_seam_receipt_path is not None:
+        body_hash = body_receipt_hash or (
+            _sha256_file(body_receipt_path) if body_receipt_path is not None else None
+        )
+        rom_hash = rom_receipt_hash or (
+            _sha256_file(rom_receipt_path) if rom_receipt_path is not None else None
+        )
+        fabric_hash = fabric_receipt_hash or (
+            _sha256_file(fabric_receipt_path) if fabric_receipt_path is not None else None
+        )
+        basis_hash = basis_receipt_hash or (
+            _sha256_file(basis_receipt_path) if basis_receipt_path is not None else None
+        )
+        missing = [
+            name
+            for name, value in (
+                ("body-receipt-hash or --body-receipt", body_hash),
+                ("rom-receipt-hash or --rom-receipt", rom_hash),
+                ("fabric-receipt-hash or --fabric-receipt", fabric_hash),
+                ("basis-receipt-hash or --basis-receipt", basis_hash),
+                ("seam_cost_receipt_path", seam_cost_receipt_path),
+                ("solver_receipt_path", solver_receipt_path),
+                ("cut_topology_receipt_path", cut_topology_receipt_path),
+            )
+            if value is None
+        ]
+        if missing:
+            raise ValueError(
+                "--out-finished-seam-receipt requires --"
+                + ", --".join(item.replace("_", "-") for item in missing)
+            )
+        metric_receipt = (
+            load_metric_correction_receipt(metric_correction_receipt_path)
+            if metric_correction_receipt_path is not None
+            else None
+        )
+        finished_receipt = derive_finished_seams(
+            body_receipt_hash=str(body_hash),
+            rom_receipt_hash=str(rom_hash),
+            fabric_receipt_hash=str(fabric_hash),
+            basis_receipt_hash=str(basis_hash),
+            seam_cost_receipt=load_seam_cost_receipt(seam_cost_receipt_path),  # type: ignore[arg-type]
+            solver_receipt=load_solver_promotion_receipt(solver_receipt_path),  # type: ignore[arg-type]
+            cut_topology_receipt=load_cut_topology_receipt(cut_topology_receipt_path),  # type: ignore[arg-type]
+            panel_unwrap_receipt=panel_receipt,
+            metric_correction_receipt=metric_receipt,
+            manufacturing_receipt=receipt,
+            manufacturing_exports_hash=cutting_hash,
+        )
+        finished_receipt.to_json(finished_seam_receipt_path)
     print(f"Wrote seam allowance to {allowance_path}")
     print(f"Wrote cutting layout to {cutting_path}")
     print(f"Wrote manufacturing receipt to {target_receipt_path}")
+    if finished_seam_receipt_path is not None:
+        print(f"Wrote finished seam receipt to {finished_seam_receipt_path}")
     return receipt
 
 
@@ -273,6 +342,24 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Output manufacturing receipt path (default: <out-dir>/manufacturing_receipt.json).",
     )
+    parser.add_argument(
+        "--out-finished-seam-receipt",
+        type=Path,
+        default=None,
+        help="Output finished seam receipt path. Requires the upstream receipt hash/path arguments.",
+    )
+    parser.add_argument("--body-receipt-hash", default=None)
+    parser.add_argument("--body-receipt", type=Path, default=None)
+    parser.add_argument("--rom-receipt-hash", default=None)
+    parser.add_argument("--rom-receipt", type=Path, default=None)
+    parser.add_argument("--fabric-receipt-hash", default=None)
+    parser.add_argument("--fabric-receipt", type=Path, default=None)
+    parser.add_argument("--basis-receipt-hash", default=None)
+    parser.add_argument("--basis-receipt", type=Path, default=None)
+    parser.add_argument("--seam-cost-receipt", type=Path, default=None)
+    parser.add_argument("--solver-receipt", type=Path, default=None)
+    parser.add_argument("--cut-topology-receipt", type=Path, default=None)
+    parser.add_argument("--metric-correction-receipt", type=Path, default=None)
     parser.add_argument(
         "--manufacturing-method",
         choices=sorted(ALLOWANCE_BY_METHOD),
@@ -296,6 +383,19 @@ def main(argv: Iterable[str] | None = None) -> None:
         manufacturing_method=args.manufacturing_method,
         variable_allowance=not args.constant_allowance,
         receipt_path=args.out_manufacturing_receipt,
+        finished_seam_receipt_path=args.out_finished_seam_receipt,
+        body_receipt_hash=args.body_receipt_hash,
+        body_receipt_path=args.body_receipt,
+        rom_receipt_hash=args.rom_receipt_hash,
+        rom_receipt_path=args.rom_receipt,
+        fabric_receipt_hash=args.fabric_receipt_hash,
+        fabric_receipt_path=args.fabric_receipt,
+        basis_receipt_hash=args.basis_receipt_hash,
+        basis_receipt_path=args.basis_receipt,
+        seam_cost_receipt_path=args.seam_cost_receipt,
+        solver_receipt_path=args.solver_receipt,
+        cut_topology_receipt_path=args.cut_topology_receipt,
+        metric_correction_receipt_path=args.metric_correction_receipt,
     )
 
 
