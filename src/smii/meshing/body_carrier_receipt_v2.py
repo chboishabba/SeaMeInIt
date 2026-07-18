@@ -51,6 +51,30 @@ class BodyCarrierReceiptV2:
         return int(self.body_decision == "promote")
 
     @property
+    def vertex_count(self) -> int:
+        """Backward-compatible final-export vertex count."""
+
+        return int(self.final_export_topology["vertex_count"])
+
+    @property
+    def face_count(self) -> int:
+        """Backward-compatible final-export face count."""
+
+        return int(self.final_export_topology["face_count"])
+
+    @property
+    def landmark_residuals(self) -> dict[str, float]:
+        """Backward-compatible alias for final-export landmark evidence."""
+
+        return dict(self.final_landmark_residuals)
+
+    @property
+    def skull_rigidity_residual(self) -> float:
+        """Backward-compatible alias for the final-export skull residual."""
+
+        return float(self.final_skull_rigidity_residual)
+
+    @property
     def receipt_hash(self) -> str:
         return canonical_hash(self.to_dict())
 

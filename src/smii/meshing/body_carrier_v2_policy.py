@@ -11,8 +11,11 @@ CanonicalSource = Literal["raw_image_fit", "refined_candidate"]
 Severity = Literal["pass", "warn", "fail"]
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 DEFAULT_BLOCKED_CONSUMERS = (
+    "generate_undersuit",
     "undersuit",
+    "seam_cost_field",
     "hard_shell",
+    "panel_unwrap",
     "panel_transfer",
     "pattern_export",
     "manufacturing_export",
