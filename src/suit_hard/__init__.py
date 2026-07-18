@@ -1,4 +1,4 @@
-"""Hard-shell suit utilities and generators."""
+"""Hard-shell attachments, clearance, segmentation, and shell generation."""
 
 from .attachments import (
     Attachment,
@@ -7,16 +7,6 @@ from .attachments import (
     AttachmentRouting,
     PanelSegment,
 )
-
-__all__ = [
-    "Attachment",
-    "AttachmentLayout",
-    "AttachmentPlanner",
-    "AttachmentRouting",
-    "PanelSegment",
-]
-"""Hard-shell clearance analysis utilities."""
-
 from .clearance import (
     ClearanceResult,
     ContactPoint,
@@ -25,17 +15,6 @@ from .clearance import (
     analyze_clearance,
     interpolate_poses,
 )
-
-__all__ = [
-    "analyze_clearance",
-    "ClearanceResult",
-    "ContactPoint",
-    "Mesh",
-    "PoseClearance",
-    "interpolate_poses",
-]
-"""Hard-shell suit segmentation utilities."""
-
 from .segmentation import (
     ArticulationDefinition,
     HardShellSegmentation,
@@ -43,16 +22,26 @@ from .segmentation import (
     HardShellSegmenter,
     SegmentedPanel,
 )
+from .shell_generator import ShellGenerationResult, ShellGenerator, ShellOptions
 
 __all__ = [
+    "Attachment",
+    "AttachmentLayout",
+    "AttachmentPlanner",
+    "AttachmentRouting",
+    "PanelSegment",
+    "ClearanceResult",
+    "ContactPoint",
+    "Mesh",
+    "PoseClearance",
+    "analyze_clearance",
+    "interpolate_poses",
     "ArticulationDefinition",
     "HardShellSegmentation",
     "HardShellSegmentationOptions",
     "HardShellSegmenter",
     "SegmentedPanel",
+    "ShellGenerationResult",
+    "ShellGenerator",
+    "ShellOptions",
 ]
-"""Rigid shell generation utilities."""
-
-from .shell_generator import ShellGenerationResult, ShellGenerator, ShellOptions
-
-__all__ = ["ShellGenerationResult", "ShellGenerator", "ShellOptions"]
