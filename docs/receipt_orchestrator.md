@@ -97,6 +97,35 @@ raw-reprojection, refined-pre-repair, and repaired/export hashes; mesh counts;
 topology label; landmark residuals; skull rigidity residual; confidence;
 promotion state; and blocked downstream consumers.
 
+### Planned refinement authority boundary
+
+The current body receipt is v1 evidence. Measurement refinement currently
+produces a numerical result before there is a separate authority decision, so
+the next Gate 0 change must not treat a successful solver return as permission
+to replace the canonical body. The planned surface is:
+
+```text
+RawBodyFit -> RefinementCandidate -> RefinementDecision -> canonical export
+```
+
+`smii.body_refinement_policy.v1` will normalize and hash the effective
+measurement matrix, means/scales, weights, beta count, scale rule, bounds,
+prior/anchor weights, residual allowances, and solver settings actually used.
+`smii.body_refinement_receipt.v1` will record candidate evidence and a
+`promote`/`abstain`/`reject` decision. `BodyCarrierReceipt` v2 will consume the
+receipt hash and identify `canonical_source`, the selected pre-repair
+checkpoint/hash, and repaired export hash.
+
+`abstain` leaves the raw image fit eligible for its own body guard; it does not
+silently select the refined candidate or automatically decide the raw body.
+`reject` is reserved for malformed, non-finite, policy-incompatible, or failed
+candidates. Both the selected pre-repair body and the final exported mesh must
+be checked before downstream consumers receive a promoted body.
+
+Diagnostic severity (`pass`/`warn`/`fail`) is distinct from refinement and body
+authorization. A warning must remain visible downstream, but does not by
+itself imply every later authorization decision is false.
+
 `generate_undersuit` now accepts a body receipt and blocks before artifact
 emission when the receipt is unpromoted or explicitly blocks the
 `generate_undersuit` consumer. Non-promoted body receipts default their

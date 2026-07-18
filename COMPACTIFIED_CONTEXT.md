@@ -386,15 +386,37 @@ Date: 2026-02-06
 - Operator-basis search is now the next implemented diagnostic surface:
   materialized parent-domain decisions emit `smii.operator_basis_search.v1`,
   a depth-2/beam-8 search receipt over measured single-operator metric deltas.
-  It can report profile/Pareto tree winners or declare the current local
-  operator basis exhausted for a panel, but it does not claim true sequential
-  tree rematerialization. That keeps native operator-tree materialization and
-  the BT369 pattern serializer as explicit next rungs rather than hidden
-  assumptions.
+  It can report profile/Pareto delta-composition winners, but it cannot declare
+  sequential operator-basis exhaustion because it does not materialize child
+  geometry. Native operator-tree materialization and a later diagnosis remain
+  prerequisites for a BT369 pattern-serializer decision.
 - Operator-basis-search Afflec/P3 rerun:
   `outputs/demo/afflec_receipted_curated_20260605_143059/panels_fabric_operator_basis_search/panel_unwrap_receipt.json`.
-  Accepted parents remain P1 `cutout_r1` and P3 `relief_split`; P0 and P2 both
-  report `basis_exhausted_at_depth=true` at depth 2. P2's retained diagnostic
-  trees keep the useful relief/dart geometry evidence, but none can promote
-  because measured singles still miss the hard gate and composed trees are not
-  sequentially materialized.
+  Accepted parents remain P1 `cutout_r1` and P3 `relief_split`; P0 and P2 emit
+  the legacy `basis_exhausted_at_depth=true` field at depth 2. P2's retained
+  diagnostic trees keep useful relief/dart geometry evidence, but none can
+  promote because measured singles still miss the hard gate and composed trees
+  are not sequentially materialized. This is not sequential exhaustion.
+
+## Gate 0 Authority And Gate 6 Search Boundaries (2026-07-17)
+- Gate 0 reference-quality warnings and export checkpoints are already
+  implemented. The open defect is unanchored measurement refinement: a solver
+  candidate currently lacks a separate authority decision before it can affect
+  the body fit.
+- Planned persisted surfaces: an effective `RefinementPolicy`, one
+  `RefinementReceipt` containing candidate evidence plus
+  `promote`/`abstain`/`reject`, and `BodyCarrierReceipt` v2 with refinement
+  hash, explicit canonical source, selected pre-repair checkpoint, and final
+  export lineage. The raw body may independently promote after refinement
+  abstains; a candidate never becomes canonical merely because it was solved.
+- Diagnostic severity is separate from authorization. Warnings must propagate
+  as evidence without becoming implicit universal promotion vetoes.
+- `smii.operator_basis_search.v1` does not establish sequential basis
+  exhaustion: it evaluates unordered, cross-family, non-materialized delta
+  compositions. Gate 6 v2 must materialize ordered residual-conditioned
+  transitions, rerun backends, and bind any no-result conclusion to its finite
+  generator/backend/policy/depth/beam/deduplication surface.
+- A later BT369-native garment serializer is conditional on a post-search
+  diagnosis distinguishing operator expressivity, serialization backend,
+  panelization, and physical/policy failure. It is distinct from the existing
+  BT369 sphere-field serializer.

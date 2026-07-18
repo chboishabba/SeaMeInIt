@@ -69,9 +69,19 @@ Bounded subtasks:
    - repair/export
 4. `P2.4` define an acceptance gate for head/skull plausibility
 
+5. `P2.5` establish refinement authority:
+   - normalize the measurement model actually consumed by the solver,
+   - constrain the measurement candidate around image-derived betas,
+   - recompute all candidate diagnostics after solving,
+   - emit a hash-linked `promote`/`abstain`/`reject` decision,
+   - distinguish selected pre-repair source from repaired/exported canonical
+     mesh.
+
 Done when:
 
-- we know which stage introduces the crown distortion and have a specific corrective target
+- we know which stage introduces the crown distortion, have a specific
+  corrective target, and do not permit a refinement candidate to replace the
+  canonical body without a separate decision.
 
 #### P3. Define a proper Afflec-facing back-transfer requirement
 

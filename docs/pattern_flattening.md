@@ -179,6 +179,25 @@ edge segments from true cuttable pattern pieces via `seam_graph_summary`,
 a single distorted body-shaped patch, a starburst, or an uncut mesh, the blocker
 is seam topology/darts/relief cuts before a real LSCM/ABF manufacturing unwrap.
 
+## Sequential operator-search claim boundary
+
+`smii.operator_basis_search.v1` is a diagnostic comparison surface, not a
+sequential geometry search. It composes independently measured single-operator
+metric deltas from the original panel; its depth-two candidates are unordered,
+cross-family, and non-materialized. Historic `basis_exhausted_at_depth` values
+therefore mean that no measured single operation promoted while the retained
+delta combinations remained diagnostic-only.
+
+The planned v2 search will materialize ordered operator transitions, recompute
+failure fields and admissible children from each child state, rerun unwrap
+backends, and record deterministic bounded beam lineage and topology-hash
+deduplication. Search admission is not production promotion: a useful child may
+remain in the beam while the canonical panel parent is unchanged. Any no-result
+claim must name the operator generator, backend set, policy hash, depth, beam
+width, and deduplication rule. Only a post-search diagnosis can justify a
+BT369-native garment serializer; it must distinguish operator expressivity,
+serialization backend, panelization, and physical/policy failures.
+
 P3 now separates this into a dedicated cut-topology receipt before unwrap:
 
 - `solver/cut_topology_receipt.json` validates whether solver seam edge
@@ -278,26 +297,26 @@ P3 now separates this into a dedicated cut-topology receipt before unwrap:
   (`smii.operator_basis_search.v1`): stop treating each local parent surgery as
   a one-off experiment and retain a bounded beam over small operator trees
   composed from the already measured single-operator deltas. The first receipt
-  is diagnostic only: it can show that a depth-2 tree beats all single variants
-  by profile/Pareto score, or that the declared path/patch basis is exhausted
-  for a hard panel, but it does not claim true sequential rematerialization
-  until a native operator-tree materializer is implemented.
-- The native serializer fallback should be tracked separately as a
+  is diagnostic only: it can show a profile/Pareto result for an unordered
+  delta combination, but it cannot establish sequential basis exhaustion until
+  a native operator-tree materializer is implemented.
+- The native serializer fallback remains a separate
   `bt369_pattern_serializer` target. LSCM/xatlas/bootstrap remain backend
-  serializers; the BT369-native path should start from the operator atlas,
-  correction prefixes, fabric cone, and residual cells instead of treating the
-  chart as an ordinary UV island.
+  serializers; begin the BT369-native path only after the bounded sequential
+  search and its expressivity/serialization/panelization/physical diagnosis.
 - The first operator-basis-search Afflec rerun at
   `outputs/demo/afflec_receipted_curated_20260605_143059/panels_fabric_operator_basis_search/panel_unwrap_receipt.json`
   preserves the hard boundary: accepted parents remain P1 `cutout_r1` and P3
-  `relief_split`; P0 and P2 emit `basis_exhausted_at_depth=true` at depth 2.
+  `relief_split`; P0 and P2 emit the legacy
+  `basis_exhausted_at_depth=true` field at depth 2.
   P2's retained diagnostic trees still expose useful geometry tradeoffs
   (`cutout_r2 + failure_relief_path` improves worst distortion but regresses
   score/foldovers; `failure_relief_path + pareto_guided_dart_wedge` improves
   worst distortion further but also regresses score/foldovers). No composed
   P0/P2 tree can promote because composed trees are not sequentially
   materialized and the measured single-operator families still miss the hard
-  score/distortion/foldover gate.
+  score/distortion/foldover gate. This is not a claim that all sequential
+  operator trees are exhausted.
 
 The distinction is intentional: a high-curvature dart candidate is not a cut
 mesh boundary and does not promote panel unwrap. It is the next input for the
