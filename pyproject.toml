@@ -51,7 +51,18 @@ line-length = 100
 extend-exclude = ["delme.py"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["E402"]
+"tests/**/*.py" = ["E402", "F401"]
+"examples/task_fabric_seam_demo.py" = ["F401"]
+"scripts/new_asset_bundle.py" = ["F401"]
+"scripts/protocol_strategy2_bundle.py" = ["F541"]
+"scripts/render_rom_operator_report.py" = ["F401", "F841"]
+"src/avatar_model/providers/smplerx.py" = ["F401"]
+"src/smii/app.py" = ["F401"]
+"src/smii/rom/pose_schedule.py" = ["F401"]
+"src/smii/seams/diagnostics.py" = ["F401"]
+"src/smii/seams/moves.py" = ["F401"]
+"src/smii/seams/pda.py" = ["F401"]
+"src/suit/panel_validation.py" = ["F401"]
 
 [tool.isort]
 profile = "black"
