@@ -67,7 +67,10 @@ _LAZY_IMPORTS: Dict[str, Tuple[str, str]] = {
     "save_regression_json": ("smii.pipelines.fit_from_images", "save_regression_json"),
     "save_image_fit_observations": ("smii.pipelines.fit_from_images", "save_image_fit_observations"),
     "save_fit_diagnostics_report": ("smii.pipelines.fit_from_images", "save_fit_diagnostics_report"),
-    "save_regression_mesh": ("smii.pipelines.fit_from_images", "save_regression_mesh"),
+    "save_regression_mesh": (
+        "smii.pipelines.authorized_mesh_export",
+        "save_regression_mesh",
+    ),
     "create_body_mesh": ("smii.pipelines.fit_from_measurements", "create_body_mesh"),
     "FitResult": ("smii.pipelines.fit_from_measurements", "FitResult"),
     "fit_smplx_from_measurements": (
