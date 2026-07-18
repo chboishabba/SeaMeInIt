@@ -51,8 +51,14 @@ _LAZY_IMPORTS: Dict[str, Tuple[str, str]] = {
     ),
     "SMPLXRegressionFrame": ("smii.pipelines.fit_from_images", "SMPLXRegressionFrame"),
     "SMPLXRegressionResult": ("smii.pipelines.fit_from_images", "SMPLXRegressionResult"),
-    "fit_smplx_from_images": ("smii.pipelines.fit_from_images", "fit_smplx_from_images"),
-    "regress_smplx_from_images": ("smii.pipelines.fit_from_images", "regress_smplx_from_images"),
+    "fit_smplx_from_images": (
+        "smii.pipelines.authorized_image_fit",
+        "fit_smplx_from_images",
+    ),
+    "regress_smplx_from_images": (
+        "smii.pipelines.authorized_image_fit",
+        "regress_smplx_from_images",
+    ),
     "build_fit_diagnostics_report": ("smii.pipelines.fit_from_images", "build_fit_diagnostics_report"),
     "create_body_mesh_from_regression": (
         "smii.pipelines.fit_from_images",
