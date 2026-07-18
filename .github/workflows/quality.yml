@@ -28,7 +28,33 @@ jobs:
           python -m pip install -e ".[test,dev,tools]"
 
       - name: Ruff
-        run: python -m ruff check .
+        id: ruff
+        continue-on-error: true
+        run: |
+          python -m ruff check . > ruff.txt 2>&1
+          status=$?
+          cat ruff.txt
+          exit "$status"
 
       - name: Pytest
-        run: python -m pytest
+        id: pytest
+        continue-on-error: true
+        run: |
+          python -m pytest > pytest.txt 2>&1
+          status=$?
+          cat pytest.txt
+          exit "$status"
+
+      - name: Upload quality logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-logs
+          path: |
+            ruff.txt
+            pytest.txt
+          if-no-files-found: error
+
+      - name: Enforce quality gate
+        if: steps.ruff.outcome == 'failure' || steps.pytest.outcome == 'failure'
+        run: exit 1
