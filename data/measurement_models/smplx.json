@@ -2,6 +2,21 @@
   "backend": "smplx",
   "num_betas": 10,
   "scale_measurement": "height",
+  "refinement_policy": {
+    "beta_lower": -5.0,
+    "beta_upper": 5.0,
+    "prior_weight": 0.05,
+    "anchor_weight": 0.5,
+    "max_beta_shift": 4.0,
+    "max_measurement_residual": 0.75,
+    "max_residual_degradation": 0.25,
+    "solver_tolerance": 1e-10,
+    "solver_max_iterations": 5000,
+    "abstain_on_warnings": [
+      "WARN:low_view_diversity",
+      "WARN:long_lens_flattening_risk"
+    ]
+  },
   "models": [
     {
       "name": "height",
