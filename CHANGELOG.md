@@ -1,5 +1,15 @@
 ## Unreleased
 
+- Documented the next Gate 0 and Gate 6 implementation boundaries:
+  - clarified that reference-quality warnings and export checkpoints already
+    exist; the remaining Gate 0 defect is unanchored refinement authority,
+  - specified a future effective refinement policy, one hash-linked refinement
+    receipt, and `BodyCarrierReceipt` v2 canonical-source/export lineage,
+  - separated diagnostic severity from refinement and body authorization, and
+  - corrected the Gate 6 v1 claim: its depth-two delta compositions are
+    diagnostic-only; sequential materialized search and post-search failure
+    classification precede any BT369-native garment serializer decision.
+
 - Extended Gate 6c parent-surgery receipts with diagnostic Pareto/profile
   metadata:
   - added per-variant improvement/regression reporting for the hard metrics
