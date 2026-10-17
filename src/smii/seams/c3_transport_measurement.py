@@ -14,7 +14,6 @@ that garment mechanics possess exact C3 symmetry.
 
 from __future__ import annotations
 
-from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
