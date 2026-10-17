@@ -128,3 +128,36 @@ Run additional focused tests:
 The historical Afflec command above is unchanged. Inspect
 `screened_candidate_count`, `source_manufacturing`, `manufacturing`,
 `regularized_partition`, and `geometric_promotion` before drawing conclusions.
+
+## Tranche D: surface-graph seam family comparison
+
+The evaluator now compares three deterministic topology families for each
+source policy: `merge_back`, `morphological` (unanimous-neighbor
+interior-face cleanup before merge-back), and `flow_trace` (24 farthest-point
+surface-graph seeds, multi-source shortest-path chart growth, then merge-back).
+Identical resulting partitions are deduplicated across the panel sweep.
+Each surviving candidate records `candidate_family`, original source
+manufacturing diagnostics, final seam ratio, and 12 sensitivity outcomes
+(maximum seam ratios 8/12/16/24 crossed with maximum chart counts 32/64/128).
+The sensitivity matrix is diagnostic only; default Gate-6 screening retains
+the unchanged 12 and 64 reference limits.
+
+The surface-graph cost is
+`alpha*edge_length + beta*orientation_jump/3*edge_length +
+gamma*residual_difference*edge_length + delta*normal_bend*edge_length`.
+All coefficients are nonnegative and physical length has positive weight.
+Paths are shortest paths on face adjacency; **these are not continuous
+flowlines or solved cloth stress trajectories**. This deliberately
+tests the macroscopic path hypothesis before investing in continuous UV flow.
+
+New focused test:
+
+```bash
+../.venv/bin/python -m pytest tests/smii/unwrap/test_bt369_seam_tracing.py tests/smii/unwrap/test_bt369_manufacturing.py tests/smii/unwrap/test_bt369_pattern_serializer.py tests/scripts/test_evaluate_bt369_pattern_partition.py -q
+../.venv/bin/python -m ruff check src/smii/unwrap/bt369_seam_tracing.py scripts/evaluate_bt369_pattern_partition.py tests/smii/unwrap/test_bt369_seam_tracing.py
+../.venv/bin/python -m ruff format --check src/smii/unwrap/bt369_seam_tracing.py scripts/evaluate_bt369_pattern_partition.py tests/smii/unwrap/test_bt369_seam_tracing.py
+```
+
+Historical P0/P2 replay uses the same command and artifact path. The evaluator
+does not inherit the geometric scores of source microcharts: surviving
+regularized charts must be solved afresh.
