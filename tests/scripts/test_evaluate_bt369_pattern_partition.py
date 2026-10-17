@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from types import SimpleNamespace
+
+import numpy as np
 
 from scripts.evaluate_bt369_pattern_partition import (
     _gate_receipt,
@@ -10,9 +13,6 @@ from smii.unwrap.bt369_pattern_serializer import (
     BT369PatternPolicy,
     build_bt369_pattern_partition,
 )
-
-import numpy as np
-from types import SimpleNamespace
 
 
 def _panel() -> tuple[np.ndarray, SimpleNamespace]:
