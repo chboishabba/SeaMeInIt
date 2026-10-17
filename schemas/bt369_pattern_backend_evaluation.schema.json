@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://seameinit.local/schemas/bt369_pattern_backend_evaluation.schema.json",
+  "title": "BT369 Pattern Backend Evaluation Receipt",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "claim_boundary",
+    "panel_unwrap_receipt_hash",
+    "mesh_hash",
+    "seam_edges_hash",
+    "backend_set",
+    "panel_ids",
+    "panels",
+    "promoted_panel_ids",
+    "all_requested_panels_promoted",
+    "promotion",
+    "blockers"
+  ],
+  "properties": {
+    "schema_version": {"const": "smii.bt369_pattern_backend_evaluation.v1"},
+    "claim_boundary": {
+      "const": "bt369_partition_competes_under_existing_gate6_not_native_promotion_authority"
+    },
+    "panel_unwrap_receipt_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "mesh_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "seam_edges_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "backend_set": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+    "panel_ids": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+    "panels": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "panel_id",
+          "initial_metrics",
+          "policy_count",
+          "unique_topology_count",
+          "candidates",
+          "pareto_receipt",
+          "promoted_candidate_ids",
+          "promotion",
+          "blockers"
+        ]
+      }
+    },
+    "promoted_panel_ids": {"type": "array", "items": {"type": "string"}},
+    "all_requested_panels_promoted": {"type": "boolean"},
+    "promotion": {"enum": [0, 1]},
+    "blockers": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": true
+}
