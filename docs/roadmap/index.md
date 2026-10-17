@@ -113,7 +113,12 @@ Continue the panel layer work after the upstream gates are trustworthy:
 - test generated reports and exports for escaping, invalid markup, and path
   safety.
 
-### P2 - Materialize Sequential Panel Search Before BT369
+### P2 - BT369 Macroscopic Patternization and Gate-6 Panel Winner (Completed)
+
+The BT369 macroscopic pattern partitioner and surface Dijkstra flow tracing are now fully implemented and measured under the existing Gate-6 backend competition (`bootstrap_projection`, `lscm`, `xatlas`) without loosening any gate rules:
+- **P2 Flow-Trace Winner**: `P2_BT369_000_flow_trace_shortened` achieved full Gate-6 geometric promotion (`promotion = 1`, `blockers = []`, score 255.41, distortion 0.6023, foldovers 25) alongside manufacturing admissibility (23 charts, seam ratio 10.00 <= 12.0). Hash-pinned into `outputs/demo/.../frozen_p2_winner.json` via `scripts/freeze_bt369_p2_winner.py`.
+- **P0 Local Repair**: Dual-graph BFS bisection and boundary shortening improved P0 score by 88.6% and foldovers by 89.0% (seam ratio 10.08 <= 12.0), while isolating the remaining blocker strictly to the unchanged worst-distortion baseline guard.
+- **Physical Boundary**: Software Gate-6 closure does not constitute completed physical fabrication or clinical/ergonomic wear fit authorization (`docs/physical_rom_to_suit_closure.md`).
 
 `smii.operator_basis_search.v1` only composes independently measured deltas
 against the original panel. Its depth-two candidates are unordered,

@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://seameinit.local/schemas/physical_rom_validation_receipt.schema.json",
+  "title": "SeaMeInIt PhysicalROMValidationReceipt",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "wear_fit_receipt_hash",
+    "source_rom_receipt_hash",
+    "validation_evidence_hash",
+    "field_residual_hash",
+    "closure_iteration",
+    "calibrated_rom_receipt_hash",
+    "triadic_transport",
+    "promotion",
+    "promotion_state",
+    "blocked_consumers",
+    "blocker_log",
+    "claim_boundary"
+  ],
+  "properties": {
+    "schema_version": {"const": "smii.physical_rom_validation_receipt.v1"},
+    "wear_fit_receipt_hash": {"type": "string", "minLength": 1},
+    "source_rom_receipt_hash": {"type": "string", "minLength": 1},
+    "validation_evidence_hash": {"type": "string", "minLength": 1},
+    "field_residual_hash": {"type": "string", "minLength": 1},
+    "closure_iteration": {"type": "integer", "minimum": 0},
+    "calibrated_rom_receipt_hash": {
+      "type": ["string", "null"]
+    },
+    "triadic_transport": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": [
+            "transport_model",
+            "address_schema",
+            "phase_provenance_hash",
+            "orientation_receipt_hash",
+            "c3_equivariance_error",
+            "c3_equivariance_threshold"
+          ],
+          "properties": {
+            "transport_model": {"type": "string", "minLength": 1},
+            "address_schema": {"type": "string", "minLength": 1},
+            "phase_provenance_hash": {"type": "string", "minLength": 1},
+            "orientation_receipt_hash": {"type": "string", "minLength": 1},
+            "c3_equivariance_error": {"type": "number", "minimum": 0},
+            "c3_equivariance_threshold": {"type": "number", "minimum": 0}
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "promotion": {"enum": [-1, 0, 1]},
+    "promotion_state": {"enum": ["rejected", "diagnostic_only", "promoted"]},
+    "blocked_consumers": {"type": "array", "items": {"type": "string"}},
+    "blocker_log": {"type": "array", "items": {"type": "string"}},
+    "claim_boundary": {"type": "string", "minLength": 1}
+  },
+  "additionalProperties": false
+}

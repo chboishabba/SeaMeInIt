@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://seameinit.local/schemas/suit_deployment_receipt.schema.json",
+  "title": "SeaMeInIt SuitDeploymentReceipt",
+  "type": "object",
+  "required": ["schema_version","controller_safety_receipt_hash","deployment_profile_hash","deployment_evidence_hash","authority_review_receipt_hash","authority_review_passed","promotion","promotion_state","blocked_consumers","blocker_log","claim_boundary"],
+  "properties": {
+    "schema_version": {"const": "smii.suit_deployment_receipt.v1"},
+    "controller_safety_receipt_hash": {"type": "string", "minLength": 1},
+    "deployment_profile_hash": {"type": "string", "minLength": 1},
+    "deployment_evidence_hash": {"type": "string", "minLength": 1},
+    "authority_review_receipt_hash": {"type": ["string","null"]},
+    "authority_review_passed": {"type": ["boolean","null"]},
+    "promotion": {"enum": [-1,0,1]},
+    "promotion_state": {"enum": ["rejected","diagnostic_only","promoted"]},
+    "blocked_consumers": {"type": "array", "items": {"type": "string"}},
+    "blocker_log": {"type": "array", "items": {"type": "string"}},
+    "claim_boundary": {"type": "string", "minLength": 1}
+  },
+  "additionalProperties": false
+}

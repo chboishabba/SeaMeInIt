@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://seameinit.local/schemas/operator_tree_materialization.schema.json",
+  "title": "SeaMeInIt OperatorTreeMaterializationReceipt",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "panel_id",
+    "face_count",
+    "operators",
+    "steps",
+    "final_partition",
+    "final_chart_count",
+    "face_coverage_complete",
+    "charts_pairwise_disjoint",
+    "sequential_materialization_complete",
+    "backend_recheck_required",
+    "promotion",
+    "blockers",
+    "claim_boundary"
+  ],
+  "properties": {
+    "schema_version": {"const": "smii.operator_tree_materialization.v1"},
+    "panel_id": {"type": "string", "minLength": 1},
+    "face_count": {"type": "integer", "minimum": 1},
+    "operators": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["variant_id", "support_faces", "source_receipt"],
+        "properties": {
+          "variant_id": {"type": "string", "minLength": 1},
+          "support_faces": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {"type": "integer", "minimum": 0}
+          },
+          "source_receipt": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": false
+      }
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "depth",
+          "variant_id",
+          "support_faces",
+          "charts_before",
+          "charts_after",
+          "effective_splits",
+          "partition_after"
+        ],
+        "properties": {
+          "depth": {"type": "integer", "minimum": 1},
+          "variant_id": {"type": "string", "minLength": 1},
+          "support_faces": {"type": "array", "items": {"type": "integer", "minimum": 0}},
+          "charts_before": {"type": "integer", "minimum": 1},
+          "charts_after": {"type": "integer", "minimum": 1},
+          "effective_splits": {"type": "integer", "minimum": 0},
+          "partition_after": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "minItems": 1,
+              "items": {"type": "integer", "minimum": 0}
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "final_partition": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "array",
+        "minItems": 1,
+        "items": {"type": "integer", "minimum": 0}
+      }
+    },
+    "final_chart_count": {"type": "integer", "minimum": 1},
+    "face_coverage_complete": {"type": "boolean"},
+    "charts_pairwise_disjoint": {"type": "boolean"},
+    "sequential_materialization_complete": {"type": "boolean"},
+    "backend_recheck_required": {"const": true},
+    "promotion": {"const": 0},
+    "blockers": {"type": "array", "items": {"type": "string"}},
+    "claim_boundary": {"type": "string", "minLength": 1}
+  },
+  "additionalProperties": false
+}
