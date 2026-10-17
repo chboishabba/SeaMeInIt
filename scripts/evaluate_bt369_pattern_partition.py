@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Evaluate BT369-native pattern partitions through the existing Gate-6 backends.
 
-This is intentionally a panelization experiment, not a new UV solver.  It
+This is intentionally a panelization experiment, not a new UV solver. It
 builds a bounded family of BT369 face partitions from the already measured
 serializer failure field, deduplicates identical topologies, rebuilds exact
 face-backed charts, and reruns the same bootstrap/LSCM/xatlas competition used
@@ -36,7 +36,7 @@ def _gate_receipt(
     original_metrics: Mapping[str, object],
     measured_metrics: Mapping[str, object],
     split_valid: bool,
-    chart_count: int,
+    parent_chart_count: int,
 ) -> dict[str, object]:
     """Apply the unchanged parent-surgery gate plus the no-identity requirement."""
 
@@ -53,7 +53,7 @@ def _gate_receipt(
     blockers: list[str] = []
     if not split_valid:
         blockers.append("bt369_chart_domain_invalid")
-    if int(chart_count) <= 1:
+    if int(parent_chart_count) <= 1:
         blockers.append("bt369_partition_did_not_split_parent")
     if score >= original_score:
         blockers.append("score_not_improved")
@@ -69,7 +69,7 @@ def _gate_receipt(
         "blockers": blockers,
         "parent_acceptance": bool(
             split_valid
-            and chart_count > 1
+            and parent_chart_count > 1
             and score < original_score
             and distortion <= original_distortion + 1e-12
         ),
@@ -223,7 +223,7 @@ def _evaluate_panel(
             original_metrics=original_metrics,
             measured_metrics=metrics,
             split_valid=split_valid,
-            chart_count=len(charts),
+            parent_chart_count=len(parent_charts),
         )
         candidate_id = f"{panel_id}_BT369_{candidate_index:03d}"
         evaluated.append(
