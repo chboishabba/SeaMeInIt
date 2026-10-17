@@ -93,3 +93,38 @@ A useful non-promoted candidate still matters if it moves the P0/P2 Pareto front
 - **Any P0/P2 promotion:** integrate the winning BT369 partition policy into the materialization-aware search, then test across broader assets.
 - **Pareto improvement but backend-limited:** prototype a native BT369 coordinate solver on the winning partition(s).
 - **No frontier movement:** do not blindly increase search depth. Add missing garment state (fabric anisotropy/grain, ROM/load/support field, or a more geometric cut generator) and rerun the same measured competition.
+
+## Tranche C: manufacturing-aware regularized screening
+
+The earlier unregularized P0/P2 promotions are **geometric-only diagnostics**:
+single-face confetti can trivially flatten. Tranche C preserves their
+`partition_receipt` and `source_manufacturing` evidence, then merges undersized
+connected regions into adjacent neighbors using residual/orientation compatibility
+and shared-edge length. Each region remains face-connected.
+
+The default screening limits are exploratory proxies, **not** physical standards:
+
+- maximum 64 charts per original panel;
+- minimum 10 faces per chart;
+- minimum 0.5% of original panel 3D surface area per chart;
+- maximum total internal cut length / sqrt(original panel area) of 12.
+
+The receipt reports both source and regularized chart complexity, seam length,
+area fractions, and explicit `manufacturing_blockers`. Any candidate that fails
+the cheap manufacturing screen is marked `screened_before_backend: true`,
+`metrics: null`, `geometric_promotion: null`, and `promotion: 0`; the
+expensive LSCM/xatlas competition is **not** invoked. Backend-evaluated candidates
+retain measured geometric promotion separately from manufacturing admissibility.
+No proxy gate authorizes actual cutting, assembly, wear, or deployment.
+
+Run additional focused tests:
+
+```bash
+../.venv/bin/python -m pytest tests/smii/unwrap/test_bt369_manufacturing.py tests/smii/unwrap/test_bt369_pattern_serializer.py tests/scripts/test_evaluate_bt369_pattern_partition.py -q
+../.venv/bin/python -m ruff check src/smii/unwrap/bt369_manufacturing.py scripts/evaluate_bt369_pattern_partition.py tests/smii/unwrap/test_bt369_manufacturing.py
+../.venv/bin/python -m ruff format --check src/smii/unwrap/bt369_manufacturing.py scripts/evaluate_bt369_pattern_partition.py tests/smii/unwrap/test_bt369_manufacturing.py
+```
+
+The historical Afflec command above is unchanged. Inspect
+`screened_candidate_count`, `source_manufacturing`, `manufacturing`,
+`regularized_partition`, and `geometric_promotion` before drawing conclusions.
