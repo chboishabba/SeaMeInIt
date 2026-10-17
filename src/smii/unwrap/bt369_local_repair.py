@@ -3,9 +3,10 @@
 Edits operate on exact mesh faces. A cut is a chart split, not a sewn dart
 with inferred physical take-up. All outputs require fresh backend evaluation.
 """
+
 from __future__ import annotations
 
-from collections import defaultdict, deque
+from collections import deque
 from typing import Sequence
 
 import numpy as np
@@ -48,10 +49,14 @@ def _components(nodes, neighbors):
     return result
 
 
-def boundary_shortening(*, vertices: np.ndarray,
-                        faces: Sequence[tuple[int, int, int]],
-                        partition: Sequence[Sequence[int]],
-                        min_faces: int = 10, max_moves: int = 100):
+def boundary_shortening(
+    *,
+    vertices: np.ndarray,
+    faces: Sequence[tuple[int, int, int]],
+    partition: Sequence[Sequence[int]],
+    min_faces: int = 10,
+    max_moves: int = 100,
+):
     """Greedily transfer boundary faces only when seam length strictly falls.
 
     The source region must stay connected and both resulting chart sizes
@@ -75,10 +80,12 @@ def boundary_shortening(*, vertices: np.ndarray,
             if len(_components(regions[src] - {face}, neighbors)) != 1:
                 continue
             for target in targets:
-                before = sum(lengths[tuple(sorted((face, n)))]
-                             for n in neighbors[face] if owner[n] != src)
-                after = sum(lengths[tuple(sorted((face, n)))]
-                            for n in neighbors[face] if owner[n] != target)
+                before = sum(
+                    lengths[tuple(sorted((face, n)))] for n in neighbors[face] if owner[n] != src
+                )
+                after = sum(
+                    lengths[tuple(sorted((face, n)))] for n in neighbors[face] if owner[n] != target
+                )
                 gain = before - after
                 if gain > 1e-12:
                     key = (-gain, face, target)
@@ -94,12 +101,15 @@ def boundary_shortening(*, vertices: np.ndarray,
     return _partition(tuple(regions.values()), len(faces)), moves
 
 
-def local_dart_candidates(*, vertices: np.ndarray,
-                          faces: Sequence[tuple[int, int, int]],
-                          partition: Sequence[Sequence[int]],
-                          chart_indices: Sequence[int],
-                          min_faces: int = 10,
-                          max_candidates_per_chart: int = 3):
+def local_dart_candidates(
+    *,
+    vertices: np.ndarray,
+    faces: Sequence[tuple[int, int, int]],
+    partition: Sequence[Sequence[int]],
+    chart_indices: Sequence[int],
+    min_faces: int = 10,
+    max_candidates_per_chart: int = 3,
+):
     """Generate bounded connected chart splits for local strain-relief replay.
 
     Each proposal bisects a selected chart by deterministic dual-graph BFS
@@ -135,12 +145,18 @@ def local_dart_candidates(*, vertices: np.ndarray,
                 new_partition = _partition(
                     [c for i, c in enumerate(charts) if i != chart_index]
                     + [tuple(sorted(selected))]
-                    + _components(complement, neighbors), len(faces))
-                if new_partition != charts and not any(p["partition"] == new_partition for p in proposals):
-                    proposals.append({
-                        "source_chart_index": chart_index,
-                        "seed_face": seed,
-                        "partition": new_partition,
-                        "claim_boundary": "topological_split_requires_fresh_uv_referee",
-                    })
+                    + _components(complement, neighbors),
+                    len(faces),
+                )
+                if new_partition != charts and not any(
+                    p["partition"] == new_partition for p in proposals
+                ):
+                    proposals.append(
+                        {
+                            "source_chart_index": chart_index,
+                            "seed_face": seed,
+                            "partition": new_partition,
+                            "claim_boundary": "topological_split_requires_fresh_uv_referee",
+                        }
+                    )
     return proposals

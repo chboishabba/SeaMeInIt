@@ -27,9 +27,7 @@ def test_boundary_shortening_never_increases_seam_ratio():
     original = flow_trace_partition(
         vertices=v, faces=f, cells=cells, limits=limits, target_charts=4
     )
-    shortened, moves = boundary_shortening(
-        vertices=v, faces=f, partition=original, min_faces=2
-    )
+    shortened, moves = boundary_shortening(vertices=v, faces=f, partition=original, min_faces=2)
     before = chart_diagnostics(vertices=v, faces=f, partition=original, limits=limits)
     after = chart_diagnostics(vertices=v, faces=f, partition=shortened, limits=limits)
     assert after["seam_length_over_sqrt_area"] <= before["seam_length_over_sqrt_area"] + 1e-10
@@ -39,8 +37,7 @@ def test_boundary_shortening_never_increases_seam_ratio():
 def test_local_splits_preserve_exact_coverage():
     v, f, _ = _fixture()
     candidates = local_dart_candidates(
-        vertices=v, faces=f, partition=(tuple(range(len(f))),),
-        chart_indices=(0,), min_faces=5
+        vertices=v, faces=f, partition=(tuple(range(len(f))),), chart_indices=(0,), min_faces=5
     )
     assert candidates
     for candidate in candidates:
@@ -53,6 +50,5 @@ def test_invalid_chart_target_is_rejected():
     v, f, _ = _fixture()
     with pytest.raises(IndexError):
         local_dart_candidates(
-            vertices=v, faces=f, partition=(tuple(range(len(f))),),
-            chart_indices=(19,)
+            vertices=v, faces=f, partition=(tuple(range(len(f))),), chart_indices=(19,)
         )

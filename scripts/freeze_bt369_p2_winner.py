@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Freeze a measured P2 flow-trace winner without fabricating artifact evidence."""
+
 from __future__ import annotations
 
 import argparse
@@ -26,8 +27,8 @@ def freeze_winner(source: Path, candidate_id: str, out: Path) -> dict:
         "schema_version": "smii.bt369_frozen_p2_winner.v1",
         "source_receipt_sha256": hashlib.sha256(raw).hexdigest(),
         "source_artifact_hashes": {
-            key: receipt[key] for key in
-            ("panel_unwrap_receipt_hash", "mesh_hash", "seam_edges_hash")
+            key: receipt[key]
+            for key in ("panel_unwrap_receipt_hash", "mesh_hash", "seam_edges_hash")
         },
         "candidate_id": candidate_id,
         "topology": candidate["regularized_partition"],
@@ -40,8 +41,13 @@ def freeze_winner(source: Path, candidate_id: str, out: Path) -> dict:
         "metrics": candidate["metrics"],
         "backend_competitions": candidate["backend_competitions"],
         "gate6": {
-            key: candidate[key] for key in
-            ("geometric_promotion", "parent_acceptance", "foldover_guard", "exportable_guard")
+            key: candidate[key]
+            for key in (
+                "geometric_promotion",
+                "parent_acceptance",
+                "foldover_guard",
+                "exportable_guard",
+            )
         },
         "claim_boundary": "geometric_gate6_only_manufacturing_and_fabrication_separate",
     }
@@ -57,8 +63,11 @@ def main() -> int:
     parser.add_argument("--out", required=True, type=Path)
     args = parser.parse_args()
     frozen = freeze_winner(args.receipt, args.candidate_id, args.out)
-    print(json.dumps({"candidate_id": frozen["candidate_id"],
-                      "topology_sha256": frozen["topology_sha256"]}))
+    print(
+        json.dumps(
+            {"candidate_id": frozen["candidate_id"], "topology_sha256": frozen["topology_sha256"]}
+        )
+    )
     return 0
 
 

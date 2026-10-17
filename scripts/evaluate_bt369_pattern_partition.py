@@ -259,19 +259,27 @@ def _evaluate_panel(
             flow = families[-1][1]
             if panel_id == "P2":
                 shortened, _moves = boundary_shortening(
-                    vertices=vertices, faces=panel.faces, partition=flow,
-                    min_faces=limits.min_faces, max_moves=100,
+                    vertices=vertices,
+                    faces=panel.faces,
+                    partition=flow,
+                    min_faces=limits.min_faces,
+                    max_moves=100,
                 )
                 families.append(("flow_trace_shortened", shortened))
             elif panel_id == "P0":
                 for proposal in local_dart_candidates(
-                    vertices=vertices, faces=panel.faces, partition=flow,
-                    chart_indices=(19, 20, 23), min_faces=limits.min_faces,
+                    vertices=vertices,
+                    faces=panel.faces,
+                    partition=flow,
+                    chart_indices=(19, 20, 23),
+                    min_faces=limits.min_faces,
                 ):
-                    families.append((
-                        f"flow_trace_dart_{proposal['source_chart_index']}_{proposal['seed_face']}",
-                        proposal["partition"],
-                    ))
+                    families.append(
+                        (
+                            f"flow_trace_dart_{proposal['source_chart_index']}_{proposal['seed_face']}",
+                            proposal["partition"],
+                        )
+                    )
         for family, candidate_partition in families:
             if candidate_partition in seen_family_topologies:
                 continue
