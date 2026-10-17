@@ -3,6 +3,7 @@
 Area and seam lengths are measured on the source 3D mesh. These are
 screening proxies, not physical fabrication or assembly certification.
 """
+
 from __future__ import annotations
 
 import math
@@ -12,7 +13,8 @@ from typing import Sequence
 
 import numpy as np
 
-from smii.unwrap.bt369_pattern_serializer import _face_adjacency, _circular_orientation_distance
+from smii.unwrap.bt369_pattern_serializer import _circular_orientation_distance
+
 
 @dataclass(frozen=True)
 class ManufacturingLimits:
@@ -33,7 +35,10 @@ class ManufacturingLimits:
 def _geometry(vertices: np.ndarray, faces: Sequence[tuple[int, int, int]]):
     arr = np.asarray(faces, dtype=int)
     v = np.asarray(vertices, dtype=float)
-    areas = np.linalg.norm(np.cross(v[arr[:, 1]] - v[arr[:, 0]], v[arr[:, 2]] - v[arr[:, 0]]), axis=1) / 2
+    areas = (
+        np.linalg.norm(np.cross(v[arr[:, 1]] - v[arr[:, 0]], v[arr[:, 2]] - v[arr[:, 0]]), axis=1)
+        / 2
+    )
     if not np.isfinite(areas).all() or float(areas.sum()) <= 0:
         raise ValueError("panel areas must be finite and positive")
     edge_faces = defaultdict(list)
@@ -44,15 +49,24 @@ def _geometry(vertices: np.ndarray, faces: Sequence[tuple[int, int, int]]):
 
 
 def _partition(charts: Sequence[Sequence[int]], face_count: int):
-    result = tuple(sorted((tuple(sorted(int(f) for f in chart)) for chart in charts if chart), key=lambda c: c[0]))
+    result = tuple(
+        sorted(
+            (tuple(sorted(int(f) for f in chart)) for chart in charts if chart), key=lambda c: c[0]
+        )
+    )
     flat = [f for c in result for f in c]
     if sorted(flat) != list(range(face_count)):
         raise ValueError("partition must cover every face exactly once")
     return result
 
 
-def chart_diagnostics(*, vertices: np.ndarray, faces: Sequence[tuple[int, int, int]],
-                      partition: Sequence[Sequence[int]], limits: ManufacturingLimits) -> dict:
+def chart_diagnostics(
+    *,
+    vertices: np.ndarray,
+    faces: Sequence[tuple[int, int, int]],
+    partition: Sequence[Sequence[int]],
+    limits: ManufacturingLimits,
+) -> dict:
     v, areas, edge_faces = _geometry(vertices, faces)
     charts = _partition(partition, len(faces))
     owner = {f: i for i, chart in enumerate(charts) for f in chart}
@@ -70,7 +84,10 @@ def chart_diagnostics(*, vertices: np.ndarray, faces: Sequence[tuple[int, int, i
     blockers = []
     if len(charts) > limits.max_charts:
         blockers.append("excessive_fragmentation")
-    if any(len(c) < limits.min_faces or fraction < limits.min_area_fraction for c, fraction in zip(charts, fractions)):
+    if any(
+        len(c) < limits.min_faces or fraction < limits.min_area_fraction
+        for c, fraction in zip(charts, fractions)
+    ):
         blockers.append("subminimum_chart_area")
     if ratio > limits.max_seam_length_ratio:
         blockers.append("excessive_seam_complexity")
@@ -93,9 +110,14 @@ def chart_diagnostics(*, vertices: np.ndarray, faces: Sequence[tuple[int, int, i
     }
 
 
-def regularize_partition(*, vertices: np.ndarray, faces: Sequence[tuple[int, int, int]],
-                         partition: Sequence[Sequence[int]], cells: Sequence[object],
-                         limits: ManufacturingLimits) -> tuple[tuple[int, ...], ...]:
+def regularize_partition(
+    *,
+    vertices: np.ndarray,
+    faces: Sequence[tuple[int, int, int]],
+    partition: Sequence[Sequence[int]],
+    cells: Sequence[object],
+    limits: ManufacturingLimits,
+) -> tuple[tuple[int, ...], ...]:
     """Merge the smallest deficient connected chart into a neighboring chart.
 
     Shared-edge length, residual mismatch and circular orientation distance
@@ -106,44 +128,73 @@ def regularize_partition(*, vertices: np.ndarray, faces: Sequence[tuple[int, int
     charts = _partition(partition, len(faces))
     if len(cells) != len(faces):
         raise ValueError("cell count must equal face count")
+
+    face_adj: list[list[tuple[int, float]]] = [[] for _ in range(len(faces))]
+    for (a, b), incident in edge_faces.items():
+        if len(incident) == 2:
+            f1, f2 = incident
+            length = float(np.linalg.norm(v[a] - v[b]))
+            face_adj[f1].append((f2, length))
+            face_adj[f2].append((f1, length))
+
     regions = {i: set(c) for i, c in enumerate(charts)}
     owner = {f: i for i, chart in regions.items() for f in chart}
     total = float(areas.sum())
+
+    res_arr = np.asarray(
+        [float(getattr(cells[f], "residual", 0.0)) for f in range(len(faces))], dtype=float
+    )
+    or_arr = np.asarray(
+        [int(getattr(cells[f], "orientation_bin", 0)) for f in range(len(faces))], dtype=int
+    )
+
+    reg_res_sum = {i: float(res_arr[list(c)].sum()) for i, c in regions.items()}
+    reg_area_sum = {i: float(areas[list(c)].sum()) for i, c in regions.items()}
+
     while len(regions) > 1:
         deficient = sorted(
-            (i for i, c in regions.items() if len(c) < limits.min_faces or float(areas[list(c)].sum()) / total < limits.min_area_fraction),
-            key=lambda i: (float(areas[list(regions[i])].sum()), i),
+            (
+                i
+                for i, c in regions.items()
+                if len(c) < limits.min_faces or reg_area_sum[i] / total < limits.min_area_fraction
+            ),
+            key=lambda i: (reg_area_sum[i], i),
         )
         if not deficient:
             break
         moved = False
         for source in deficient:
-            neighbors = defaultdict(float)
-            for (a, b), incident in edge_faces.items():
-                if len(incident) != 2:
-                    continue
-                x, y = incident
-                ix, iy = owner[x], owner[y]
-                if ix == source and iy != source:
-                    neighbors[iy] += float(np.linalg.norm(v[a] - v[b]))
-                elif iy == source and ix != source:
-                    neighbors[ix] += float(np.linalg.norm(v[a] - v[b]))
+            src = regions[source]
+            neighbors: dict[int, float] = defaultdict(float)
+            for f in src:
+                for n_f, length in face_adj[f]:
+                    target_cand = owner[n_f]
+                    if target_cand != source:
+                        neighbors[target_cand] += length
             if not neighbors:
                 continue
-            src = regions[source]
-            src_res = sum(float(cells[f].residual) for f in src) / len(src)
-            src_or = int(cells[min(src)].orientation_bin)
+            src_res = reg_res_sum[source] / len(src)
+            src_or = int(or_arr[min(src)])
+
             def rank(target: int):
                 dest = regions[target]
-                dst_res = sum(float(cells[f].residual) for f in dest) / len(dest)
-                dst_or = int(cells[min(dest)].orientation_bin)
-                return (abs(src_res - dst_res) + 0.1 * _circular_orientation_distance(src_or, dst_or),
-                        -neighbors[target], target)
+                dst_res = reg_res_sum[target] / len(dest)
+                dst_or = int(or_arr[min(dest)])
+                return (
+                    abs(src_res - dst_res) + 0.1 * _circular_orientation_distance(src_or, dst_or),
+                    -neighbors[target],
+                    target,
+                )
+
             target = min(neighbors, key=rank)
             regions[target].update(src)
+            reg_res_sum[target] += reg_res_sum[source]
+            reg_area_sum[target] += reg_area_sum[source]
             for face in src:
                 owner[face] = target
             del regions[source]
+            del reg_res_sum[source]
+            del reg_area_sum[source]
             moved = True
             break
         if not moved:
