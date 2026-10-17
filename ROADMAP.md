@@ -21,6 +21,7 @@ Current status:
 - Boundary regularization stages R1–R4b + R6-lite are implemented and emit structured issues with severities and split suggestions.
 - Auto-split is opt-in (`--auto-split`) and currently uses a single-cut strategy.
 - Remaining work: seam reconciliation and panel-specific split strategies.
+- BT369 macroscopic pattern partition and surface-graph Dijkstra flow tracing completed; P2 achieved Gate-6 promotion under unchanged backends and manufacturing admissibility (`frozen_p2_winner.json`). See `docs/roadmap/index.md` and `docs/bt369_pattern_serializer.md`.
 
 ## Checkpoint: Seam Domain and Topology Lineage (2026-02-13)
 
