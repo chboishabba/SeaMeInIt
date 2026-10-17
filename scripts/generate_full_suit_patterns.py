@@ -15,6 +15,9 @@ from smii.garment.full_suit_partition import (
     FullSuitPartitioner,
     save_full_suit_pattern,
 )
+from smii.manufacturing.nesting import NestingConfig, nest_charts_deterministic
+from smii.manufacturing.svg_export import export_full_suit_svg
+from smii.manufacturing.validation import validate_manufacturing_layout
 from smii.meshing.body_carrier_receipt import BodyCarrierReceipt
 
 
@@ -52,6 +55,23 @@ def generate_full_suit_patterns(
     partitioner = FullSuitPartitioner(cfg)
     pattern, diagnostics = partitioner.partition(vertices, faces)
 
+    # Nest charts onto fabric roll
+    nesting_cfg = NestingConfig(allowance_mm=allowance_mm)
+    nesting_res = nest_charts_deterministic(pattern.charts, nesting_cfg)
+
+    # Render vector SVG cutting pattern layout
+    svg_content = export_full_suit_svg(pattern, nesting_res)
+    svg_out = out_dir / "cutting_layout.svg"
+    svg_out.write_text(svg_content, encoding="utf-8")
+
+    # Validate manufacturing layout
+    validation_report = validate_manufacturing_layout(pattern, nesting_res)
+    mfg_receipt_out = out_dir / "manufacturing_receipt.json"
+    mfg_receipt_out.write_text(
+        json.dumps(validation_report.to_dict(), indent=2),
+        encoding="utf-8",
+    )
+
     # Save artifacts
     npz_out = out_dir / "full_suit_charts.npz"
     manifest_out = out_dir / "pattern_manifest.json"
@@ -77,6 +97,11 @@ def generate_full_suit_patterns(
         "region_count": len(pattern.regions),
         "chart_count": len(pattern.charts),
         "seam_count": len(pattern.seams),
+        "fabric_width_mm": nesting_res.fabric_width_mm,
+        "fabric_length_mm": nesting_res.fabric_length_mm,
+        "fabric_utilization": round(nesting_res.utilization, 4),
+        "gate7_promoted": validation_report.gate7_promoted,
+        "svg_layout_path": str(svg_out),
         "output_directory": str(out_dir),
     }
 
