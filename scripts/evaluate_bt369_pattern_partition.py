@@ -18,6 +18,10 @@ from typing import Any, Mapping, Sequence, cast
 
 from scripts import evaluate_operator_tree as tree_eval
 from scripts import unwrap_panels as unwrap_mod
+from smii.unwrap.bt369_local_repair import (
+    boundary_shortening,
+    local_dart_candidates,
+)
 from smii.unwrap.bt369_manufacturing import (
     ManufacturingLimits,
     chart_diagnostics,
@@ -228,7 +232,7 @@ def _evaluate_panel(
             cells=partition_receipt.cells,
             limits=limits,
         )
-        families = (
+        families = [
             ("merge_back", regularized_partition),
             (
                 "morphological",
@@ -250,7 +254,24 @@ def _evaluate_panel(
                     target_charts=24,
                 ),
             ),
-        )
+        ]
+        if candidate_index == 0:
+            flow = families[-1][1]
+            if panel_id == "P2":
+                shortened, _moves = boundary_shortening(
+                    vertices=vertices, faces=panel.faces, partition=flow,
+                    min_faces=limits.min_faces, max_moves=100,
+                )
+                families.append(("flow_trace_shortened", shortened))
+            elif panel_id == "P0":
+                for proposal in local_dart_candidates(
+                    vertices=vertices, faces=panel.faces, partition=flow,
+                    chart_indices=(19, 20, 23), min_faces=limits.min_faces,
+                ):
+                    families.append((
+                        f"flow_trace_dart_{proposal['source_chart_index']}_{proposal['seed_face']}",
+                        proposal["partition"],
+                    ))
         for family, candidate_partition in families:
             if candidate_partition in seen_family_topologies:
                 continue
