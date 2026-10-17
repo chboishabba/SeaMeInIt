@@ -75,6 +75,23 @@ def test_face_partition_rejects_overlap_or_missing_faces() -> None:
         )
 
 
+def test_face_partition_completes_cutout_complement() -> None:
+    original = _Panel(
+        faces=(
+            (0, 1, 2),
+            (2, 3, 0),
+            (2, 4, 3),
+        )
+    )
+    partition = _face_partition_from_variant(
+        original_panel=original,
+        child_panels=[_Panel(faces=((0, 1, 2),))],
+        variant_id="cutout_r2",
+    )
+
+    assert partition == ((0,), (1, 2))
+
+
 def test_choose_tree_prefers_best_retained_depth_n_profile() -> None:
     receipt = {
         "candidates": [

@@ -74,9 +74,7 @@ def _materialized_domains(receipt: Mapping[str, Any]) -> Mapping[str, Any]:
     return domains
 
 
-def _basis_receipt_for_panel(
-    domains: Mapping[str, Any], panel_id: str
-) -> Mapping[str, Any]:
+def _basis_receipt_for_panel(domains: Mapping[str, Any], panel_id: str) -> Mapping[str, Any]:
     receipts = domains.get("operator_basis_search_receipts", [])
     if not isinstance(receipts, Sequence) or isinstance(receipts, (str, bytes, bytearray)):
         raise TypeError("operator_basis_search_receipts must be a list")
@@ -86,9 +84,7 @@ def _basis_receipt_for_panel(
     raise ValueError(f"no operator basis search receipt for {panel_id}")
 
 
-def _choose_tree(
-    basis_receipt: Mapping[str, Any], tree_id: str | None
-) -> Mapping[str, Any]:
+def _choose_tree(basis_receipt: Mapping[str, Any], tree_id: str | None) -> Mapping[str, Any]:
     candidates_raw = basis_receipt.get("candidates", [])
     if not isinstance(candidates_raw, Sequence) or isinstance(
         candidates_raw, (str, bytes, bytearray)
@@ -112,9 +108,7 @@ def _choose_tree(
             else math.inf
         )
         metrics = candidate.get("metrics", {})
-        scalar = (
-            float(metrics.get("score", math.inf)) if isinstance(metrics, Mapping) else math.inf
-        )
+        scalar = float(metrics.get("score", math.inf)) if isinstance(metrics, Mapping) else math.inf
         return default_score, scalar, str(candidate.get("tree_id", ""))
 
     return min(depth_n, key=rank)
@@ -148,7 +142,9 @@ def _face_partition_from_variant(
     child_panels: Sequence[object],
     variant_id: str,
 ) -> tuple[tuple[int, ...], ...]:
-    original_faces = [tuple(int(vertex) for vertex in face) for face in getattr(original_panel, "faces")]
+    original_faces = [
+        (int(face[0]), int(face[1]), int(face[2])) for face in getattr(original_panel, "faces")
+    ]
     face_to_index: dict[tuple[int, int, int], int] = {}
     for idx, face in enumerate(original_faces):
         if face in face_to_index:
@@ -160,7 +156,7 @@ def _face_partition_from_variant(
     for child in child_panels:
         indices: list[int] = []
         for face_raw in getattr(child, "faces"):
-            face = tuple(int(vertex) for vertex in face_raw)
+            face = (int(face_raw[0]), int(face_raw[1]), int(face_raw[2]))
             try:
                 idx = face_to_index[face]
             except KeyError as exc:
@@ -176,9 +172,12 @@ def _face_partition_from_variant(
     expected = set(range(len(original_faces)))
     if seen != expected:
         missing = sorted(expected - seen)
-        raise ValueError(
-            f"variant {variant_id!r} is not a full parent partition; missing faces {missing[:16]}"
-        )
+        if variant_id.startswith("cutout_") and seen:
+            groups.append(tuple(missing))
+        else:
+            raise ValueError(
+                f"variant {variant_id!r} is not a full parent partition; missing faces {missing[:16]}"
+            )
     return tuple(sorted(groups, key=lambda group: (group[0], len(group), group)))
 
 
@@ -225,24 +224,34 @@ def _common_refinement(
 def _connected_chart_panels(
     original_panel: object,
     partition: Sequence[Sequence[int]],
-) -> list[object]:
+) -> list[unwrap_mod.PanelPatch]:
     source_faces = tuple(getattr(original_panel, "faces"))
-    charts: list[object] = []
+    charts: list[unwrap_mod.PanelPatch] = []
     for group in partition:
         face_subset = tuple(source_faces[int(idx)] for idx in group)
-        charts.extend(unwrap_mod._panel_from_faces(original_panel, face_subset))
+        charts.extend(
+            unwrap_mod._panel_from_faces(
+                cast(unwrap_mod.PanelPatch, original_panel),
+                face_subset,
+            )
+        )
     return charts
 
 
 def _run_backend_competition(
     *,
     vertices: np.ndarray,
-    charts: Sequence[object],
+    charts: Sequence[unwrap_mod.PanelPatch],
     distortion_threshold: float,
     panel_id: str,
-) -> tuple[list[dict[str, object]], list[tuple[object, np.ndarray, float, list[object], str, str]]]:
+) -> tuple[
+    list[dict[str, object]],
+    list[tuple[unwrap_mod.PanelPatch, np.ndarray, float, list[object], str, str]],
+]:
     competitions: list[dict[str, object]] = []
-    group_results: list[tuple[object, np.ndarray, float, list[object], str, str]] = []
+    group_results: list[
+        tuple[unwrap_mod.PanelPatch, np.ndarray, float, list[object], str, str]
+    ] = []
     for chart_idx, chart in enumerate(charts):
         candidates = []
         uv_by_backend: dict[str, np.ndarray] = {}
@@ -326,10 +335,10 @@ def evaluate(
     if not isinstance(materialization_receipt, Mapping):
         raise ValueError("panel unwrap receipt has no correction_tree_materialization_receipt")
     (
-        _materialized_vertices,
+        materialized_vertices,
         chart_panels,
         chart_parent_indices,
-        _chart_kinds,
+        chart_kinds,
         chart_variant_ids,
     ) = unwrap_mod._materialized_chart_panels(
         vertices=vertices,
@@ -340,14 +349,22 @@ def evaluate(
 
     partitions: list[tuple[tuple[int, ...], ...]] = []
     operator_partition_receipts: list[dict[str, object]] = []
+    inserted_gusset_patches: list[unwrap_mod.PanelPatch] = []
+    seen_inserted_kinds: set[str] = set()
     for variant_id in operators:
-        children = [
-            chart_panels[idx]
-            for idx, (source_idx, candidate_variant) in enumerate(
-                zip(chart_parent_indices, chart_variant_ids, strict=False)
-            )
-            if source_idx == parent_idx and candidate_variant == variant_id
-        ]
+        children: list[unwrap_mod.PanelPatch] = []
+        for idx, (source_idx, candidate_variant, chart_kind) in enumerate(
+            zip(chart_parent_indices, chart_variant_ids, chart_kinds, strict=False)
+        ):
+            if source_idx != parent_idx or candidate_variant != variant_id:
+                continue
+            kind_str = str(chart_kind)
+            if kind_str.startswith("inserted_gusset_patch:"):
+                if kind_str not in seen_inserted_kinds:
+                    seen_inserted_kinds.add(kind_str)
+                    inserted_gusset_patches.append(chart_panels[idx])
+                continue
+            children.append(chart_panels[idx])
         if not children:
             raise ValueError(
                 f"retained operator {variant_id!r} has no materialized single-operator charts"
@@ -371,13 +388,15 @@ def evaluate(
         partitions,
         face_count=face_count,
     )
-    final_charts = _connected_chart_panels(original_panel, final_partition)
+    final_charts = (
+        _connected_chart_panels(original_panel, final_partition) + inserted_gusset_patches
+    )
     if len(final_charts) < 2:
         raise ValueError("sequential operator tree did not produce a chart split")
 
     distortion_threshold = float(receipt.get("distortion_threshold", 0.05))
     competitions, group_results = _run_backend_competition(
-        vertices=vertices,
+        vertices=materialized_vertices,
         charts=final_charts,
         distortion_threshold=distortion_threshold,
         panel_id=panel_id,
@@ -390,13 +409,15 @@ def evaluate(
     comparison = unwrap_mod._metric_comparison_receipt(original_metrics, metrics)
 
     split_valid = unwrap_mod._chart_group_backend_serializable(
-        vertices,
-        cast(Sequence[unwrap_mod.PanelPatch], final_charts),
+        materialized_vertices,
+        final_charts,
     )
-    split_score = float(metrics.get("score", math.inf))
-    split_worst_distortion = float(metrics.get("worst_distortion", math.inf))
-    original_score = float(original_metrics.get("score", math.inf))
-    original_distortion = float(original_metrics.get("worst_distortion", math.inf))
+    split_score = float(cast(Any, metrics.get("score", math.inf)))
+    split_worst_distortion = float(cast(Any, metrics.get("worst_distortion", math.inf)))
+    original_score = float(cast(Any, original_metrics.get("score", math.inf)))
+    original_distortion = float(cast(Any, original_metrics.get("worst_distortion", math.inf)))
+    measured_foldovers = int(cast(Any, metrics.get("foldovers", 0)))
+    original_foldovers = int(cast(Any, original_metrics.get("foldovers", 0)))
     existing_parent_acceptance = bool(
         split_valid
         and split_score < original_score
@@ -404,7 +425,7 @@ def evaluate(
     )
     operator_hard_gate = bool(
         existing_parent_acceptance
-        and int(metrics.get("foldovers", 0)) <= int(original_metrics.get("foldovers", 0))
+        and measured_foldovers <= original_foldovers
         and bool(metrics.get("exportable", False))
     )
 
@@ -415,7 +436,7 @@ def evaluate(
         blockers.append("score_not_improved")
     if split_worst_distortion > original_distortion + 1e-12:
         blockers.append("distortion_regresses")
-    if int(metrics.get("foldovers", 0)) > int(original_metrics.get("foldovers", 0)):
+    if measured_foldovers > original_foldovers:
         blockers.append("foldovers_regress")
     if not bool(metrics.get("exportable", False)):
         blockers.append("not_exportable")

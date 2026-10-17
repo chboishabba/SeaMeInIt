@@ -108,7 +108,7 @@ def _non_negative_int(value: object, key: str) -> int:
     if isinstance(value, bool):
         raise TypeError(f"{key} must be an integer")
     try:
-        number = int(value)  # type: ignore[arg-type]
+        number = int(value)  # type: ignore[arg-type,call-overload]
     except (TypeError, ValueError) as exc:
         raise TypeError(f"{key} must be an integer") from exc
     if isinstance(value, float) and not value.is_integer():
@@ -166,7 +166,13 @@ class AdaptiveModuleReceipt:
             "claim_boundary",
         ):
             object.__setattr__(self, key, _required_str(getattr(self, key), key))
-        for key in ("module_count", "sensor_count", "actuator_count", "fail_safe_test_count", "fail_safe_failure_count"):
+        for key in (
+            "module_count",
+            "sensor_count",
+            "actuator_count",
+            "fail_safe_test_count",
+            "fail_safe_failure_count",
+        ):
             object.__setattr__(self, key, _non_negative_int(getattr(self, key), key))
         object.__setattr__(
             self,
@@ -220,23 +226,40 @@ class AdaptiveModuleReceipt:
     @classmethod
     def from_mapping(cls, payload: Mapping[str, Any]) -> "AdaptiveModuleReceipt":
         return cls(
-            physical_rom_receipt_hash=_required_str(payload.get("physical_rom_receipt_hash"), "physical_rom_receipt_hash"),
-            module_manifest_hash=_required_str(payload.get("module_manifest_hash"), "module_manifest_hash"),
+            physical_rom_receipt_hash=_required_str(
+                payload.get("physical_rom_receipt_hash"), "physical_rom_receipt_hash"
+            ),
+            module_manifest_hash=_required_str(
+                payload.get("module_manifest_hash"), "module_manifest_hash"
+            ),
             sensor_map_hash=_required_str(payload.get("sensor_map_hash"), "sensor_map_hash"),
             actuator_map_hash=_required_str(payload.get("actuator_map_hash"), "actuator_map_hash"),
             power_budget_hash=_required_str(payload.get("power_budget_hash"), "power_budget_hash"),
-            fail_safe_evidence_hash=_required_str(payload.get("fail_safe_evidence_hash"), "fail_safe_evidence_hash"),
+            fail_safe_evidence_hash=_required_str(
+                payload.get("fail_safe_evidence_hash"), "fail_safe_evidence_hash"
+            ),
             module_count=_non_negative_int(payload.get("module_count"), "module_count"),
             sensor_count=_non_negative_int(payload.get("sensor_count"), "sensor_count"),
             actuator_count=_non_negative_int(payload.get("actuator_count"), "actuator_count"),
-            command_envelope_violation_rate=_fraction(payload.get("command_envelope_violation_rate"), "command_envelope_violation_rate"),
-            command_envelope_violation_threshold=_fraction(payload.get("command_envelope_violation_threshold"), "command_envelope_violation_threshold"),
-            fail_safe_test_count=_non_negative_int(payload.get("fail_safe_test_count"), "fail_safe_test_count"),
-            fail_safe_failure_count=_non_negative_int(payload.get("fail_safe_failure_count"), "fail_safe_failure_count"),
+            command_envelope_violation_rate=_fraction(
+                payload.get("command_envelope_violation_rate"), "command_envelope_violation_rate"
+            ),
+            command_envelope_violation_threshold=_fraction(
+                payload.get("command_envelope_violation_threshold"),
+                "command_envelope_violation_threshold",
+            ),
+            fail_safe_test_count=_non_negative_int(
+                payload.get("fail_safe_test_count"), "fail_safe_test_count"
+            ),
+            fail_safe_failure_count=_non_negative_int(
+                payload.get("fail_safe_failure_count"), "fail_safe_failure_count"
+            ),
             promotion=_promotion(payload.get("promotion")),
             blocked_consumers=_strings(payload.get("blocked_consumers", []), "blocked_consumers"),
             blocker_log=_strings(payload.get("blocker_log", []), "blocker_log"),
-            claim_boundary=_required_str(payload.get("claim_boundary", ADAPTIVE_MODULE_CLAIM_BOUNDARY), "claim_boundary"),
+            claim_boundary=_required_str(
+                payload.get("claim_boundary", ADAPTIVE_MODULE_CLAIM_BOUNDARY), "claim_boundary"
+            ),
         )
 
     @classmethod
@@ -249,7 +272,9 @@ class AdaptiveModuleReceipt:
     def to_json(self, path: str | Path) -> Path:
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        target.write_text(
+            json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
         return target
 
 
@@ -327,21 +352,43 @@ class ControllerSafetyReceipt:
     @classmethod
     def from_mapping(cls, payload: Mapping[str, Any]) -> "ControllerSafetyReceipt":
         return cls(
-            adaptive_module_receipt_hash=_required_str(payload.get("adaptive_module_receipt_hash"), "adaptive_module_receipt_hash"),
-            controller_artifact_hash=_required_str(payload.get("controller_artifact_hash"), "controller_artifact_hash"),
-            safety_envelope_hash=_required_str(payload.get("safety_envelope_hash"), "safety_envelope_hash"),
-            scenario_manifest_hash=_required_str(payload.get("scenario_manifest_hash"), "scenario_manifest_hash"),
-            controller_test_evidence_hash=_required_str(payload.get("controller_test_evidence_hash"), "controller_test_evidence_hash"),
+            adaptive_module_receipt_hash=_required_str(
+                payload.get("adaptive_module_receipt_hash"), "adaptive_module_receipt_hash"
+            ),
+            controller_artifact_hash=_required_str(
+                payload.get("controller_artifact_hash"), "controller_artifact_hash"
+            ),
+            safety_envelope_hash=_required_str(
+                payload.get("safety_envelope_hash"), "safety_envelope_hash"
+            ),
+            scenario_manifest_hash=_required_str(
+                payload.get("scenario_manifest_hash"), "scenario_manifest_hash"
+            ),
+            controller_test_evidence_hash=_required_str(
+                payload.get("controller_test_evidence_hash"), "controller_test_evidence_hash"
+            ),
             scenario_count=_non_negative_int(payload.get("scenario_count"), "scenario_count"),
-            hard_violation_count=_non_negative_int(payload.get("hard_violation_count"), "hard_violation_count"),
-            max_command_latency_ms=_non_negative_float(payload.get("max_command_latency_ms"), "max_command_latency_ms"),
-            command_latency_threshold_ms=_non_negative_float(payload.get("command_latency_threshold_ms"), "command_latency_threshold_ms"),
-            emergency_stop_test_count=_non_negative_int(payload.get("emergency_stop_test_count"), "emergency_stop_test_count"),
-            emergency_stop_failure_count=_non_negative_int(payload.get("emergency_stop_failure_count"), "emergency_stop_failure_count"),
+            hard_violation_count=_non_negative_int(
+                payload.get("hard_violation_count"), "hard_violation_count"
+            ),
+            max_command_latency_ms=_non_negative_float(
+                payload.get("max_command_latency_ms"), "max_command_latency_ms"
+            ),
+            command_latency_threshold_ms=_non_negative_float(
+                payload.get("command_latency_threshold_ms"), "command_latency_threshold_ms"
+            ),
+            emergency_stop_test_count=_non_negative_int(
+                payload.get("emergency_stop_test_count"), "emergency_stop_test_count"
+            ),
+            emergency_stop_failure_count=_non_negative_int(
+                payload.get("emergency_stop_failure_count"), "emergency_stop_failure_count"
+            ),
             promotion=_promotion(payload.get("promotion")),
             blocked_consumers=_strings(payload.get("blocked_consumers", []), "blocked_consumers"),
             blocker_log=_strings(payload.get("blocker_log", []), "blocker_log"),
-            claim_boundary=_required_str(payload.get("claim_boundary", CONTROLLER_SAFETY_CLAIM_BOUNDARY), "claim_boundary"),
+            claim_boundary=_required_str(
+                payload.get("claim_boundary", CONTROLLER_SAFETY_CLAIM_BOUNDARY), "claim_boundary"
+            ),
         )
 
     @classmethod
@@ -354,7 +401,9 @@ class ControllerSafetyReceipt:
     def to_json(self, path: str | Path) -> Path:
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        target.write_text(
+            json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
         return target
 
 
@@ -384,7 +433,9 @@ class SuitDeploymentReceipt:
                 "authority_review_receipt_hash",
                 _required_str(self.authority_review_receipt_hash, "authority_review_receipt_hash"),
             )
-        if self.authority_review_passed is not None and not isinstance(self.authority_review_passed, bool):
+        if self.authority_review_passed is not None and not isinstance(
+            self.authority_review_passed, bool
+        ):
             raise TypeError("authority_review_passed must be boolean or null")
         promotion = _promotion(self.promotion)
         object.__setattr__(self, "promotion", promotion)
@@ -423,15 +474,23 @@ class SuitDeploymentReceipt:
         if authority_passed is not None and not isinstance(authority_passed, bool):
             raise TypeError("authority_review_passed must be boolean or null")
         return cls(
-            controller_safety_receipt_hash=_required_str(payload.get("controller_safety_receipt_hash"), "controller_safety_receipt_hash"),
-            deployment_profile_hash=_required_str(payload.get("deployment_profile_hash"), "deployment_profile_hash"),
-            deployment_evidence_hash=_required_str(payload.get("deployment_evidence_hash"), "deployment_evidence_hash"),
+            controller_safety_receipt_hash=_required_str(
+                payload.get("controller_safety_receipt_hash"), "controller_safety_receipt_hash"
+            ),
+            deployment_profile_hash=_required_str(
+                payload.get("deployment_profile_hash"), "deployment_profile_hash"
+            ),
+            deployment_evidence_hash=_required_str(
+                payload.get("deployment_evidence_hash"), "deployment_evidence_hash"
+            ),
             authority_review_receipt_hash=cast(str | None, authority_hash),
             authority_review_passed=cast(bool | None, authority_passed),
             promotion=_promotion(payload.get("promotion")),
             blocked_consumers=_strings(payload.get("blocked_consumers", []), "blocked_consumers"),
             blocker_log=_strings(payload.get("blocker_log", []), "blocker_log"),
-            claim_boundary=_required_str(payload.get("claim_boundary", SUIT_DEPLOYMENT_CLAIM_BOUNDARY), "claim_boundary"),
+            claim_boundary=_required_str(
+                payload.get("claim_boundary", SUIT_DEPLOYMENT_CLAIM_BOUNDARY), "claim_boundary"
+            ),
         )
 
     @classmethod
@@ -444,7 +503,9 @@ class SuitDeploymentReceipt:
     def to_json(self, path: str | Path) -> Path:
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        target.write_text(
+            json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
         return target
 
 
@@ -586,7 +647,9 @@ def can_consume_adaptive_module_receipt(
     receipt: AdaptiveModuleReceipt, consumer: str | None = None
 ) -> bool:
     return receipt.promotion == 1 and (
-        not receipt.blocked_consumers if consumer is None else consumer not in receipt.blocked_consumers
+        not receipt.blocked_consumers
+        if consumer is None
+        else consumer not in receipt.blocked_consumers
     )
 
 
@@ -594,7 +657,9 @@ def can_consume_controller_safety_receipt(
     receipt: ControllerSafetyReceipt, consumer: str | None = None
 ) -> bool:
     return receipt.promotion == 1 and (
-        not receipt.blocked_consumers if consumer is None else consumer not in receipt.blocked_consumers
+        not receipt.blocked_consumers
+        if consumer is None
+        else consumer not in receipt.blocked_consumers
     )
 
 
@@ -602,7 +667,9 @@ def can_consume_suit_deployment_receipt(
     receipt: SuitDeploymentReceipt, consumer: str | None = None
 ) -> bool:
     return receipt.promotion == 1 and (
-        not receipt.blocked_consumers if consumer is None else consumer not in receipt.blocked_consumers
+        not receipt.blocked_consumers
+        if consumer is None
+        else consumer not in receipt.blocked_consumers
     )
 
 

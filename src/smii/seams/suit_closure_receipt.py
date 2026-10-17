@@ -145,8 +145,7 @@ def _float_mapping(value: object, key: str) -> dict[str, float]:
     if not isinstance(value, Mapping):
         raise TypeError(f"field '{key}' must be an object")
     return {
-        str(name): _non_negative_float(metric, f"{key}.{name}")
-        for name, metric in value.items()
+        str(name): _non_negative_float(metric, f"{key}.{name}") for name, metric in value.items()
     }
 
 
@@ -269,9 +268,13 @@ class AssemblyReceipt:
                 payload.get("geometry_deviation_threshold"),
                 "geometry_deviation_threshold",
             ),
-            material_lot_hashes=_string_list(payload.get("material_lot_hashes", []), "material_lot_hashes"),
+            material_lot_hashes=_string_list(
+                payload.get("material_lot_hashes", []), "material_lot_hashes"
+            ),
             promotion=_normalize_promotion(payload.get("promotion")),
-            blocked_consumers=_string_list(payload.get("blocked_consumers", []), "blocked_consumers"),
+            blocked_consumers=_string_list(
+                payload.get("blocked_consumers", []), "blocked_consumers"
+            ),
             blocker_log=_string_list(payload.get("blocker_log", []), "blocker_log"),
             claim_boundary=str(payload.get("claim_boundary", ASSEMBLY_CLAIM_BOUNDARY)),
         )
@@ -286,7 +289,9 @@ class AssemblyReceipt:
     def to_json(self, path: str | Path) -> Path:
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        target.write_text(
+            json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
         return target
 
 
@@ -322,7 +327,9 @@ class WearFitReceipt:
             value = getattr(self, key)
             if not isinstance(value, str) or not value:
                 raise ValueError(f"field '{key}' must be a non-empty string")
-        object.__setattr__(self, "sample_count", _non_negative_int(self.sample_count, "sample_count"))
+        object.__setattr__(
+            self, "sample_count", _non_negative_int(self.sample_count, "sample_count")
+        )
         object.__setattr__(self, "task_coverage", _fraction(self.task_coverage, "task_coverage"))
         object.__setattr__(
             self,
@@ -384,7 +391,9 @@ class WearFitReceipt:
                 "residual_thresholds",
             ),
             promotion=_normalize_promotion(payload.get("promotion")),
-            blocked_consumers=_string_list(payload.get("blocked_consumers", []), "blocked_consumers"),
+            blocked_consumers=_string_list(
+                payload.get("blocked_consumers", []), "blocked_consumers"
+            ),
             blocker_log=_string_list(payload.get("blocker_log", []), "blocker_log"),
             claim_boundary=str(payload.get("claim_boundary", WEAR_FIT_CLAIM_BOUNDARY)),
         )
@@ -399,7 +408,9 @@ class WearFitReceipt:
     def to_json(self, path: str | Path) -> Path:
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        target.write_text(
+            json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
         return target
 
 
@@ -551,7 +562,9 @@ class PhysicalROMValidationReceipt:
             calibrated_rom_receipt_hash=_optional_str(payload, "calibrated_rom_receipt_hash"),
             triadic_transport=transport,
             promotion=_normalize_promotion(payload.get("promotion")),
-            blocked_consumers=_string_list(payload.get("blocked_consumers", []), "blocked_consumers"),
+            blocked_consumers=_string_list(
+                payload.get("blocked_consumers", []), "blocked_consumers"
+            ),
             blocker_log=_string_list(payload.get("blocker_log", []), "blocker_log"),
             claim_boundary=str(payload.get("claim_boundary", PHYSICAL_ROM_CLAIM_BOUNDARY)),
         )
@@ -566,7 +579,9 @@ class PhysicalROMValidationReceipt:
     def to_json(self, path: str | Path) -> Path:
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        target.write_text(
+            json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
         return target
 
 

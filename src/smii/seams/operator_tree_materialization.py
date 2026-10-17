@@ -69,9 +69,7 @@ def _face_index(value: object, *, face_count: int, key: str) -> int:
 def _index_list(value: object, *, face_count: int, key: str) -> tuple[int, ...]:
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
         raise TypeError(f"{key} must be a sequence of face indices")
-    return tuple(
-        sorted({_face_index(item, face_count=face_count, key=key) for item in value})
-    )
+    return tuple(sorted({_face_index(item, face_count=face_count, key=key) for item in value}))
 
 
 @dataclass(frozen=True, slots=True)
@@ -184,7 +182,10 @@ class OperatorTreeMaterializationReceipt:
 def _variant_matches(candidate_variant: str, requested_variant: str) -> bool:
     if candidate_variant == requested_variant:
         return True
-    if requested_variant.endswith("_tree") and candidate_variant == requested_variant[:-5] + "_path":
+    if (
+        requested_variant.endswith("_tree")
+        and candidate_variant == requested_variant[:-5] + "_path"
+    ):
         return True
     return False
 

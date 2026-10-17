@@ -39,7 +39,7 @@ def _bounded_int(value: object, *, name: str, modulus: int) -> int:
     if isinstance(value, bool):
         raise TypeError(f"{name} must be an integer")
     try:
-        number = int(value)  # type: ignore[arg-type]
+        number = int(value)  # type: ignore[arg-type,call-overload]
     except (TypeError, ValueError) as exc:
         raise TypeError(f"{name} must be an integer") from exc
     if number < 0 or number >= modulus:
@@ -219,14 +219,11 @@ def measure_triadic_transport(
     joint_mismatch = 0.0
     for sample in samples:
         phase_ok = (
-            (sample.target_phase - sample.source_phase) % C3_PHASE_CARDINALITY
-            == fitted_phase
-        )
+            sample.target_phase - sample.source_phase
+        ) % C3_PHASE_CARDINALITY == fitted_phase
         orientation_ok = (
-            (sample.target_orientation_bin - sample.source_orientation_bin)
-            % BT369_ORIENTATION_CARDINALITY
-            == fitted_orientation
-        )
+            sample.target_orientation_bin - sample.source_orientation_bin
+        ) % BT369_ORIENTATION_CARDINALITY == fitted_orientation
         if not phase_ok:
             phase_mismatch += sample.weight
         if not orientation_ok:
