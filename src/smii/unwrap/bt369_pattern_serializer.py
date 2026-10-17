@@ -211,9 +211,7 @@ def build_bt369_pattern_partition(
 
     residuals = _face_residuals(failure_field, face_count=len(faces))
     foldovers = _face_index_set(failure_field.get("foldover_faces", []), len(faces))
-    high_distortion = _face_index_set(
-        failure_field.get("high_distortion_faces", []), len(faces)
-    )
+    high_distortion = _face_index_set(failure_field.get("high_distortion_faces", []), len(faces))
     frame = _panel_frame(coords, faces)
     centroids = np.asarray([coords[list(face)].mean(axis=0) for face in faces], dtype=float)
     centroid_uv = _normalized_centroid_uv(centroids, frame)
@@ -343,20 +341,38 @@ def _panel_frame(vertices: np.ndarray, faces: Sequence[Face]) -> tuple[np.ndarra
     canonically signed aggregate oriented face normal. ``v = n × u``.
     """
 
-    used = sorted({vertex for face in faces for vertex in face})
+    used = np.asarray(sorted({vertex for face in faces for vertex in face}), dtype=int)
+    if len(used) < 2:
+        return np.asarray([1.0, 0.0, 0.0]), np.asarray([0.0, 1.0, 0.0])
+    coords = vertices[used]
     best_pair: tuple[int, int] | None = None
     best_distance = -1.0
-    for left_offset, left in enumerate(used):
-        for right in used[left_offset + 1 :]:
-            delta = vertices[right] - vertices[left]
-            distance = float(np.dot(delta, delta))
-            pair = (left, right)
-            if distance > best_distance + 1e-15 or (
-                abs(distance - best_distance) <= 1e-15
-                and (best_pair is None or pair < best_pair)
-            ):
-                best_distance = distance
-                best_pair = pair
+    chunk_size = 512
+    n = len(used)
+    for i0 in range(0, n, chunk_size):
+        i1 = min(i0 + chunk_size, n)
+        c_i = coords[i0:i1]
+        for j0 in range(i0, n, chunk_size):
+            j1 = min(j0 + chunk_size, n)
+            c_j = coords[j0:j1]
+            diff = c_i[:, None, :] - c_j[None, :, :]
+            d2 = np.sum(diff * diff, axis=-1)
+            if i0 == j0:
+                idx_i = np.arange(i1 - i0)[:, None]
+                idx_j = np.arange(j1 - j0)[None, :]
+                d2[idx_i >= idx_j] = -1.0
+            max_val = float(np.max(d2))
+            if max_val > best_distance - 1e-15:
+                rows, cols = np.where(d2 >= max_val - 1e-15)
+                for r, c in zip(rows, cols):
+                    pair = (int(used[i0 + r]), int(used[j0 + c]))
+                    val = float(d2[r, c])
+                    if val > best_distance + 1e-15 or (
+                        abs(val - best_distance) <= 1e-15
+                        and (best_pair is None or pair < best_pair)
+                    ):
+                        best_distance = val
+                        best_pair = pair
     if best_pair is None or best_distance <= 1e-15:
         return np.asarray([1.0, 0.0, 0.0]), np.asarray([0.0, 1.0, 0.0])
     axis_u = _canonical_direction(vertices[best_pair[1]] - vertices[best_pair[0]])
@@ -548,11 +564,9 @@ def _cut_reasons(
         and either_hot
     ):
         reasons.append("residual_trit_boundary")
-    if (
-        either_hot
-        and _circular_orientation_distance(left.orientation_bin, right.orientation_bin)
-        > int(policy.orientation_jump_limit)
-    ):
+    if either_hot and _circular_orientation_distance(
+        left.orientation_bin, right.orientation_bin
+    ) > int(policy.orientation_jump_limit):
         reasons.append("orientation_jump")
     if abs(left.depth - right.depth) > int(policy.refinement_depth_jump_limit):
         reasons.append("refinement_depth_jump")

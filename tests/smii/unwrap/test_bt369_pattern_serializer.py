@@ -57,7 +57,10 @@ def test_bt369_partition_isolates_measured_foldover_and_preserves_faces() -> Non
     assert receipt.partition == ((0,), (1,))
     assert [cell.residual_trit for cell in receipt.cells] == [-1, 0]
     assert receipt.cut_reason_histogram["foldover_boundary"] == 1
-    assert receipt.claim_boundary == "bt369_partition_is_candidate_panelization_not_manufacturing_authority"
+    assert (
+        receipt.claim_boundary
+        == "bt369_partition_is_candidate_panelization_not_manufacturing_authority"
+    )
 
 
 def test_bt369_partition_keeps_compatible_low_residual_faces_together() -> None:

@@ -25,9 +25,7 @@ from smii.unwrap.bt369_pattern_serializer import (
 )
 
 SCHEMA_VERSION = "smii.bt369_pattern_backend_evaluation.v1"
-CLAIM_BOUNDARY = (
-    "bt369_partition_competes_under_existing_gate6_not_native_promotion_authority"
-)
+CLAIM_BOUNDARY = "bt369_partition_competes_under_existing_gate6_not_native_promotion_authority"
 DEFAULT_PANEL_IDS = ("P0", "P2")
 
 
@@ -41,9 +39,7 @@ def _gate_receipt(
     """Apply the unchanged parent-surgery gate plus the no-identity requirement."""
 
     original_score = float(cast(Any, original_metrics.get("score", math.inf)))
-    original_distortion = float(
-        cast(Any, original_metrics.get("worst_distortion", math.inf))
-    )
+    original_distortion = float(cast(Any, original_metrics.get("worst_distortion", math.inf)))
     original_foldovers = int(cast(Any, original_metrics.get("foldovers", 0)))
     score = float(cast(Any, measured_metrics.get("score", math.inf)))
     distortion = float(cast(Any, measured_metrics.get("worst_distortion", math.inf)))
@@ -208,6 +204,11 @@ def _evaluate_panel(
         partition_receipt = cast(BT369PatternPartitionReceipt, item["receipt"])
         parent_charts = tree_eval._connected_chart_panels(panel, partition_receipt.partition)
         charts = parent_charts + auxiliary_patches
+        print(
+            f"[{panel_id}] candidate {candidate_index + 1}/{len(unique)} "
+            f"({partition_receipt.policy.policy_key}): {len(charts)} charts...",
+            flush=True,
+        )
         competitions, group_results = tree_eval._run_backend_competition(
             vertices=materialized_vertices,
             charts=charts,
@@ -269,9 +270,7 @@ def _evaluate_panel(
         p = pareto_by_id.get(str(candidate["candidate_id"]), {})
         candidate["pareto_frontier_member"] = bool(p.get("pareto_frontier_member", False))
         candidate["pareto_status"] = str(p.get("pareto_status", "unknown"))
-        candidate["profile_scores"] = dict(
-            cast(Mapping[str, object], p.get("profile_scores", {}))
-        )
+        candidate["profile_scores"] = dict(cast(Mapping[str, object], p.get("profile_scores", {})))
 
     promoted = [candidate for candidate in evaluated if int(candidate["promotion"]) == 1]
     default_scores = [
