@@ -235,106 +235,80 @@ def _evaluate_panel(
                 cells=partition_receipt.cells, limits=limits,
             )),
             ("flow_trace", flow_trace_partition(
-                vertices=vertices, faces=panel.faces,
-                cells=partition_receipt.cells, limits=limits, target_charts=24,
+                vertices=vertices, faces=panel.faces, cells=partition_receipt.cells,
+                limits=limits, target_charts=24,
             )),
         )
-        for family, regularized_partition in families:
-            if regularized_partition in seen_family_topologies:
+        for family, candidate_partition in families:
+            if candidate_partition in seen_family_topologies:
                 continue
-            seen_family_topologies.add(regularized_partition)
+            seen_family_topologies.add(candidate_partition)
             manufacturing = chart_diagnostics(
-            vertices=vertices,
-            faces=panel.faces,
-            partition=regularized_partition,
-            limits=limits,
+                vertices=vertices, faces=panel.faces,
+                partition=candidate_partition, limits=limits,
             )
-            parent_charts = tree_eval._connected_chart_panels(panel, regularized_partition)
-            charts = parent_charts + auxiliary_patches
-            if manufacturing["manufacturing_blockers"]:
             candidate_id = f"{panel_id}_BT369_{candidate_index:03d}_{family}"
-            evaluated.append(
-                {
-                    "candidate_id": candidate_id,
-                    "variant_id": f"bt369:{partition_receipt.policy.policy_key}:{family}",
-                    "topology_hash": partition_receipt.topology_hash,
-                    "policy": partition_receipt.policy.to_dict(),
-                    "policy_aliases": item["policy_aliases"],
-                    "partition_receipt": partition_receipt.to_dict(),
-                    "source_manufacturing": source_manufacturing,
-                    "manufacturing": manufacturing,
-                    "regularized_partition": [list(c) for c in regularized_partition],
-                    "candidate_family": family,
-                    "sensitivity": sensitivity(manufacturing),
-                    "parent_chart_count": len(parent_charts),
-                    "auxiliary_patch_count": len(auxiliary_patches),
-                    "chart_count": len(charts),
-                    "screened_before_backend": True,
-                    "geometric_promotion": None,
-                    "promotion": 0,
-                    "blockers": list(manufacturing["manufacturing_blockers"]),
-                    "manufacturing_blockers": list(manufacturing["manufacturing_blockers"]),
-                    "metrics": None,
-                    "backend_competitions": [],
-                }
-            )
-            print(
-                f"[{panel_id}] candidate {candidate_index + 1}/{len(unique)} screened", flush=True
-            )
-                continue
-            print(
-            f"[{panel_id}] candidate {candidate_index + 1}/{len(unique)} "
-            f"({partition_receipt.policy.policy_key}): {len(charts)} charts...",
-            flush=True,
-            )
-            competitions, group_results = tree_eval._run_backend_competition(
-            vertices=materialized_vertices,
-            charts=charts,
-            distortion_threshold=distortion_threshold,
-            panel_id=panel_id,
-            )
-            metrics = unwrap_mod._variant_metrics_from_group_results(group_results)
-            split_valid = unwrap_mod._chart_group_backend_serializable(
-            materialized_vertices,
-            charts,
-            )
-            gate = _gate_receipt(
-            original_metrics=original_metrics,
-            measured_metrics=metrics,
-            split_valid=split_valid,
-            parent_chart_count=len(parent_charts),
-            )
-            candidate_id = f"{panel_id}_BT369_{candidate_index:03d}"
-            evaluated.append(
-            {
-                "source_manufacturing": source_manufacturing,
-                "manufacturing": manufacturing,
-                "manufacturing_blockers": [],
-                "regularized_partition": [list(c) for c in regularized_partition],
-                    "candidate_family": family,
-                    "sensitivity": sensitivity(manufacturing),
-                "screened_before_backend": False,
-                "geometric_promotion": gate["promotion"],
+            base = {
                 "candidate_id": candidate_id,
                 "variant_id": f"bt369:{partition_receipt.policy.policy_key}:{family}",
+                "candidate_family": family,
                 "topology_hash": partition_receipt.topology_hash,
                 "policy": partition_receipt.policy.to_dict(),
                 "policy_aliases": item["policy_aliases"],
                 "partition_receipt": partition_receipt.to_dict(),
+                "source_manufacturing": source_manufacturing,
+                "manufacturing": manufacturing,
+                "manufacturing_blockers": list(manufacturing["manufacturing_blockers"]),
+                "sensitivity": sensitivity(manufacturing),
+                "regularized_partition": [list(c) for c in candidate_partition],
+            }
+            if manufacturing["manufacturing_blockers"]:
+                evaluated.append({
+                    **base,
+                    "parent_chart_count": len(candidate_partition),
+                    "auxiliary_patch_count": len(auxiliary_patches),
+                    "chart_count": len(candidate_partition) + len(auxiliary_patches),
+                    "screened_before_backend": True,
+                    "geometric_promotion": None,
+                    "promotion": 0,
+                    "blockers": list(manufacturing["manufacturing_blockers"]),
+                    "metrics": None,
+                    "backend_competitions": [],
+                })
+                print(f"[{panel_id}] {candidate_id} screened: "
+                      f"{manufacturing['manufacturing_blockers']}", flush=True)
+                continue
+            parent_charts = tree_eval._connected_chart_panels(panel, candidate_partition)
+            charts = parent_charts + auxiliary_patches
+            print(f"[{panel_id}] {candidate_id}: {len(charts)} charts...", flush=True)
+            competitions, group_results = tree_eval._run_backend_competition(
+                vertices=materialized_vertices, charts=charts,
+                distortion_threshold=distortion_threshold, panel_id=panel_id,
+            )
+            metrics = unwrap_mod._variant_metrics_from_group_results(group_results)
+            split_valid = unwrap_mod._chart_group_backend_serializable(
+                materialized_vertices, charts,
+            )
+            gate = _gate_receipt(
+                original_metrics=original_metrics, measured_metrics=metrics,
+                split_valid=split_valid, parent_chart_count=len(parent_charts),
+            )
+            evaluated.append({
+                **base,
                 "parent_chart_count": len(parent_charts),
                 "auxiliary_patch_count": len(auxiliary_patches),
                 "auxiliary_patch_kinds": auxiliary_patch_kinds,
                 "chart_count": len(charts),
                 "split_valid": bool(split_valid),
+                "screened_before_backend": False,
+                "geometric_promotion": gate["promotion"],
                 "metrics": metrics,
                 "metric_comparison": unwrap_mod._metric_comparison_receipt(
-                    original_metrics,
-                    metrics,
+                    original_metrics, metrics,
                 ),
                 "backend_competitions": competitions,
                 **gate,
-            }
-            )
+            })
 
     pareto = unwrap_mod._variant_pareto_receipt(
         original_candidate_id=f"{panel_id}.original",
