@@ -136,27 +136,30 @@ def local_dart_candidates(
                         selected.add(nxt)
                         queue.append(nxt)
             complement = chart - selected
-            if len(selected) < min_faces or len(complement) < min_faces:
-                continue
-            for piece in _components(complement, neighbors):
+            pieces = _components(complement, neighbors)
+            valid_pieces = []
+            for piece in pieces:
                 if len(piece) < min_faces:
-                    break
-            else:
-                new_partition = _partition(
-                    [c for i, c in enumerate(charts) if i != chart_index]
-                    + [tuple(sorted(selected))]
-                    + _components(complement, neighbors),
-                    len(faces),
+                    selected.update(piece)
+                else:
+                    valid_pieces.append(piece)
+            if not valid_pieces or len(selected) < min_faces:
+                continue
+            new_partition = _partition(
+                [c for i, c in enumerate(charts) if i != chart_index]
+                + [tuple(sorted(selected))]
+                + valid_pieces,
+                len(faces),
+            )
+            if new_partition != charts and not any(
+                p["partition"] == new_partition for p in proposals
+            ):
+                proposals.append(
+                    {
+                        "source_chart_index": chart_index,
+                        "seed_face": seed,
+                        "partition": new_partition,
+                        "claim_boundary": "topological_split_requires_fresh_uv_referee",
+                    }
                 )
-                if new_partition != charts and not any(
-                    p["partition"] == new_partition for p in proposals
-                ):
-                    proposals.append(
-                        {
-                            "source_chart_index": chart_index,
-                            "seed_face": seed,
-                            "partition": new_partition,
-                            "claim_boundary": "topological_split_requires_fresh_uv_referee",
-                        }
-                    )
     return proposals
