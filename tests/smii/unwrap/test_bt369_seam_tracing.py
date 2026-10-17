@@ -37,10 +37,11 @@ def test_flow_tracing_preserves_face_coverage_and_connectivity():
         reached = {chart[0]}
         pending = [chart[0]]
         while pending:
-            reached.update(j for i in [pending.pop()] for j, _ in graph[i] if j in chart and j not in reached)
-            pending = [j for j in chart if j in reached and any(k not in reached and k in chart for k, _ in graph[j])]
-            if pending:
-                reached.add(pending[-1])
+            node = pending.pop()
+            for neighbor, _ in graph[node]:
+                if neighbor in chart and neighbor not in reached:
+                    reached.add(neighbor)
+                    pending.append(neighbor)
         assert reached == set(chart)
 
 
