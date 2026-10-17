@@ -74,6 +74,15 @@ def _gate_receipt(
     if not exportable:
         blockers.append("not_exportable")
 
+    baseline_authority = {
+        "reference_distortion": original_distortion,
+        "reference_passes": distortion <= original_distortion + 1e-12,
+        "is_diagnostic_only_reference": bool(original_metrics.get("diagnostic_only", False))
+        or original_foldovers > 100,
+        "production_ceiling": 1.0,
+        "production_ceiling_passes": distortion <= 1.0,
+    }
+
     return {
         "promotion": 1 if not blockers else 0,
         "blockers": blockers,
@@ -85,6 +94,7 @@ def _gate_receipt(
         ),
         "foldover_guard": foldovers <= original_foldovers,
         "exportable_guard": exportable,
+        "baseline_authority": baseline_authority,
     }
 
 
@@ -267,19 +277,54 @@ def _evaluate_panel(
                 )
                 families.append(("flow_trace_shortened", shortened))
             elif panel_id == "P0":
-                for proposal in local_dart_candidates(
+                shortened, _moves = boundary_shortening(
                     vertices=vertices,
                     faces=panel.faces,
                     partition=flow,
-                    chart_indices=(19, 20, 23),
                     min_faces=limits.min_faces,
-                ):
+                    max_moves=200,
+                )
+                families.append(("flow_trace_shortened", shortened))
+
+                dart_proposals = local_dart_candidates(
+                    vertices=vertices,
+                    faces=panel.faces,
+                    partition=flow,
+                    chart_indices=(11, 18, 19, 20, 23),
+                    min_faces=limits.min_faces,
+                )
+                for proposal in dart_proposals:
                     families.append(
                         (
                             f"flow_trace_dart_{proposal['source_chart_index']}_{proposal['seed_face']}",
                             proposal["partition"],
                         )
                     )
+
+                if dart_proposals:
+                    target_indices = {11, 18, 19, 20, 23}
+                    repaired_charts = []
+                    for c_idx, chart_faces in enumerate(flow):
+                        if c_idx in target_indices:
+                            matching = [
+                                p for p in dart_proposals if p["source_chart_index"] == c_idx
+                            ]
+                            if matching:
+                                best_p = matching[0]
+                                new_pieces = [c for c in best_p["partition"] if c not in flow]
+                                repaired_charts.extend(new_pieces)
+                            else:
+                                repaired_charts.append(chart_faces)
+                        else:
+                            repaired_charts.append(chart_faces)
+                    compound_shortened, _ = boundary_shortening(
+                        vertices=vertices,
+                        faces=panel.faces,
+                        partition=tuple(repaired_charts),
+                        min_faces=limits.min_faces,
+                        max_moves=200,
+                    )
+                    families.append(("flow_trace_dart_compound_shortened", compound_shortened))
         for family, candidate_partition in families:
             if candidate_partition in seen_family_topologies:
                 continue
@@ -484,6 +529,7 @@ def main() -> int:
         panel_ids=panel_ids,
     )
     args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     summary = {
         "promotion": result["promotion"],
         "promoted_panel_ids": result["promoted_panel_ids"],
