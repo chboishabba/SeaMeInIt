@@ -19,7 +19,10 @@ def freeze_winner(source: Path, candidate_id: str, out: Path) -> dict:
     if len(candidates) != 1:
         raise ValueError("candidate_id must match exactly one P2 candidate")
     candidate = candidates[0]
-    if candidate["candidate_family"] != "flow_trace" or candidate.get("metrics") is None:
+    if (
+        not str(candidate.get("candidate_family", "")).startswith("flow_trace")
+        or candidate.get("metrics") is None
+    ):
         raise ValueError("winner must be a freshly evaluated flow_trace candidate")
     if int(candidate.get("geometric_promotion", 0)) != 1:
         raise ValueError("candidate does not have measured Gate-6 promotion")

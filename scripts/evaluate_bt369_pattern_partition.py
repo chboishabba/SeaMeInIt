@@ -263,7 +263,7 @@ def _evaluate_panel(
                     faces=panel.faces,
                     partition=flow,
                     min_faces=limits.min_faces,
-                    max_moves=100,
+                    max_moves=200,
                 )
                 families.append(("flow_trace_shortened", shortened))
             elif panel_id == "P0":
@@ -484,8 +484,12 @@ def main() -> int:
         panel_ids=panel_ids,
     )
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    print(json.dumps(result, indent=2, sort_keys=True))
+    summary = {
+        "promotion": result["promotion"],
+        "promoted_panel_ids": result["promoted_panel_ids"],
+        "blockers": result["blockers"],
+    }
+    print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
 
 
