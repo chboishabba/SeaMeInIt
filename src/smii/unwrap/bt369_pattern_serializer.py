@@ -1,12 +1,12 @@
 """BT369-native face partitioning for garment pattern serialization.
 
-This module deliberately stops at chart partitioning.  It reuses BT369's
+This module deliberately stops at chart partitioning. It reuses BT369's
 certificate vocabulary (residual trit, Z/6 orientation, base-3 prefix and
 bounded refinement depth) on an arbitrary face-backed garment panel, but does
 not claim that the panel is spherical or that BT369 is a privileged physical
 law.
 
-The resulting partition is a candidate panelization.  Numerical UV coordinates
+The resulting partition is a candidate panelization. Numerical UV coordinates
 and Gate-6 promotion remain owned by the existing serializer competition.
 """
 
@@ -190,7 +190,7 @@ def build_bt369_pattern_partition(
 ) -> BT369PatternPartitionReceipt:
     """Partition a panel by BT369-style local state compatibility.
 
-    The partition preserves original face identity.  No UV coordinates are
+    The partition preserves original face identity. No UV coordinates are
     generated here; callers must rerun a numerical serialization backend.
     """
 
@@ -323,21 +323,63 @@ def _face_index_set(value: object, face_count: int) -> set[int]:
     return result
 
 
+def _canonical_direction(vector: np.ndarray) -> np.ndarray:
+    norm = float(np.linalg.norm(vector))
+    if norm <= 1e-15:
+        raise ValueError("cannot canonicalize a zero direction")
+    direction = np.asarray(vector, dtype=float) / norm
+    pivot = int(np.argmax(np.abs(direction)))
+    if direction[pivot] < 0.0:
+        direction = -direction
+    return direction
+
+
 def _panel_frame(vertices: np.ndarray, faces: Sequence[Face]) -> tuple[np.ndarray, np.ndarray]:
+    """Build a deterministic geometry-attached 2D frame.
+
+    PCA/SVD frames are sign-ambiguous and can rotate inside nearly degenerate
+    eigenspaces. For a receipt-bearing orientation code we instead use the
+    longest panel chord as ``u`` (deterministic lexicographic tie break) and a
+    canonically signed aggregate oriented face normal. ``v = n × u``.
+    """
+
     used = sorted({vertex for face in faces for vertex in face})
-    coords = vertices[used]
-    centered = coords - coords.mean(axis=0)
-    try:
-        _u, _s, vt = np.linalg.svd(centered, full_matrices=False)
-    except np.linalg.LinAlgError:
-        vt = np.eye(3, dtype=float)
-    if vt.shape[0] < 2:
+    best_pair: tuple[int, int] | None = None
+    best_distance = -1.0
+    for left_offset, left in enumerate(used):
+        for right in used[left_offset + 1 :]:
+            delta = vertices[right] - vertices[left]
+            distance = float(np.dot(delta, delta))
+            pair = (left, right)
+            if distance > best_distance + 1e-15 or (
+                abs(distance - best_distance) <= 1e-15
+                and (best_pair is None or pair < best_pair)
+            ):
+                best_distance = distance
+                best_pair = pair
+    if best_pair is None or best_distance <= 1e-15:
         return np.asarray([1.0, 0.0, 0.0]), np.asarray([0.0, 1.0, 0.0])
-    axis_u = np.asarray(vt[0], dtype=float)
-    axis_v = np.asarray(vt[1], dtype=float)
-    if float(np.linalg.norm(axis_u)) <= 1e-15 or float(np.linalg.norm(axis_v)) <= 1e-15:
-        return np.asarray([1.0, 0.0, 0.0]), np.asarray([0.0, 1.0, 0.0])
-    return axis_u / np.linalg.norm(axis_u), axis_v / np.linalg.norm(axis_v)
+    axis_u = _canonical_direction(vertices[best_pair[1]] - vertices[best_pair[0]])
+
+    normal = np.zeros(3, dtype=float)
+    for a, b, c in faces:
+        normal += np.cross(vertices[b] - vertices[a], vertices[c] - vertices[a])
+    if float(np.linalg.norm(normal)) <= 1e-15:
+        basis = min(
+            (np.eye(3, dtype=float)[axis] for axis in range(3)),
+            key=lambda candidate: abs(float(np.dot(candidate, axis_u))),
+        )
+        normal = np.cross(axis_u, basis)
+    normal = _canonical_direction(normal)
+    axis_v = np.cross(normal, axis_u)
+    if float(np.linalg.norm(axis_v)) <= 1e-15:
+        basis = min(
+            (np.eye(3, dtype=float)[axis] for axis in range(3)),
+            key=lambda candidate: abs(float(np.dot(candidate, axis_u))),
+        )
+        axis_v = np.cross(basis, axis_u)
+    axis_v = _canonical_direction(axis_v)
+    return axis_u, axis_v
 
 
 def _normalized_centroid_uv(
@@ -360,7 +402,9 @@ def _normalized_centroid_uv(
 
 def _triangle_area(vertices: np.ndarray, face: Face) -> float:
     a, b, c = face
-    return 0.5 * float(np.linalg.norm(np.cross(vertices[b] - vertices[a], vertices[c] - vertices[a])))
+    return 0.5 * float(
+        np.linalg.norm(np.cross(vertices[b] - vertices[a], vertices[c] - vertices[a]))
+    )
 
 
 def _residual_trit(*, residual: float, threshold: float, foldover: bool) -> int:
@@ -382,8 +426,10 @@ def _triadic_prefix(u: float, v: float, depth: int) -> str:
     if depth <= 0:
         return ""
     scale = 3**depth
-    x = min(scale - 1, max(0, int((u % 1.0) * scale)))
-    y = min(scale - 1, max(0, int(min(max(v, 0.0), 1.0) * scale)))
+    u_clamped = min(max(float(u), 0.0), 1.0)
+    v_clamped = min(max(float(v), 0.0), 1.0)
+    x = min(scale - 1, max(0, int(u_clamped * scale)))
+    y = min(scale - 1, max(0, int(v_clamped * scale)))
     digits: list[str] = []
     for level in range(depth - 1, -1, -1):
         place = 3**level
@@ -531,7 +577,12 @@ def _graph_components(graph: Mapping[int, set[int]]) -> tuple[tuple[int, ...], .
                     component.add(neighbor)
                     queue.append(neighbor)
         components.append(tuple(sorted(component)))
-    return tuple(sorted(components, key=lambda component: (component[0], len(component), component)))
+    return tuple(
+        sorted(
+            components,
+            key=lambda component: (component[0], len(component), component),
+        )
+    )
 
 
 def _topology_hash(partition: Sequence[Sequence[int]]) -> str:
