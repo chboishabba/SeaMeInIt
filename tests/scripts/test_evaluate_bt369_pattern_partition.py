@@ -47,7 +47,7 @@ def test_gate_requires_score_distortion_foldover_exportability_and_validity() ->
             "exportable": True,
         },
         split_valid=True,
-        chart_count=2,
+        parent_chart_count=2,
     )
     assert promoted["promotion"] == 1
     assert promoted["blockers"] == []
@@ -61,7 +61,7 @@ def test_gate_requires_score_distortion_foldover_exportability_and_validity() ->
             "exportable": True,
         },
         split_valid=True,
-        chart_count=2,
+        parent_chart_count=2,
     )
     assert regression["promotion"] == 0
     assert regression["blockers"] == ["distortion_regresses"]
@@ -82,7 +82,7 @@ def test_gate_does_not_promote_unsplit_identity_partition() -> None:
             "exportable": True,
         },
         split_valid=True,
-        chart_count=1,
+        parent_chart_count=1,
     )
 
     assert gate["promotion"] == 0
