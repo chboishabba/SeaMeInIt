@@ -5,6 +5,7 @@ Dijkstra with positive physical edge costs; labels are grown from spatially
 separated anchors. This is a discrete flow-guided proxy, not a continuous
 geodesic, garment stress solution, or manufacturing certification.
 """
+
 from __future__ import annotations
 
 import heapq
@@ -15,7 +16,12 @@ from typing import Sequence
 
 import numpy as np
 
-from smii.unwrap.bt369_manufacturing import ManufacturingLimits, _geometry, _partition, regularize_partition
+from smii.unwrap.bt369_manufacturing import (
+    ManufacturingLimits,
+    _geometry,
+    _partition,
+    regularize_partition,
+)
 
 
 @dataclass(frozen=True)
@@ -26,14 +32,21 @@ class SeamWeights:
     delta: float = 0.3
 
     def __post_init__(self) -> None:
-        if any(not math.isfinite(x) or x < 0 for x in (self.alpha, self.beta, self.gamma, self.delta)):
+        if any(
+            not math.isfinite(x) or x < 0 for x in (self.alpha, self.beta, self.gamma, self.delta)
+        ):
             raise ValueError("seam weights must be finite and nonnegative")
         if self.alpha <= 0:
             raise ValueError("length weight must be positive")
 
 
-def surface_graph(*, vertices: np.ndarray, faces: Sequence[tuple[int, int, int]],
-                  cells: Sequence[object], weights: SeamWeights = SeamWeights()):
+def surface_graph(
+    *,
+    vertices: np.ndarray,
+    faces: Sequence[tuple[int, int, int]],
+    cells: Sequence[object],
+    weights: SeamWeights = SeamWeights(),
+):
     """Return face graph with reproducible nonnegative surface edge costs."""
     v, areas, edges = _geometry(vertices, faces)
     if len(cells) != len(faces):
@@ -48,12 +61,21 @@ def surface_graph(*, vertices: np.ndarray, faces: Sequence[tuple[int, int, int]]
             continue
         i, j = incident
         length = float(np.linalg.norm(v[a] - v[b]))
-        orient = min(abs(int(cells[i].orientation_bin) - int(cells[j].orientation_bin)) % 6,
-                     6 - abs(int(cells[i].orientation_bin) - int(cells[j].orientation_bin)) % 6) / 3
+        orient = (
+            min(
+                abs(int(cells[i].orientation_bin) - int(cells[j].orientation_bin)) % 6,
+                6 - abs(int(cells[i].orientation_bin) - int(cells[j].orientation_bin)) % 6,
+            )
+            / 3
+        )
         residual = abs(float(cells[i].residual) - float(cells[j].residual))
         curvature = 1 - float(np.clip(np.dot(normals[i], normals[j]), -1, 1))
-        cost = (weights.alpha * length + weights.beta * orient * length
-                + weights.gamma * residual * length + weights.delta * curvature * length)
+        cost = (
+            weights.alpha * length
+            + weights.beta * orient * length
+            + weights.gamma * residual * length
+            + weights.delta * curvature * length
+        )
         cost = max(cost, 1e-12)
         graph[i].append((j, cost))
         graph[j].append((i, cost))
@@ -102,10 +124,15 @@ def _grow(graph, seeds):
     return distances, labels
 
 
-def flow_trace_partition(*, vertices: np.ndarray, faces: Sequence[tuple[int, int, int]],
-                         cells: Sequence[object], limits: ManufacturingLimits,
-                         weights: SeamWeights = SeamWeights(),
-                         target_charts: int = 24):
+def flow_trace_partition(
+    *,
+    vertices: np.ndarray,
+    faces: Sequence[tuple[int, int, int]],
+    cells: Sequence[object],
+    limits: ManufacturingLimits,
+    weights: SeamWeights = SeamWeights(),
+    target_charts: int = 24,
+):
     """Multi-source minimal-cost paths produce connected macroscopic chart domains.
 
     Farthest-point anchors are selected using surface-graph distance. Each
@@ -131,13 +158,20 @@ def flow_trace_partition(*, vertices: np.ndarray, faces: Sequence[tuple[int, int
     for i, label in enumerate(labels):
         regions[label].append(i)
     partition = _partition(tuple(regions.values()), len(faces))
-    return regularize_partition(vertices=vertices, faces=faces, partition=partition,
-                                cells=cells, limits=limits)
+    return regularize_partition(
+        vertices=vertices, faces=faces, partition=partition, cells=cells, limits=limits
+    )
 
 
-def morphological_cleanup(*, vertices: np.ndarray, faces: Sequence[tuple[int, int, int]],
-                          partition: Sequence[Sequence[int]], cells: Sequence[object],
-                          limits: ManufacturingLimits, rounds: int = 2):
+def morphological_cleanup(
+    *,
+    vertices: np.ndarray,
+    faces: Sequence[tuple[int, int, int]],
+    partition: Sequence[Sequence[int]],
+    cells: Sequence[object],
+    limits: ManufacturingLimits,
+    rounds: int = 2,
+):
     """Simultaneous strict-neighbor-majority relabeling followed by merge-back.
 
     Changes only interior faces whose neighbors unanimously agree, avoiding
@@ -183,14 +217,21 @@ def morphological_cleanup(*, vertices: np.ndarray, faces: Sequence[tuple[int, in
                         component.add(neighbor)
                         queue.append(neighbor)
             split.append(tuple(sorted(component)))
-    return regularize_partition(vertices=vertices, faces=faces, partition=split,
-                                cells=cells, limits=limits)
+    return regularize_partition(
+        vertices=vertices, faces=faces, partition=split, cells=cells, limits=limits
+    )
 
 
 def sensitivity(diagnostics: dict) -> list[dict[str, object]]:
     ratio = float(diagnostics["seam_length_over_sqrt_area"])
     count = int(diagnostics["chart_count"])
-    area_ok = ("subminimum_chart_area" not in diagnostics["manufacturing_blockers"])
-    return [{"max_seam_ratio": seam, "max_charts": charts,
-             "passes": area_ok and ratio <= seam and count <= charts}
-            for seam in (8, 12, 16, 24) for charts in (32, 64, 128)]
+    area_ok = "subminimum_chart_area" not in diagnostics["manufacturing_blockers"]
+    return [
+        {
+            "max_seam_ratio": seam,
+            "max_charts": charts,
+            "passes": area_ok and ratio <= seam and count <= charts,
+        }
+        for seam in (8, 12, 16, 24)
+        for charts in (32, 64, 128)
+    ]

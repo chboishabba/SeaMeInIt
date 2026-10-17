@@ -28,8 +28,9 @@ def _grid():
 def test_flow_tracing_preserves_face_coverage_and_connectivity():
     v, f, cells = _grid()
     limits = ManufacturingLimits(max_charts=8, min_faces=2, min_area_fraction=0)
-    partition = flow_trace_partition(vertices=v, faces=f, cells=cells,
-                                     limits=limits, target_charts=3)
+    partition = flow_trace_partition(
+        vertices=v, faces=f, cells=cells, limits=limits, target_charts=3
+    )
     assert sorted(i for chart in partition for i in chart) == list(range(len(f)))
     assert len(partition) <= 3
     graph = surface_graph(vertices=v, faces=f, cells=cells)
@@ -49,10 +50,10 @@ def test_morphology_and_sensitivity_are_deterministic():
     v, f, cells = _grid()
     limits = ManufacturingLimits(max_charts=8, min_faces=2, min_area_fraction=0)
     source = tuple((i,) for i in range(len(f)))
-    first = morphological_cleanup(vertices=v, faces=f, partition=source,
-                                  cells=cells, limits=limits)
-    second = morphological_cleanup(vertices=v, faces=f, partition=source,
-                                   cells=cells, limits=limits)
+    first = morphological_cleanup(vertices=v, faces=f, partition=source, cells=cells, limits=limits)
+    second = morphological_cleanup(
+        vertices=v, faces=f, partition=source, cells=cells, limits=limits
+    )
     assert first == second
     report = chart_diagnostics(vertices=v, faces=f, partition=first, limits=limits)
     matrix = sensitivity(report)
