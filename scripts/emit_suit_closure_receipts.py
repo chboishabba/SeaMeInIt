@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 from smii.seams import (
+    TriadicTransportSample,
     TriadicTransportWitness,
     derive_assembly_receipt,
     derive_physical_rom_validation_receipt,
@@ -17,6 +18,7 @@ from smii.seams import (
     load_assembly_receipt,
     load_finished_seam_receipt,
     load_wear_fit_receipt,
+    measure_triadic_transport,
 )
 
 
@@ -78,6 +80,37 @@ def emit_wear_fit(args: argparse.Namespace) -> None:
     print(f"Wrote WearFitReceipt to {args.out} ({receipt.promotion})")
 
 
+def emit_measure_c3(args: argparse.Namespace) -> None:
+    observations = _json_object(args.observations)
+    raw_samples = observations.get("samples", [])
+    if not isinstance(raw_samples, list):
+        raise TypeError("C3 observation JSON must contain a samples list")
+    samples = [
+        TriadicTransportSample.from_mapping(sample)
+        for sample in raw_samples
+        if isinstance(sample, Mapping)
+    ]
+    measurement, witness = measure_triadic_transport(
+        samples,
+        threshold=args.threshold,
+        transport_model=args.transport_model,
+        address_schema=args.address_schema,
+        phase_provenance_hash=_sha256_file(args.phase_provenance),
+        orientation_receipt_hash=_sha256_file(args.orientation_receipt),
+    )
+    payload = {
+        **witness.to_dict(),
+        "measurement": measurement.to_dict(),
+        "observation_hash": _sha256_file(args.observations),
+    }
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(
+        f"Wrote measured C3/BT369 transport witness to {args.out} "
+        f"(error={measurement.c3_equivariance_error:.6g}, passes={measurement.passes})"
+    )
+
+
 def emit_physical_rom(args: argparse.Namespace) -> None:
     wear_fit = load_wear_fit_receipt(args.wear_fit_receipt)
     triadic_transport = None
@@ -134,6 +167,19 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     wear.add_argument("--minimum-task-coverage", type=float, default=0.95)
     wear.add_argument("--out", type=Path, required=True)
     wear.set_defaults(func=emit_wear_fit)
+
+    c3 = subparsers.add_parser(
+        "measure-c3",
+        help="derive C3/BT369 transport error from measured phase/orientation correspondences",
+    )
+    c3.add_argument("--observations", type=Path, required=True)
+    c3.add_argument("--phase-provenance", type=Path, required=True)
+    c3.add_argument("--orientation-receipt", type=Path, required=True)
+    c3.add_argument("--transport-model", required=True)
+    c3.add_argument("--address-schema", required=True)
+    c3.add_argument("--threshold", type=float, required=True)
+    c3.add_argument("--out", type=Path, required=True)
+    c3.set_defaults(func=emit_measure_c3)
 
     physical = subparsers.add_parser("physical-rom", help="emit PhysicalROMValidationReceipt")
     physical.add_argument("--wear-fit-receipt", type=Path, required=True)
