@@ -267,6 +267,12 @@ def _evaluate_panel(
         candidate_id = f"{panel_id}_BT369_{candidate_index:03d}"
         evaluated.append(
             {
+                "source_manufacturing": source_manufacturing,
+                "manufacturing": manufacturing,
+                "manufacturing_blockers": [],
+                "regularized_partition": [list(c) for c in regularized_partition],
+                "screened_before_backend": False,
+                "geometric_promotion": gate["promotion"],
                 "candidate_id": candidate_id,
                 "variant_id": f"bt369:{partition_receipt.policy.policy_key}",
                 "topology_hash": partition_receipt.topology_hash,
