@@ -25,7 +25,7 @@ Each original face receives a certificate-bearing state:
   - `-1` for a measured foldover face;
   - `0` when residual is within the declared threshold;
   - `+1` for a non-foldover face above threshold;
-- `orientation_bin ∈ Z/6`, derived deterministically from an oriented face edge in a panel-attached PCA frame;
+- `orientation_bin ∈ Z/6`, derived deterministically from an oriented face edge in a geometry-attached frame whose `u` axis is the lexicographically tie-broken farthest panel chord and whose `v` axis is built from a canonically signed aggregate face normal;
 - `depth`, an MDL-style bounded base-3 refinement depth from `residual / threshold`;
 - `triadic_prefix`, from normalized panel-frame face-centroid coordinates;
 - `area_weight`;
