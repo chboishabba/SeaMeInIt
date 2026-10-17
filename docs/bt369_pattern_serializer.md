@@ -161,3 +161,42 @@ New focused test:
 Historical P0/P2 replay uses the same command and artifact path. The evaluator
 does not inherit the geometric scores of source microcharts: surviving
 regularized charts must be solved afresh.
+
+## PR #65 completion: P2 freeze and local repair
+
+`scripts/freeze_bt369_p2_winner.py` accepts the **actual locally measured**
+backend evaluation receipt, an exact P2 candidate ID, and an output path.
+It refuses to freeze candidates without measured Gate-6 geometric promotion.
+The output contains the exact face partition, policy, source artifact hashes,
+receipt SHA-256, topology SHA-256, backend competition, metrics, manufacturing
+diagnostics and sensitivity. No historical metric is synthesized.
+
+Example after local replay:
+
+```bash
+python scripts/freeze_bt369_p2_winner.py \
+  --receipt outputs/demo/afflec_receipted_curated_20260605_143059/panels_fabric_operator_basis_search/bt369_pattern_backend_evaluation_P0_P2.json \
+  --candidate-id ACTUAL_P2_FLOW_TRACE_CANDIDATE_ID \
+  --out outputs/demo/afflec_receipted_curated_20260605_143059/panels_fabric_operator_basis_search/bt369_p2_frozen_winner.json
+```
+
+The evaluator additionally tests `flow_trace_shortened` for P2 and
+`flow_trace_dart_*` for P0 charts 19, 20, 23 on the first policy's
+flow-traced partition. Seam shortening moves only a boundary face that
+strictly reduces physical seam length, preserves source connectivity,
+and respects the minimum face count. Dart proposals are **topological
+chart splits**, not physical sewn darts or an assertion of strain relief.
+Every candidate must pass the unchanged manufacturing pre-screen and
+fresh backend competition. The original 12.0 seam ratio gate is not relaxed.
+P2's earlier 12.73 remains manufacturing-blocked until a measured
+candidate actually passes. P0's targeted chart indices are interpreted
+against the exact sorted face partition; verify that chart numbering
+matches the profiling receipt before treating the experiment as targeted.
+
+Run the new local regression alongside the existing suite:
+
+```bash
+python -m pytest tests/smii/unwrap/test_bt369_local_repair.py tests/smii/unwrap/test_bt369_seam_tracing.py tests/smii/unwrap/test_bt369_manufacturing.py tests/smii/unwrap/test_bt369_pattern_serializer.py tests/scripts/test_evaluate_bt369_pattern_partition.py -q
+ruff check src/smii/unwrap/bt369_local_repair.py scripts/freeze_bt369_p2_winner.py scripts/evaluate_bt369_pattern_partition.py tests/smii/unwrap/test_bt369_local_repair.py
+ruff format --check src/smii/unwrap/bt369_local_repair.py scripts/freeze_bt369_p2_winner.py scripts/evaluate_bt369_pattern_partition.py tests/smii/unwrap/test_bt369_local_repair.py
+```
