@@ -18,6 +18,7 @@ from typing import Any, Mapping, Sequence, cast
 
 from scripts import evaluate_operator_tree as tree_eval
 from scripts import unwrap_panels as unwrap_mod
+from smii.unwrap.bt369_manufacturing import ManufacturingLimits, chart_diagnostics, regularize_partition
 from smii.unwrap.bt369_pattern_serializer import (
     BT369PatternPartitionReceipt,
     build_bt369_pattern_partition,
@@ -199,11 +200,54 @@ def _evaluate_panel(
         parent_index=parent_index,
     )
 
+    limits = ManufacturingLimits()
     evaluated: list[dict[str, object]] = []
     for candidate_index, item in enumerate(unique):
         partition_receipt = cast(BT369PatternPartitionReceipt, item["receipt"])
-        parent_charts = tree_eval._connected_chart_panels(panel, partition_receipt.partition)
+        source_partition = partition_receipt.partition
+        source_manufacturing = chart_diagnostics(
+            vertices=vertices, faces=panel.faces, partition=source_partition, limits=limits,
+        )
+        regularized_partition = regularize_partition(
+            vertices=vertices, faces=panel.faces, partition=source_partition,
+            cells=partition_receipt.cells, limits=limits,
+        )
+        manufacturing = chart_diagnostics(
+            vertices=vertices, faces=panel.faces, partition=regularized_partition, limits=limits,
+        )
+        parent_charts = tree_eval._connected_chart_panels(panel, regularized_partition)
         charts = parent_charts + auxiliary_patches
+        if manufacturing["manufacturing_blockers"]:
+            candidate_id = f"{panel_id}_BT369_{candidate_index:03d}"
+            evaluated.append({
+                "source_manufacturing": source_manufacturing,
+                "manufacturing": manufacturing,
+                "manufacturing_blockers": [],
+                "regularized_partition": [list(c) for c in regularized_partition],
+                "screened_before_backend": False,
+                "geometric_promotion": gate["promotion"],
+                "candidate_id": candidate_id,
+                "variant_id": f"bt369:{partition_receipt.policy.policy_key}",
+                "topology_hash": partition_receipt.topology_hash,
+                "policy": partition_receipt.policy.to_dict(),
+                "policy_aliases": item["policy_aliases"],
+                "partition_receipt": partition_receipt.to_dict(),
+                "source_manufacturing": source_manufacturing,
+                "manufacturing": manufacturing,
+                "regularized_partition": [list(c) for c in regularized_partition],
+                "parent_chart_count": len(parent_charts),
+                "auxiliary_patch_count": len(auxiliary_patches),
+                "chart_count": len(charts),
+                "screened_before_backend": True,
+                "geometric_promotion": None,
+                "promotion": 0,
+                "blockers": list(manufacturing["manufacturing_blockers"]),
+                "manufacturing_blockers": list(manufacturing["manufacturing_blockers"]),
+                "metrics": None,
+                "backend_competitions": [],
+            })
+            print(f"[{panel_id}] candidate {candidate_index + 1}/{len(unique)} screened", flush=True)
+            continue
         print(
             f"[{panel_id}] candidate {candidate_index + 1}/{len(unique)} "
             f"({partition_receipt.policy.policy_key}): {len(charts)} charts...",
@@ -259,7 +303,7 @@ def _evaluate_panel(
                 "variant_id": candidate["variant_id"],
                 "metrics": candidate["metrics"],
             }
-            for candidate in evaluated
+            for candidate in evaluated if candidate["metrics"] is not None
         ],
     )
     pareto_candidates = cast(Sequence[Mapping[str, object]], pareto.get("candidates", []))
@@ -282,7 +326,7 @@ def _evaluate_panel(
             ),
             str(candidate["candidate_id"]),
         )
-        for candidate in evaluated
+        for candidate in evaluated if candidate["metrics"] is not None
     ]
     best_bt369_candidate_id = min(default_scores)[1] if default_scores else None
     return {
@@ -290,6 +334,7 @@ def _evaluate_panel(
         "initial_metrics": original_metrics,
         "policy_count": len(sweep_receipts),
         "unique_topology_count": len(unique),
+        "screened_candidate_count": sum(bool(c["screened_before_backend"]) for c in evaluated),
         "auxiliary_patch_kinds": auxiliary_patch_kinds,
         "candidates": evaluated,
         "pareto_receipt": pareto,
