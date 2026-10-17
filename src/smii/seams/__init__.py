@@ -1,5 +1,14 @@
 """Seam graph utilities and solvers built on ROM-derived cost fields."""
 
+from .c3_transport_measurement import (
+    BT369_ORIENTATION_CARDINALITY,
+    C3_ORIENTATION_STEP,
+    C3_PHASE_CARDINALITY,
+    C3_TRANSPORT_SCHEMA_VERSION,
+    TriadicTransportMeasurement,
+    TriadicTransportSample,
+    measure_triadic_transport,
+)
 from .edge_costs import EdgeCostResult, build_edge_costs
 from .fabric_kernels import (
     FabricAssignment,
@@ -117,12 +126,18 @@ from .unwrap_benchmark import (
 __all__ = [
     "ASSEMBLY_CLAIM_BOUNDARY",
     "ASSEMBLY_SCHEMA_VERSION",
+    "BT369_ORIENTATION_CARDINALITY",
+    "C3_ORIENTATION_STEP",
+    "C3_PHASE_CARDINALITY",
+    "C3_TRANSPORT_SCHEMA_VERSION",
     "PHYSICAL_ROM_CLAIM_BOUNDARY",
     "PHYSICAL_ROM_SCHEMA_VERSION",
     "WEAR_FIT_CLAIM_BOUNDARY",
     "WEAR_FIT_SCHEMA_VERSION",
     "AssemblyReceipt",
     "PhysicalROMValidationReceipt",
+    "TriadicTransportMeasurement",
+    "TriadicTransportSample",
     "TriadicTransportWitness",
     "WearFitReceipt",
     "EdgeCostResult",
@@ -185,6 +200,7 @@ __all__ = [
     "mdl_cost",
     "mdl_terms",
     "load_task_profile",
+    "measure_triadic_transport",
     "normalize_families",
     "rotate_grain",
     "solve_seams",
