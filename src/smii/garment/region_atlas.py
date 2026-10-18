@@ -17,6 +17,7 @@ class RegionAtlasConfig:
     y_crotch: float = -0.35
     x_shoulder: float = 0.22
     y_collar_max: float = 0.35
+    z_coronal: float = 0.0
     default_material: str = "performance_stretch_textile"
 
 
@@ -61,8 +62,8 @@ class RegionAtlas:
         )
 
         is_torso = is_upper & ~is_sleeve_left & ~is_sleeve_right
-        is_torso_front = is_torso & (centroids[:, 2] >= 0.0)
-        is_torso_back = is_torso & (centroids[:, 2] < 0.0)
+        is_torso_front = is_torso & (centroids[:, 2] >= cfg.z_coronal)
+        is_torso_back = is_torso & (centroids[:, 2] < cfg.z_coronal)
 
         region_defs = [
             ("torso_front", is_torso_front, (0.0, 0.0, 1.0)),

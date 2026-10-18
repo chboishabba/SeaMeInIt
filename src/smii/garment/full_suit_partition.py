@@ -9,9 +9,15 @@ from typing import Any
 
 import numpy as np
 
-from .chart_unwrap import UnwrapConfig, unwrap_chart
+from .chart_unwrap import (
+    UnwrapConfig,
+    extract_boundary_loops,
+    solve_sparse_lscm,
+    unwrap_chart,
+)
 from .pattern_model import FullSuitPattern, PatternChart
 from .region_atlas import RegionAtlas, RegionAtlasConfig
+from .rom_relief import minimum_rom_relief, open_mesh_along_route
 from .seam_topology import SeamTopologyExtractor
 
 
@@ -28,6 +34,7 @@ class FullSuitPartitionConfig:
     unwrap_config: UnwrapConfig | None = None
     allowance_mm: float = 10.0
     seam_type: str = "overlock"
+    apply_rom_relief: bool = True
 
 
 class FullSuitPartitioner:
@@ -35,7 +42,8 @@ class FullSuitPartitioner:
 
     def __init__(self, config: FullSuitPartitionConfig | None = None) -> None:
         self.config = config or FullSuitPartitionConfig()
-        self.atlas = RegionAtlas(self.config.atlas_config)
+        atlas_cfg = self.config.atlas_config or RegionAtlasConfig(z_coronal=-0.035)
+        self.atlas = RegionAtlas(atlas_cfg)
         self.seam_extractor = SeamTopologyExtractor(
             allowance_mm=self.config.allowance_mm,
             default_seam_type=self.config.seam_type,
@@ -45,6 +53,7 @@ class FullSuitPartitioner:
         self,
         vertices: np.ndarray,
         faces: np.ndarray,
+        vertex_costs: np.ndarray | None = None,
     ) -> tuple[FullSuitPattern, dict[str, Any]]:
         """Transform 3D body geometry into a validated FullSuitPattern."""
         verts = np.asarray(vertices, dtype=np.float64)
@@ -61,13 +70,66 @@ class FullSuitPartitioner:
         charts: list[PatternChart] = []
         chart_map: dict[str, PatternChart] = {}
         for r in regions:
-            chart = unwrap_chart(
-                verts,
-                tri_faces,
-                region_id=r.region_id,
-                source_face_ids=r.source_face_ids,
-                config=self.config.unwrap_config,
-            )
+            sub_faces = tri_faces[r.source_face_ids]
+            unique_v, inv_map = np.unique(sub_faces, return_inverse=True)
+            local_verts = verts[unique_v]
+            local_faces = inv_map.reshape(sub_faces.shape).astype(np.int64)
+
+            chart: PatternChart | None = None
+            if (
+                self.config.apply_rom_relief
+                and ("sleeve" in r.region_id or "leg" in r.region_id)
+                and len(local_faces) >= 4
+            ):
+                try:
+                    loops = extract_boundary_loops(local_faces)
+                    if loops:
+                        start_v = int(loops[0][0])
+                        if "sleeve_left" in r.region_id:
+                            end_v = int(np.argmax(local_verts[:, 0]))
+                        elif "sleeve_right" in r.region_id:
+                            end_v = int(np.argmin(local_verts[:, 0]))
+                        else:
+                            end_v = int(np.argmin(local_verts[:, 1]))
+
+                        if start_v != end_v:
+                            if vertex_costs is not None:
+                                costs = np.asarray(vertex_costs[unique_v], dtype=np.float64)
+                            else:
+                                costs = np.zeros(len(local_verts), dtype=np.float64)
+
+                            route = minimum_rom_relief(
+                                local_verts, local_faces, costs, start_v, end_v
+                            )
+                            new_verts, new_faces, source_sub = open_mesh_along_route(
+                                local_verts, local_faces, route
+                            )
+                            cfg_u = self.config.unwrap_config or UnwrapConfig()
+                            uv_m = solve_sparse_lscm(new_verts, new_faces, cfg_u)
+                            uv_mm = uv_m * 1000.0
+                            new_loops = extract_boundary_loops(new_faces)
+                            actual_source_ids = unique_v[source_sub].astype(np.int64)
+                            chart = PatternChart(
+                                chart_id=r.region_id,
+                                region_id=r.region_id,
+                                source_face_ids=r.source_face_ids,
+                                uv_mm=uv_mm,
+                                local_faces=new_faces,
+                                boundary_loops=new_loops,
+                                source_vertex_ids=actual_source_ids,
+                            )
+                except Exception:
+                    chart = None
+
+            if chart is None:
+                chart = unwrap_chart(
+                    verts,
+                    tri_faces,
+                    region_id=r.region_id,
+                    source_face_ids=r.source_face_ids,
+                    config=self.config.unwrap_config,
+                )
+
             charts.append(chart)
             chart_map[r.region_id] = chart
 

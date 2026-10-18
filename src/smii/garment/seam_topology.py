@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Mapping, Sequence
+from typing import Sequence
 
 import numpy as np
 
@@ -134,22 +134,29 @@ class SeamTopologyExtractor:
         right_chart: PatternChart,
     ) -> float:
         """Compute relative length mismatch E_seam in 2D flattened fabrication coordinates (mm)."""
-        left_vmap = {int(v): i for i, v in enumerate(left_chart.source_vertex_ids)}
-        right_vmap = {int(v): i for i, v in enumerate(right_chart.source_vertex_ids)}
 
-        def _uv_length(side: SeamSide, chart: PatternChart, vmap: Mapping[int, int]) -> float:
+        def _uv_length(side: SeamSide, chart: PatternChart) -> float:
+            edge_to_len: dict[tuple[int, int], float] = {}
+            for tri in chart.local_faces:
+                s0 = int(chart.source_vertex_ids[tri[0]])
+                s1 = int(chart.source_vertex_ids[tri[1]])
+                s2 = int(chart.source_vertex_ids[tri[2]])
+                uv0, uv1, uv2 = chart.uv_mm[tri[0]], chart.uv_mm[tri[1]], chart.uv_mm[tri[2]]
+                for a, b, p1, p2 in ((s0, s1, uv0, uv1), (s1, s2, uv1, uv2), (s2, s0, uv2, uv0)):
+                    norm = (min(a, b), max(a, b))
+                    edge_to_len[norm] = float(np.linalg.norm(p1 - p2))
+
             total = 0.0
             edges = side.source_edge_ids
             for i in range(0, len(edges) - 1, 2):
-                u, v = edges[i], edges[i + 1]
-                if u in vmap and v in vmap:
-                    p1 = chart.uv_mm[vmap[u]]
-                    p2 = chart.uv_mm[vmap[v]]
-                    total += float(np.linalg.norm(p1 - p2))
+                u, v = int(edges[i]), int(edges[i + 1])
+                norm = (min(u, v), max(u, v))
+                if norm in edge_to_len:
+                    total += edge_to_len[norm]
             return total
 
-        l_left = _uv_length(seam.left, left_chart, left_vmap)
-        l_right = _uv_length(seam.right, right_chart, right_vmap)
+        l_left = _uv_length(seam.left, left_chart)
+        l_right = _uv_length(seam.right, right_chart)
         max_l = max(l_left, l_right, 1e-12)
         return abs(l_left - l_right) / max_l
 
