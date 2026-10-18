@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from shapely.geometry import Polygon
+import numpy as np
+from shapely.geometry import Point, Polygon
+
+from smii.garment.pattern_model import MarkKind
 
 from smii.garment.pattern_model import FullSuitPattern
 from .nesting import NestingResult
@@ -82,6 +85,38 @@ def validate_manufacturing_layout(
         max_seam_err = max(max_seam_err, err)
         if err > max_permitted_seam_error:
             blockers.append(f"UV sew-line mismatch for {seam.seam_id}: {err:.6f}.")
+
+    # 4. Physical dart construction marks are mandatory when a dart is present.
+    for chart in pattern.charts:
+        if not chart.features:
+            continue
+        if not chart.boundary_loops:
+            blockers.append(f"Chart '{chart.chart_id}' has no boundary for feature validation.")
+            continue
+        polygon = Polygon(chart.uv_mm[chart.boundary_loops[0]])
+        if not polygon.is_valid:
+            blockers.append(f"Chart '{chart.chart_id}' has invalid UV feature boundary.")
+            continue
+        for feature in chart.features:
+            if feature.kind != "dart":
+                continue
+            sew = [m for m in feature.marks if m.kind == MarkKind.SEW]
+            fold = [m for m in feature.marks if m.kind == MarkKind.FOLD]
+            drills = [m for m in feature.marks if m.kind == MarkKind.DRILL]
+            if len(sew) != 2 or len(fold) != 1 or len(drills) != 1:
+                blockers.append(f"Incomplete dart feature '{feature.feature_id}'.")
+                continue
+            leg_lengths = [
+                float(np.linalg.norm(np.diff(np.asarray(m.points_mm), axis=0), axis=1).sum())
+                for m in sew
+            ]
+            if abs(leg_lengths[0] - leg_lengths[1]) > 1.0:
+                blockers.append(f"Dart '{feature.feature_id}' leg mismatch exceeds 1 mm.")
+            if not np.allclose(sew[0].points_mm[-1], sew[1].points_mm[-1], atol=1e-6):
+                blockers.append(f"Dart '{feature.feature_id}' sew legs do not share apex.")
+            drill = Point(drills[0].points_mm[0])
+            if not polygon.contains(drill) or polygon.exterior.distance(drill) <= 3.0:
+                blockers.append(f"Dart '{feature.feature_id}' drill violates 3 mm clearance.")
 
     is_valid = len(blockers) == 0
     gate7_promoted = 1 if is_valid else 0
