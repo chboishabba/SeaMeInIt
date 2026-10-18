@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from .angular_reservoir import (
+    AngularReservoir,
+    AngularReservoirConfig,
+    StreamObservation,
+)
 from .camera import (
     CameraModel,
     FloatArray,
@@ -23,13 +28,39 @@ from .synthetic_rig import (
     build_frontal_rig,
     project_multiview,
 )
+from .video_orbit import (
+    LandmarkExtractor,
+    MediaPipeLandmarkExtractor,
+    StopReason,
+    StreamConfig,
+    StreamResult,
+    VideoOrbitStreamer,
+)
+from .yaw_tracker import (
+    CircularYawTracker,
+    YawMeasurement,
+    YawState,
+    wrap_angle_pi,
+)
 
 __all__ = [
+    "AngularReservoir",
+    "AngularReservoirConfig",
     "CameraModel",
+    "CircularYawTracker",
     "FloatArray",
     "IdentifiabilitySpectrum",
+    "LandmarkExtractor",
+    "MediaPipeLandmarkExtractor",
     "RecoveryResult",
+    "StopReason",
+    "StreamConfig",
+    "StreamObservation",
+    "StreamResult",
     "SyntheticRigConfig",
+    "VideoOrbitStreamer",
+    "YawMeasurement",
+    "YawState",
     "analyze_identifiability",
     "build_circular_rig",
     "build_eight_view_ring_rig",
@@ -38,4 +69,5 @@ __all__ = [
     "compute_shape_jacobian",
     "project_multiview",
     "run_shape_recovery_test",
+    "wrap_angle_pi",
 ]
