@@ -107,7 +107,6 @@ def solve_sparse_lscm(
     rows: list[int] = []
     cols: list[int] = []
     data_vals: list[float] = []
-    rhs = np.zeros(2 * nF + 4, dtype=np.float64)
 
     for row_idx, tri in enumerate(local_faces):
         i, j, k = int(tri[0]), int(tri[1]), int(tri[2])
@@ -140,28 +139,55 @@ def solve_sparse_lscm(
             cols.extend([2 * idx, 2 * idx + 1])
             data_vals.extend([c.imag, c.real])
 
-    # Pin anchor vertices with penalty weights
-    pin_offset = 2 * nF
-    weight = cfg.anchor_pin_weight
+    # Pin anchor vertices: u(i0) = 0, v(i0) = 0, u(i1) = 1, v(i1) = 0
+    # Solve exact normal equations by eliminating pinned degrees of freedom
+    M = sp.csr_matrix((data_vals, (rows, cols)), shape=(2 * nF, 2 * nV))
+    fixed_cols = {2 * i0, 2 * i0 + 1, 2 * i1, 2 * i1 + 1}
+    free_cols = np.array([c for c in range(2 * nV) if c not in fixed_cols], dtype=np.int64)
 
-    # u(i0) = 0, v(i0) = 0
-    rows.extend([pin_offset, pin_offset + 1])
-    cols.extend([2 * i0, 2 * i0 + 1])
-    data_vals.extend([weight, weight])
+    rhs_fixed = -M[:, 2 * i1].toarray().flatten()
+    M_free = M[:, free_cols]
+    A_free = (M_free.T @ M_free).tocsr()
+    b_free = M_free.T @ rhs_fixed
 
-    # u(i1) = 1, v(i1) = 0
-    rows.extend([pin_offset + 2, pin_offset + 3])
-    cols.extend([2 * i1, 2 * i1 + 1])
-    data_vals.extend([weight, weight])
-    rhs[pin_offset + 2] = weight
+    try:
+        x_free = spla.spsolve(A_free, b_free)
+        x = np.zeros(2 * nV, dtype=np.float64)
+        x[free_cols] = x_free
+        x[2 * i1] = 1.0
+        uv = x.reshape((nV, 2))
+    except Exception:
+        # Fallback to penalty LSQR
+        pin_offset = 2 * nF
+        weight = cfg.anchor_pin_weight
+        pen_rows = list(rows) + [pin_offset, pin_offset + 1, pin_offset + 2, pin_offset + 3]
+        pen_cols = list(cols) + [2 * i0, 2 * i0 + 1, 2 * i1, 2 * i1 + 1]
+        pen_vals = list(data_vals) + [weight, weight, weight, weight]
+        rhs_pen = np.zeros(pin_offset + 4, dtype=np.float64)
+        rhs_pen[pin_offset + 2] = weight
+        A_pen = sp.csr_matrix((pen_vals, (pen_rows, pen_cols)), shape=(pin_offset + 4, 2 * nV))
+        sol = spla.lsqr(A_pen, rhs_pen, atol=cfg.solver_atol, btol=cfg.solver_btol)
+        uv = sol[0].reshape((nV, 2))
 
-    A = sp.csr_matrix((data_vals, (rows, cols)), shape=(pin_offset + 4, 2 * nV))
-    sol = spla.lsqr(A, rhs, atol=cfg.solver_atol, btol=cfg.solver_btol)
-    uv = sol[0].reshape((nV, 2))
-
-    # Scale back to physical Euclidean units (metres) based on anchor distance
-    anchor_dist_3d = float(np.linalg.norm(local_verts[i1] - local_verts[i0])) or 1.0
-    return uv * anchor_dist_3d
+    # Scale back to physical Euclidean units (metres) using isometric 3D area equivalence
+    v0, v1, v2 = (
+        local_verts[local_faces[:, 0]],
+        local_verts[local_faces[:, 1]],
+        local_verts[local_faces[:, 2]],
+    )
+    area_3d = 0.5 * float(np.linalg.norm(np.cross(v1 - v0, v2 - v0), axis=1).sum())
+    u0, u1, u2 = uv[local_faces[:, 0]], uv[local_faces[:, 1]], uv[local_faces[:, 2]]
+    area_2d = 0.5 * float(
+        np.abs(
+            (u1[:, 0] - u0[:, 0]) * (u2[:, 1] - u0[:, 1])
+            - (u2[:, 0] - u0[:, 0]) * (u1[:, 1] - u0[:, 1])
+        ).sum()
+    )
+    if area_2d > 1e-12 and area_3d > 1e-12:
+        scale_m = float(np.sqrt(area_3d / area_2d))
+    else:
+        scale_m = float(np.linalg.norm(local_verts[i1] - local_verts[i0])) or 1.0
+    return uv * scale_m
 
 
 def unwrap_chart(

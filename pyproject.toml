@@ -82,4 +82,4 @@ norecursedirs = [
   ".git",
   ".venv",
 ]
-addopts = "-ra"
+addopts = "-ra --basetemp=../.tmp/pytest"

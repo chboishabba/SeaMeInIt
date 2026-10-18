@@ -81,10 +81,9 @@ def validate_manufacturing_layout(
         # The current extractor's UV lookup is not sufficient when cut vertices
         # have been duplicated. Such cases remain blocked pending explicit
         # boundary-pair correspondence.
-        if (
-            len(set(map(int, left.source_vertex_ids))) != len(left.source_vertex_ids)
-            or len(set(map(int, right.source_vertex_ids))) != len(right.source_vertex_ids)
-        ):
+        if len(set(map(int, left.source_vertex_ids))) != len(left.source_vertex_ids) or len(
+            set(map(int, right.source_vertex_ids))
+        ) != len(right.source_vertex_ids):
             blockers.append(f"Ambiguous cut-vertex seam correspondence: {seam.seam_id}.")
             continue
         err = SeamTopologyExtractor.compute_uv_seam_error(seam, left, right)

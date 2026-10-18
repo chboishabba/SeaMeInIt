@@ -3,6 +3,7 @@
 A cut duplicates mesh vertex corners across cut edges; it never removes faces.
 Costs are nonnegative edge penalties, not inverse strain rewards.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -100,9 +101,7 @@ def open_mesh_along_route(
     for fi, face in enumerate(tri):
         for k in range(3):
             a, b = int(face[k]), int(face[(k + 1) % 3])
-            adjacency.setdefault((min(a, b), max(a, b)), []).append(
-                (fi, k, (k + 1) % 3)
-            )
+            adjacency.setdefault((min(a, b), max(a, b)), []).append((fi, k, (k + 1) % 3))
     if not cut.issubset(adjacency):
         raise ValueError("Cut contains an edge absent from the mesh")
     if any(len(inc) > 2 for inc in adjacency.values()):

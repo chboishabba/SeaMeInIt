@@ -35,7 +35,7 @@ def generate_full_suit_patterns(
     if not mesh_path.exists():
         raise FileNotFoundError(f"Mesh file not found at: {mesh_path}")
 
-    mesh_data = np.load(mesh_path)
+    mesh_data = np.load(mesh_path, allow_pickle=True)
     if "vertices" not in mesh_data or "faces" not in mesh_data:
         raise ValueError(f"Mesh NPZ must contain 'vertices' and 'faces', found {mesh_data.files}")
 
