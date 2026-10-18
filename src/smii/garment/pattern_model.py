@@ -30,6 +30,64 @@ class BoundaryKind(StrEnum):
     CUT = "cut"
 
 
+class MarkKind(StrEnum):
+    CUT = "cut"
+    SEW = "sew"
+    FOLD = "fold"
+    DRILL = "drill"
+    NOTCH = "notch"
+    EASE = "ease"
+
+
+@dataclass(frozen=True)
+class PatternMark:
+    kind: MarkKind
+    points_mm: tuple[tuple[float, float], ...]
+
+    def __post_init__(self) -> None:
+        points = np.asarray(self.points_mm, dtype=float)
+        expected = 1 if self.kind == MarkKind.DRILL else 2
+        if points.ndim != 2 or points.shape[1] != 2 or len(points) < expected:
+            raise ValueError(f"{self.kind.value} mark requires {expected} 2D point(s)")
+        if not np.isfinite(points).all():
+            raise ValueError("Pattern mark coordinates must be finite")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"kind": self.kind.value, "points_mm": [list(p) for p in self.points_mm]}
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> PatternMark:
+        return cls(
+            kind=MarkKind(data["kind"]),
+            points_mm=tuple(tuple(float(x) for x in p) for p in data["points_mm"]),
+        )
+
+
+@dataclass(frozen=True)
+class PatternFeature:
+    feature_id: str
+    operator_id: str
+    kind: str
+    marks: tuple[PatternMark, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "feature_id": self.feature_id,
+            "operator_id": self.operator_id,
+            "kind": self.kind,
+            "marks": [mark.to_dict() for mark in self.marks],
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> PatternFeature:
+        return cls(
+            feature_id=str(data["feature_id"]),
+            operator_id=str(data["operator_id"]),
+            kind=str(data["kind"]),
+            marks=tuple(PatternMark.from_dict(m) for m in data["marks"]),
+        )
+
+
 @dataclass(frozen=True)
 class GarmentRegion:
     """Anatomical or functional garment region partitioning the source mesh."""
@@ -125,6 +183,7 @@ class PatternChart:
     local_faces: IntArray
     boundary_loops: tuple[IntArray, ...]
     source_vertex_ids: IntArray
+    features: tuple[PatternFeature, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -135,6 +194,7 @@ class PatternChart:
             "local_faces": self.local_faces.tolist(),
             "boundary_loops": [loop.tolist() for loop in self.boundary_loops],
             "source_vertex_ids": self.source_vertex_ids.tolist(),
+            "features": [feature.to_dict() for feature in self.features],
         }
 
     @classmethod
@@ -149,6 +209,7 @@ class PatternChart:
                 np.asarray(loop, dtype=np.int64) for loop in data["boundary_loops"]
             ),
             source_vertex_ids=np.asarray(data["source_vertex_ids"], dtype=np.int64),
+            features=tuple(PatternFeature.from_dict(x) for x in data.get("features", [])),
         )
 
 
@@ -188,6 +249,9 @@ __all__ = [
     "FullSuitPattern",
     "GarmentRegion",
     "IntArray",
+    "MarkKind",
+    "PatternFeature",
+    "PatternMark",
     "PatternChart",
     "SeamConnection",
     "SeamSide",
