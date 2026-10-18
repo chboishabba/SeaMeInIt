@@ -26,6 +26,8 @@ def _render_features(chart: PatternChart, placement: object) -> list[str]:
     # record must carry the exact local cut origin for arbitrary rotations.
     from .allowances import compute_seam_allowance_offset
 
+    # Recover the unplaced cut contour from the same geometry used by nesting.
+    # Placement's translated contour is authoritative for the 0-degree case.
     cut = compute_seam_allowance_offset(
         chart.uv_mm[chart.boundary_loops[0]], 10.0
     )
