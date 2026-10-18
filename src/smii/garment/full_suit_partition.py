@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -196,6 +197,9 @@ def save_full_suit_pattern(
         arrays[f"{prefix}source_face_ids"] = c.source_face_ids
         arrays[f"{prefix}source_vertex_ids"] = c.source_vertex_ids
         arrays[f"{prefix}local_faces"] = c.local_faces
+        arrays[f"{prefix}features_json"] = np.array(
+            [json.dumps([feature.to_dict() for feature in c.features])]
+        )
 
     np.savez_compressed(target, **arrays)
 
