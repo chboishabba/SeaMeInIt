@@ -67,12 +67,30 @@ def validate_manufacturing_layout(
             self_intersection_count += 1
             blockers.append(f"Chart '{p.chart_id}' cutting contour has self-intersections.")
 
-    # 3. Seam error check
+    # 3. Fail closed on unresolved sew-line length verification.
     max_seam_err = 0.0
+    chart_map = {chart.chart_id: chart for chart in pattern.charts}
+    from smii.garment.seam_topology import SeamTopologyExtractor
+
     for seam in pattern.seams:
-        # Check seam arc-length difference between sides
-        # (Recorded in seam topology)
-        pass
+        left = chart_map.get(seam.left.chart_id)
+        right = chart_map.get(seam.right.chart_id)
+        if left is None or right is None:
+            blockers.append(f"Missing chart for seam {seam.seam_id}.")
+            continue
+        # The current extractor's UV lookup is not sufficient when cut vertices
+        # have been duplicated. Such cases remain blocked pending explicit
+        # boundary-pair correspondence.
+        if (
+            len(set(map(int, left.source_vertex_ids))) != len(left.source_vertex_ids)
+            or len(set(map(int, right.source_vertex_ids))) != len(right.source_vertex_ids)
+        ):
+            blockers.append(f"Ambiguous cut-vertex seam correspondence: {seam.seam_id}.")
+            continue
+        err = SeamTopologyExtractor.compute_uv_seam_error(seam, left, right)
+        max_seam_err = max(max_seam_err, err)
+        if err > max_permitted_seam_error:
+            blockers.append(f"UV sew-line mismatch for {seam.seam_id}: {err:.6f}.")
 
     is_valid = len(blockers) == 0
     gate7_promoted = 1 if is_valid else 0
