@@ -12,13 +12,10 @@ from .grainlines import compute_grainline_vector
 from .nesting import NestingResult
 
 
-
 def _render_features(chart: PatternChart, placement: object) -> list[str]:
     """Transform UV feature points by the same normalization as nested contours."""
     angle = math.radians(placement.rotation_deg)
-    rotation = np.array(
-        [[math.cos(angle), -math.sin(angle)], [math.sin(angle), math.cos(angle)]]
-    )
+    rotation = np.array([[math.cos(angle), -math.sin(angle)], [math.sin(angle), math.cos(angle)]])
     mirror = np.diag([-1.0, 1.0]) if placement.mirrored else np.eye(2)
     affine = rotation @ mirror
     # Normalize against the transformed *allowance* outline, not UV bounds.
@@ -28,9 +25,7 @@ def _render_features(chart: PatternChart, placement: object) -> list[str]:
 
     # Recover the unplaced cut contour from the same geometry used by nesting.
     # Placement's translated contour is authoritative for the 0-degree case.
-    cut = compute_seam_allowance_offset(
-        chart.uv_mm[chart.boundary_loops[0]], 10.0
-    )
+    cut = compute_seam_allowance_offset(chart.uv_mm[chart.boundary_loops[0]], 10.0)
     transformed_cut = cut @ affine.T
     origin = transformed_cut.min(axis=0)
     translation = np.array([placement.x_mm, placement.y_mm]) - origin

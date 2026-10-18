@@ -22,8 +22,15 @@ def _chart() -> PatternChart:
         region_id="panel",
         source_face_ids=np.array([0, 1]),
         uv_mm=np.array(
-            [[0.0, 0.0], [100.0, 0.0], [100.0, 100.0],
-             [0.0, 100.0], [50.0, 60.0], [40.0, 20.0], [60.0, 20.0]]
+            [
+                [0.0, 0.0],
+                [100.0, 0.0],
+                [100.0, 100.0],
+                [0.0, 100.0],
+                [50.0, 60.0],
+                [40.0, 20.0],
+                [60.0, 20.0],
+            ]
         ),
         local_faces=np.array([[0, 1, 4], [1, 2, 4]]),
         boundary_loops=(np.array([0, 1, 2, 3]),),
@@ -51,9 +58,7 @@ def _nest(rotation: int = 0) -> NestingResult:
                 rotation_deg=rotation,
                 mirrored=False,
                 bounds_mm=(20, 20, 140, 140),
-                offset_contour_mm=np.array(
-                    [[20, 20], [140, 20], [140, 140], [20, 140]]
-                ),
+                offset_contour_mm=np.array([[20, 20], [140, 20], [140, 140], [20, 140]]),
             ),
         ),
         fabric_length_mm=200,
@@ -86,7 +91,10 @@ def test_dart_geometry_and_drill_backoff():
         mouth_right_vertex=6,
     )
     assert [mark.kind for mark in feature.marks[:4]] == [
-        MarkKind.SEW, MarkKind.SEW, MarkKind.FOLD, MarkKind.DRILL
+        MarkKind.SEW,
+        MarkKind.SEW,
+        MarkKind.FOLD,
+        MarkKind.DRILL,
     ]
     apex = np.array([50.0, 60.0])
     drill = np.array(feature.marks[3].points_mm[0])
@@ -97,8 +105,12 @@ def test_svg_layers_and_rotation():
     from dataclasses import replace
 
     feature = materialize_dart(
-        _chart(), feature_id="d1", operator_id="op1",
-        apex_vertex=4, mouth_left_vertex=5, mouth_right_vertex=6,
+        _chart(),
+        feature_id="d1",
+        operator_id="op1",
+        apex_vertex=4,
+        mouth_left_vertex=5,
+        mouth_right_vertex=6,
     )
     chart = replace(_chart(), features=(feature,))
     svg0 = export_full_suit_svg(_pattern(chart), _nest(0))
@@ -114,13 +126,17 @@ def test_gate7_accepts_valid_dart_and_blocks_mismatch():
     from dataclasses import replace
 
     feature = materialize_dart(
-        _chart(), feature_id="d1", operator_id="op1",
-        apex_vertex=4, mouth_left_vertex=5, mouth_right_vertex=6,
+        _chart(),
+        feature_id="d1",
+        operator_id="op1",
+        apex_vertex=4,
+        mouth_left_vertex=5,
+        mouth_right_vertex=6,
     )
     chart = replace(_chart(), features=(feature,))
     assert validate_manufacturing_layout(_pattern(chart), _nest()).gate7_promoted == 1
     marks = list(feature.marks)
-    marks[1] = PatternMark(MarkKind.SEW, ((60.0, 20.0), (52.0, 60.0)))
+    marks[1] = PatternMark(MarkKind.SEW, ((60.0, 10.0), (50.0, 60.0)))
     malformed = replace(feature, marks=tuple(marks))
     chart = replace(chart, features=(malformed,))
     result = validate_manufacturing_layout(_pattern(chart), _nest())
@@ -133,6 +149,10 @@ def test_unequal_dart_is_rejected():
     chart.uv_mm[6] = [90.0, 20.0]
     with pytest.raises(ValueError, match="mismatch"):
         materialize_dart(
-            chart, feature_id="bad", operator_id="op",
-            apex_vertex=4, mouth_left_vertex=5, mouth_right_vertex=6,
+            chart,
+            feature_id="bad",
+            operator_id="op",
+            apex_vertex=4,
+            mouth_left_vertex=5,
+            mouth_right_vertex=6,
         )

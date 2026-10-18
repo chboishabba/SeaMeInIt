@@ -107,8 +107,7 @@ def attach_dart_features(
     return replace(
         pattern,
         charts=tuple(
-            replace(chart, features=tuple(features[chart.chart_id]))
-            for chart in pattern.charts
+            replace(chart, features=tuple(features[chart.chart_id])) for chart in pattern.charts
         ),
     )
 
