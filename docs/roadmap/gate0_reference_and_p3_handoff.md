@@ -30,6 +30,9 @@ Promotion policy:
 - do not reject same-perspective or long-lens references outright,
 - mark them with `WARN:low_view_diversity` and/or
   `WARN:long_lens_flattening_risk`,
+- preserve those warnings as monotone evidence, but distinguish diagnostic
+  severity from refinement and raw-body authorization; a warning may cause
+  refinement to abstain without making every body decision impossible,
 - require materially different yaw/pitch coverage before treating the fit as a
   calibrated anthropometric baseline,
 - keep `bbox` as diagnostic-only and prefer MediaPipe for production-style
@@ -106,6 +109,25 @@ Required invariants:
 - correspondence/reprojection must never be called an inverse without a defined
   forward transform, inverse or pseudo-inverse, round-trip geometry error,
   seam-structure preservation evidence, and thresholds.
+
+## Gate 0 Refinement Authority
+
+The present reference warnings and export checkpoints are implemented. The
+remaining defect is that measurement refinement is candidate generation without
+a separate authority boundary. The next implementation must normalize and hash
+the effective numerical policy actually consumed by the solver, including the
+measurement model, scale rule, beta bounds, prior/anchor weights, and solver
+settings. The candidate must be anchored to image-derived betas, constrained
+during the solve, and fully re-evaluated after solving.
+
+The initial persisted objects are a refinement policy, one refinement receipt,
+and `BodyCarrierReceipt` v2. The receipt contains candidate evidence, a
+`promote`/`abstain`/`reject` decision, blockers/warnings, and policy/input/
+candidate/output hashes. A body receipt identifies the canonical source, the
+selected pre-repair checkpoint/hash, and the final repaired/exported hash. A
+refinement abstention never silently selects the refined candidate; the raw
+image fit proceeds only through its own body guard. The final export, not only
+the pre-repair checkpoint, must satisfy the downstream body trust checks.
 
 ## P3 Back-Transfer Requirement
 

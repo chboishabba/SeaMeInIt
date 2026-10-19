@@ -8,18 +8,16 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from importlib import util as importlib_util
 from pathlib import Path
-
-import numpy as np
-
 from typing import Any
 
-from schemas.validators import load_measurement_catalog
+import numpy as np
 
 from pipelines.measurement_inference import (
     GaussianMeasurementModel,
     MeasurementReport,
     load_default_model,
 )
+from schemas.validators import load_measurement_catalog
 
 from .fit_from_images import extract_measurements_from_afflec_images
 
@@ -110,7 +108,6 @@ def _parse_measurement_models(
 
         if std <= 0:
             raise ValueError(f"Standard deviation for measurement '{name}' must be positive.")
-
         if not isinstance(weights_raw, Iterable):
             raise TypeError(f"Weights for measurement '{name}' must be an iterable of numbers.")
 
@@ -128,7 +125,6 @@ def load_backend_config(backend: str = DEFAULT_BACKEND) -> BackendMeasurementCon
 
     path = _resolve_backend_path(normalized)
     payload = _load_backend_payload(path)
-
     backend_name = str(payload.get("backend", normalized))
     try:
         num_betas = int(payload["num_betas"])
@@ -179,42 +175,6 @@ MEASUREMENT_MODELS: tuple[MeasurementModel, ...] = DEFAULT_BACKEND_CONFIG.models
 DEFAULT_NUM_BETAS = DEFAULT_BACKEND_CONFIG.num_betas
 # Backwards compatibility with existing imports.
 SMPLX_NUM_BETAS = DEFAULT_NUM_BETAS
-MEASUREMENT_MODELS: tuple[MeasurementModel, ...] = (
-    MeasurementModel("height", 170.0, 7.5, (0.45, 0.05, 0.02, 0.0, 0.03, 0.0, 0.01, 0.0, 0.0, 0.0)),
-    MeasurementModel(
-        "chest_circumference", 95.0, 8.0, (0.6, 0.2, 0.05, 0.03, 0.0, 0.02, 0.05, 0.01, 0.0, 0.0)
-    ),
-    MeasurementModel(
-        "waist_circumference", 80.0, 7.0, (0.1, 0.55, 0.05, 0.05, 0.1, 0.02, 0.0, 0.04, 0.03, 0.0)
-    ),
-    MeasurementModel(
-        "hip_circumference", 98.0, 8.5, (0.05, 0.05, 0.6, 0.08, 0.05, 0.02, 0.04, 0.02, 0.02, 0.0)
-    ),
-    MeasurementModel(
-        "shoulder_width", 42.0, 2.5, (0.15, 0.05, 0.02, 0.4, 0.02, 0.1, 0.05, 0.1, 0.0, 0.0)
-    ),
-    MeasurementModel(
-        "neck_circumference", 36.0, 2.5, (0.18, 0.02, 0.0, 0.05, 0.35, 0.05, 0.02, 0.0, 0.05, 0.0)
-    ),
-    MeasurementModel(
-        "arm_length", 60.0, 4.5, (0.05, 0.05, 0.0, 0.12, 0.02, 0.3, 0.08, 0.12, 0.05, 0.0)
-    ),
-    MeasurementModel(
-        "inseam_length", 78.0, 5.0, (0.05, 0.04, 0.08, 0.02, 0.0, 0.1, 0.4, 0.08, 0.08, 0.05)
-    ),
-    MeasurementModel(
-        "thigh_circumference", 55.0, 5.0, (0.0, 0.05, 0.45, 0.02, 0.0, 0.1, 0.3, 0.05, 0.02, 0.01)
-    ),
-    MeasurementModel(
-        "calf_circumference", 37.0, 3.5, (0.0, 0.02, 0.2, 0.01, 0.0, 0.05, 0.1, 0.4, 0.1, 0.02)
-    ),
-    MeasurementModel(
-        "bicep_circumference", 30.0, 3.0, (0.1, 0.05, 0.02, 0.15, 0.02, 0.25, 0.05, 0.12, 0.1, 0.02)
-    ),
-    MeasurementModel(
-        "wrist_circumference", 16.0, 1.0, (0.02, 0.01, 0.0, 0.06, 0.03, 0.15, 0.02, 0.2, 0.15, 0.1)
-    ),
-)
 
 
 @dataclass(frozen=True)
@@ -335,7 +295,9 @@ def serialise_smplx_parameters(
     return payload
 
 
-def load_smplx_parameter_payload(payload: Mapping[str, Any]) -> tuple[dict[str, np.ndarray], float, str, str]:
+def load_smplx_parameter_payload(
+    payload: Mapping[str, Any],
+) -> tuple[dict[str, np.ndarray], float, str, str]:
     """Decode a serialized SMPL-X parameter payload."""
 
     scale = float(payload.get("scale", 1.0))
@@ -396,7 +358,9 @@ def generate_vertices_from_smplx_parameters(
         num_betas=num_betas,
         num_expression_coeffs=num_expression,
     )
-    model.set_parameters({name: _ensure_batch_parameter(values) for name, values in parameters.items()})
+    model.set_parameters(
+        {name: _ensure_batch_parameter(values) for name, values in parameters.items()}
+    )
 
     vertices_tensor = model.vertices()
     vertices = vertices_tensor.detach().cpu().numpy()[0]
@@ -471,12 +435,7 @@ def create_body_mesh(
         name: _ensure_batch_parameter(values)
         for name, values in model.parameters(as_numpy=True).items()
     }
-
-    if isinstance(result, FitResult):
-        scale = float(result.scale)
-    else:  # pragma: no cover - defensive fallback
-        scale = float(getattr(result, "scale", 1.0))
-
+    scale = float(result.scale)
     return BodyMeshOutput(
         vertices=vertices,
         faces=faces,
@@ -506,7 +465,8 @@ def required_measurements(schema: Mapping[str, Iterable[Mapping[str, object]]]) 
 
 
 def validate_measurements(
-    measurements: Mapping[str, float], schema: Mapping[str, object] | None = None
+    measurements: Mapping[str, float],
+    schema: Mapping[str, object] | None = None,
 ) -> None:
     schema = schema or load_schema()
     missing = [name for name in required_measurements(schema) if name not in measurements]
@@ -527,20 +487,22 @@ def fit_shape_coefficients(
     models = tuple(models or MEASUREMENT_MODELS)
     num_shape_coeffs = int(num_shape_coeffs or DEFAULT_NUM_BETAS)
 
-    available = {m.name: m for m in models if m.name in measurements}
+    available = {model.name: model for model in models if model.name in measurements}
     if not available:
         raise ValueError("At least one measurement is required to fit body shape coefficients.")
 
     used_names = tuple(sorted(available))
-    A = np.vstack([available[name].weights[:num_shape_coeffs] for name in used_names])
-    b = np.array([available[name].normalized(float(measurements[name])) for name in used_names])
+    matrix = np.vstack([available[name].weights[:num_shape_coeffs] for name in used_names])
+    target = np.array(
+        [available[name].normalized(float(measurements[name])) for name in used_names]
+    )
 
-    coeffs, residuals, _, _ = np.linalg.lstsq(A, b, rcond=None)
+    coeffs, residuals, _, _ = np.linalg.lstsq(matrix, target, rcond=None)
     if residuals.size:
         rms = float(np.sqrt(residuals[0] / len(used_names)))
     else:
-        reconstruction = A @ coeffs
-        rms = float(np.sqrt(np.mean((reconstruction - b) ** 2)))
+        reconstruction = matrix @ coeffs
+        rms = float(np.sqrt(np.mean((reconstruction - target) ** 2)))
     return coeffs, used_names, rms
 
 
@@ -573,17 +535,16 @@ def fit_smplx_from_measurements(
     completed_measurements.update({name: float(value) for name, value in measurements.items()})
 
     validate_measurements(completed_measurements, schema)
-
     coeffs, used_names, rms = fit_shape_coefficients(
         completed_measurements,
         models=models,
         num_shape_coeffs=num_shape_coeffs,
     )
 
-    scale = (
-        float(completed_measurements.get("height", models_by_name(models)["height"].mean))
-        / models_by_name(models)["height"].mean
-    )
+    scale_model = models_by_name(models)[backend_config.scale_measurement]
+    scale = float(
+        completed_measurements.get(backend_config.scale_measurement, scale_model.mean)
+    ) / float(scale_model.mean)
     translation = np.zeros(3, dtype=float)
 
     return FitResult(

@@ -8,11 +8,12 @@ Status: Gates 0-7 are implemented as a constraint system. The follow-up work
 below upgrades bootstrap implementations into production-grade geometry,
 field, and manufacturing outputs without changing the receipt order.
 
-Current production blocker: Gate 0 body trust on real Afflec data. The
-production-style MediaPipe path emits artifacts, but measurement refinement
-still pushes final shape betas outside the plausible range and the skull
-residual remains above the conservative threshold. Treat Gate 6/7 geometry work
-as diagnostic or synthetic until a promoted carrier exists.
+Current production blocker: Gate 0 body trust on the bundled Afflec smoke path.
+The production-style MediaPipe path emits artifacts, but unanchored measurement
+refinement can replace a plausible image fit with an implausible beta candidate
+and a skull residual above the conservative threshold. The curated P3 lane is a
+separate promoted control. Treat Gate 6/7 production claims as blocked until
+the refinement authority boundary is implemented.
 
 ## Receipt Chain
 
@@ -67,7 +68,11 @@ The emitted receipt remains diagnostic-only: raw MediaPipe regression is
 plausible (`beta_max_abs=1.95`, high detector trust), but measurement refinement
 pushes final betas to `max_abs=11.84` and the skull residual remains marginally
 above the Gate 0 threshold (`0.3602 > 0.35`). The next production blocker is
-measurement-refinement calibration, not detector wiring.
+measurement-refinement authority and calibration, not detector wiring. The
+next patch must make refinement a bounded, image-anchored candidate and issue a
+separate `promote`/`abstain`/`reject` receipt before any refined body becomes
+canonical. A refinement abstention may leave the raw body eligible for an
+independent body guard; it is not permission to use the refined result.
 
 Inspectable outputs for a fully promoted run are:
 

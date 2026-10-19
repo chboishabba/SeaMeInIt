@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://seameinit.local/schemas/assembly_receipt.schema.json",
+  "title": "SeaMeInIt AssemblyReceipt",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "finished_seam_receipt_hash",
+    "manufactured_artifacts_hash",
+    "assembled_geometry_hash",
+    "assembly_evidence_hash",
+    "piece_count",
+    "realized_seam_count",
+    "max_geometry_deviation",
+    "geometry_deviation_threshold",
+    "material_lot_hashes",
+    "promotion",
+    "promotion_state",
+    "blocked_consumers",
+    "blocker_log",
+    "claim_boundary"
+  ],
+  "properties": {
+    "schema_version": {"const": "smii.assembly_receipt.v1"},
+    "finished_seam_receipt_hash": {"type": "string", "minLength": 1},
+    "manufactured_artifacts_hash": {"type": "string", "minLength": 1},
+    "assembled_geometry_hash": {"type": "string", "minLength": 1},
+    "assembly_evidence_hash": {"type": "string", "minLength": 1},
+    "piece_count": {"type": "integer", "minimum": 0},
+    "realized_seam_count": {"type": "integer", "minimum": 0},
+    "max_geometry_deviation": {"type": "number", "minimum": 0},
+    "geometry_deviation_threshold": {"type": "number", "minimum": 0},
+    "material_lot_hashes": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "promotion": {"enum": [-1, 0, 1]},
+    "promotion_state": {"enum": ["rejected", "diagnostic_only", "promoted"]},
+    "blocked_consumers": {"type": "array", "items": {"type": "string"}},
+    "blocker_log": {"type": "array", "items": {"type": "string"}},
+    "claim_boundary": {"type": "string", "minLength": 1}
+  },
+  "additionalProperties": false
+}

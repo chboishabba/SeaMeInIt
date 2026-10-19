@@ -23,10 +23,15 @@ Afflec local reference-image manifest: `docs/roadmap/afflec_reference_images_202
   exception for the calibration lane. Agents must not commit the binaries, but
   the project owner may force-add `assets/reference_images/afflec/` using the
   command block in `docs/roadmap/afflec_reference_images_20260604.md`.
-- Keep Gate 0 body-trust calibration as the first production pipeline blocker:
-  add `WARN:low_view_diversity` / `WARN:long_lens_flattening_risk`, tune or
-  constrain measurement refinement, preserve export-stage checkpoints, and
-  acceptance-test the known skull/head non-promotion case. See
+- Keep Gate 0 body-trust calibration as the first production pipeline blocker.
+  Reference-quality warnings and export checkpoints already exist; next:
+  normalize the effective measurement-model authority, thread image-derived
+  betas into bounded/anchored refinement, recompute diagnostics from the
+  bounded candidate, and emit a hash-linked refinement receipt with
+  `promote`/`abstain`/`reject`. Add `BodyCarrierReceipt` v2 lineage with an
+  explicit canonical source. Diagnostic warnings must remain visible without
+  implicitly becoming a universal authorization veto. Freeze smoke abstention
+  and curated-P3 promotion tests. See
   `docs/roadmap/gate0_reference_and_p3_handoff.md`.
 - P3 expanded Afflec evidence is recorded in
   `docs/roadmap/p3_afflec_gate0_evidence_20260604.md`: the curated seven-image
@@ -150,16 +155,17 @@ Afflec local reference-image manifest: `docs/roadmap/afflec_reference_images_202
   retain default/profile/Pareto winners, and mark whether the declared basis is
   exhausted for hard panels. This first version must be explicit that composed
   trees are diagnostic beam candidates, not true sequential rematerializations.
-- Operator-basis-search evidence is recorded at
+- Operator-basis-search v1 evidence is recorded at
   `outputs/demo/afflec_receipted_curated_20260605_143059/panels_fabric_operator_basis_search/panel_unwrap_receipt.json`:
-  P0 and P2 are exhausted at depth 2 under the current measured local operator
-  basis; P1/P3 still promote via the same single materialized surgeries. Next
-  implementation work should be true sequential operator-tree materialization
-  or the BT369-native serializer, not another isolated local variant.
-- Start the native serializer fallback after the search receipt exists:
-  prototype `bt369_pattern_serializer` over operator-prefix/fabric-cone cells
-  for P0/P2 if the depth-limited basis remains exhausted under current
-  LSCM/xatlas/bootstrap backends.
+  P0/P2 have no promoted measured single operation; the retained depth-two
+  unordered cross-family delta combinations are diagnostic-only and do not
+  establish sequential exhaustion. P1/P3 retain their existing single-operation
+  promotions. Next implement `smii.operator_basis_search.v2`: materialize
+  ordered residual-conditioned transitions, rerun the actual backends, retain
+  search-useful children separately from hard-gate promotion, and bind any
+  bounded no-result conclusion to generator/backend/policy/beam/deduplication
+  hashes. Diagnose expressivity, serialization, panelization, and physical or
+  policy failure before starting `bt369_pattern_serializer`.
 - Graph/ultrametric unwrap scoring now has a local benchmark surface:
   `smii.seams.unwrap_benchmark` compares sphere-to-rectangle candidates across
   edge-length, area, angle, foldover, aggregate residual, and agreement-depth
@@ -177,6 +183,13 @@ Afflec local reference-image manifest: `docs/roadmap/afflec_reference_images_202
   `healpy` is installed; it also runs an adversarial field suite over smooth,
   localized, seam-crossing, and discontinuous fields. Next, add xatlas and
   libigl LSCM/SLIM adapters behind the same receipt boundary.
+- Gate 6 BT369 Macroscopic Patternization and P2 Winner Freeze (Milestone Complete):
+  - Tranche A: Vectorized `_panel_frame` via chunked NumPy block-distance search ($O(V^2)$ Python loop dropped from 7.23s -> 0.04s on P0 and 0.26s on P2) with candidate progress logging.
+  - Tranche B: Implemented deterministic `BT369PatternPartitionReceipt`, policy grid sweep (orientation/depth jumps, shared prefixes, residual trits, foldover isolation), topology hashing, and deduplication in `smii.unwrap.bt369_pattern_serializer`.
+  - Tranche C: Implemented `smii.unwrap.bt369_manufacturing`, `ManufacturingLimits` (charts <= 64, min_faces >= 10, min_area_fraction >= 0.005, seam_ratio <= 12.0), pre-backend screening, and linear-time `regularize_partition` using face adjacency.
+  - Tranche D: Implemented `smii.unwrap.bt369_seam_tracing`, surface-graph Dijkstra multi-source shortest-path chart growth (`flow_trace_partition`), morphological relabeling, and 12-outcome sensitivity evaluation.
+  - Deliverable A (P2 Winner Frozen & Certified): Re-evaluated full backend competition on P2 with boundary shortening (`max_moves=200`, converged in 111 moves). Candidate `P2_BT369_000_flow_trace_shortened` achieved Gate-6 geometric promotion = 1 (`blockers: []`, `parent_acceptance: True`, `foldover_guard: True`, `exportable_guard: True`), 23 macroscopic charts, score 255.41 (-97.6%), worst distortion 0.6023 (-88.9%), foldovers 25 (-97.7%), and seam ratio 10.00 <= 12.0 (`manufacturing_blockers: []`). Hash-pinned in `outputs/demo/afflec_receipted_curated_20260605_143059/panels_fabric_operator_basis_search/frozen_p2_winner.json` (`topology_sha256 = dc12a8e29fae606e240d283ed7257ebc3812452ee122874f1029e7bf14eb00ab`). Pinned unit test in `tests/scripts/test_freeze_bt369_p2_winner.py`.
+  - Deliverable B (P0 Local Repair Diagnosis): Profiled dual-graph BFS bisection in `smii.unwrap.bt369_local_repair`. Identified boundary sliver stranding (< min_faces) as the root cause of zero proposals; absorbing slivers into the front yielded clean 50/50 bisections dropping localized distortion from 30+ to <0.5 on charts 19, 20, 23. Combined P0 repair + shortening dropped score to 1,222.31 (-88.6%), foldovers to 118 (-89.0%), and seam ratio to 10.08 (`blockers: []`), leaving only the unrelaxed Gate-6 distortion baseline ceiling (0.2090) as the remaining blocker.
 
 ## Existing Backlog
 

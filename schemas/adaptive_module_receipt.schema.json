@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://seameinit.local/schemas/adaptive_module_receipt.schema.json",
+  "title": "SeaMeInIt AdaptiveModuleReceipt",
+  "type": "object",
+  "required": ["schema_version","physical_rom_receipt_hash","module_manifest_hash","sensor_map_hash","actuator_map_hash","power_budget_hash","fail_safe_evidence_hash","module_count","sensor_count","actuator_count","command_envelope_violation_rate","command_envelope_violation_threshold","fail_safe_test_count","fail_safe_failure_count","promotion","promotion_state","blocked_consumers","blocker_log","claim_boundary"],
+  "properties": {
+    "schema_version": {"const": "smii.adaptive_module_receipt.v1"},
+    "physical_rom_receipt_hash": {"type": "string", "minLength": 1},
+    "module_manifest_hash": {"type": "string", "minLength": 1},
+    "sensor_map_hash": {"type": "string", "minLength": 1},
+    "actuator_map_hash": {"type": "string", "minLength": 1},
+    "power_budget_hash": {"type": "string", "minLength": 1},
+    "fail_safe_evidence_hash": {"type": "string", "minLength": 1},
+    "module_count": {"type": "integer", "minimum": 0},
+    "sensor_count": {"type": "integer", "minimum": 0},
+    "actuator_count": {"type": "integer", "minimum": 0},
+    "command_envelope_violation_rate": {"type": "number", "minimum": 0, "maximum": 1},
+    "command_envelope_violation_threshold": {"type": "number", "minimum": 0, "maximum": 1},
+    "fail_safe_test_count": {"type": "integer", "minimum": 0},
+    "fail_safe_failure_count": {"type": "integer", "minimum": 0},
+    "promotion": {"enum": [-1,0,1]},
+    "promotion_state": {"enum": ["rejected","diagnostic_only","promoted"]},
+    "blocked_consumers": {"type": "array", "items": {"type": "string"}},
+    "blocker_log": {"type": "array", "items": {"type": "string"}},
+    "claim_boundary": {"type": "string", "minLength": 1}
+  },
+  "additionalProperties": false
+}

@@ -22,10 +22,12 @@ BodyCarrierReceipt
   -> ManufacturingReceipt
 ```
 
-The current production blocker is not the receipt order itself. Real Afflec
-promotion is blocked at Gate 0 because the MediaPipe body-fit path emits
-artifacts but measurement refinement pushes final shape betas outside the
-plausible range and the skull residual remains above the conservative gate.
+The current production blocker is not the receipt order itself. The bundled
+production-style Afflec smoke path blocks at Gate 0 because unanchored
+measurement refinement can replace a plausible image fit with an implausible
+shape candidate and a skull residual above the conservative gate. The curated
+seven-image P3 lane is a separate promoted control; it does not authorize the
+smoke-path refinement policy.
 
 ## Priority Order
 
@@ -59,15 +61,21 @@ different grants and restrictions.
 
 ### P1 - Promote Gate 0 Body Trust
 
-Make the Afflec body carrier promote for the production-style path, or document
-the exact remaining non-promotion reason:
+Make Gate 0 refinement an explicit candidate-authority boundary before trying
+to make the Afflec smoke path promote:
 
-- add explicit reference-set quality warnings for low view diversity and
-  long-lens/same-perspective risk,
-- tune or constrain measurement refinement,
-- keep export-stage mesh checkpoints,
-- finish skull/head plausibility gates,
-- add an acceptance test for the known Gate 0 non-promotion case.
+- normalize and hash the effective measurement model actually consumed by the
+  solver; remove duplicated authority and honor its configured scale rule,
+- constrain measurement refinement around image-derived betas with a declared
+  beta domain, prior, anchor, and recomputed residuals,
+- emit a hash-linked refinement policy/receipt with `promote`, `abstain`, or
+  `reject`; a solver candidate has no authority to replace the canonical body,
+- add `BodyCarrierReceipt` v2 lineage: canonical source, selected pre-repair
+  checkpoint, repaired export, and refinement-receipt hash,
+- separate monotone diagnostic severity from refinement and body authorization:
+  warnings remain visible but do not automatically veto every body decision,
+- freeze a smoke abstention/non-promotion test and a curated-P3 promotion test
+  under the new policy.
 
 Reference policy and P3 handoff: `docs/roadmap/gate0_reference_and_p3_handoff.md`.
 
@@ -104,6 +112,28 @@ Continue the panel layer work after the upstream gates are trustworthy:
 - finish variable seam allowance and cutter-readiness checks,
 - test generated reports and exports for escaping, invalid markup, and path
   safety.
+
+### P2 - BT369 Macroscopic Patternization and Gate-6 Panel Winner (Completed)
+
+The BT369 macroscopic pattern partitioner and surface Dijkstra flow tracing are now fully implemented and measured under the existing Gate-6 backend competition (`bootstrap_projection`, `lscm`, `xatlas`) without loosening any gate rules:
+- **P2 Flow-Trace Winner**: `P2_BT369_000_flow_trace_shortened` achieved full Gate-6 geometric promotion (`promotion = 1`, `blockers = []`, score 255.41, distortion 0.6023, foldovers 25) alongside manufacturing admissibility (23 charts, seam ratio 10.00 <= 12.0). Hash-pinned into `outputs/demo/.../frozen_p2_winner.json` via `scripts/freeze_bt369_p2_winner.py`.
+- **P0 Local Repair**: Dual-graph BFS bisection and boundary shortening improved P0 score by 88.6% and foldovers by 89.0% (seam ratio 10.08 <= 12.0), while isolating the remaining blocker strictly to the unchanged worst-distortion baseline guard.
+- **Physical Boundary**: Software Gate-6 closure does not constitute completed physical fabrication or clinical/ergonomic wear fit authorization (`docs/physical_rom_to_suit_closure.md`).
+
+`smii.operator_basis_search.v1` only composes independently measured deltas
+against the original panel. Its depth-two candidates are unordered,
+cross-family, and non-materialized. The historical field
+`basis_exhausted_at_depth` therefore does not prove sequential operator-basis
+exhaustion.
+
+Build a v2 search over materialized `PanelSearchState` transitions: ordered
+operators, recomputed residuals and admissible children after each operation,
+backend re-runs, deterministic bounded beam selection, topology/hash
+deduplication, and full lineage. Its conclusion must be bounded by the
+operator generator, backend set, policy hash, depth, beam width, and
+deduplication rule. After the search, emit a multi-label diagnosis of operator
+expressivity, serialization-backend, panelization, or physical/policy
+infeasibility before choosing a BT369-native garment serializer.
 
 ## Known Bad Cases To Track
 

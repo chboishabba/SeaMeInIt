@@ -7,6 +7,7 @@ definitions exposed in ``schemas/body_unified.yaml`` (see
 
 from __future__ import annotations
 
+import argparse
 import json
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
@@ -27,7 +28,9 @@ def _load_betas(path: Path) -> Sequence[float]:
         return [float(value) for value in values]
     if isinstance(payload, list):
         return [float(value) for value in payload]
-    raise TypeError("Beta file must contain either a list of floats or an object with a 'betas' key.")
+    raise TypeError(
+        "Beta file must contain either a list of floats or an object with a 'betas' key."
+    )
 
 
 def _load_measurements(path: Path) -> dict[str, float]:
@@ -38,7 +41,10 @@ def _load_measurements(path: Path) -> dict[str, float]:
     return {key: float(value) for key, value in payload.items()}
 
 
-def _fit_betas_from_measurements(measurement_path: Path | None, output_dir: Path) -> np.ndarray:
+def _fit_betas_from_measurements(
+    measurement_path: Path | None,
+    output_dir: Path,
+) -> np.ndarray:
     if measurement_path is None:
         return np.zeros(10, dtype=float)
     result = fit_smplx_from_measurements(_load_measurements(measurement_path))
@@ -57,7 +63,7 @@ def _resolve_betas(
     return _fit_betas_from_measurements(measurement_path, output_dir)
 
 
-def _settings_from_args(args: "argparse.Namespace") -> ICPSettings:
+def _settings_from_args(args: argparse.Namespace) -> ICPSettings:
     return ICPSettings(
         max_correspondence_distance=args.max_correspondence_distance,
         max_iterations=args.max_iterations,
@@ -74,10 +80,12 @@ def _save_registration(result: RegistrationResult, output_dir: Path) -> None:
 
 
 def main() -> int:
-    import argparse
-
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("point_cloud", type=Path, help="Path to the scan point cloud (PLY/PCD/OBJ).")
+    parser.add_argument(
+        "point_cloud",
+        type=Path,
+        help="Path to the scan point cloud (PLY/PCD/OBJ).",
+    )
     parser.add_argument(
         "--betas",
         type=Path,
@@ -115,13 +123,11 @@ def main() -> int:
     args = parser.parse_args()
 
     output_dir = args.output_dir
-
     if args.betas is None and args.measurements is None:
         print("No betas or measurements provided; defaulting to zero shape coefficients.")
 
     betas = _resolve_betas(args.betas, args.measurements, output_dir)
     settings = _settings_from_args(args)
-
     mesh_output = output_dir / "scan_fit_mesh.ply"
     result = fit_scan_to_smplx(
         args.point_cloud,

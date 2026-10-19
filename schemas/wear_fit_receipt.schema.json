@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://seameinit.local/schemas/wear_fit_receipt.schema.json",
+  "title": "SeaMeInIt WearFitReceipt",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "assembly_receipt_hash",
+    "rom_receipt_hash",
+    "task_profile_hash",
+    "predicted_field_hash",
+    "measured_field_hash",
+    "measurement_evidence_hash",
+    "sample_count",
+    "task_coverage",
+    "field_residuals",
+    "residual_thresholds",
+    "promotion",
+    "promotion_state",
+    "blocked_consumers",
+    "blocker_log",
+    "claim_boundary"
+  ],
+  "properties": {
+    "schema_version": {"const": "smii.wear_fit_receipt.v1"},
+    "assembly_receipt_hash": {"type": "string", "minLength": 1},
+    "rom_receipt_hash": {"type": "string", "minLength": 1},
+    "task_profile_hash": {"type": "string", "minLength": 1},
+    "predicted_field_hash": {"type": "string", "minLength": 1},
+    "measured_field_hash": {"type": "string", "minLength": 1},
+    "measurement_evidence_hash": {"type": "string", "minLength": 1},
+    "sample_count": {"type": "integer", "minimum": 0},
+    "task_coverage": {"type": "number", "minimum": 0, "maximum": 1},
+    "field_residuals": {
+      "type": "object",
+      "additionalProperties": {"type": "number", "minimum": 0}
+    },
+    "residual_thresholds": {
+      "type": "object",
+      "additionalProperties": {"type": "number", "minimum": 0}
+    },
+    "promotion": {"enum": [-1, 0, 1]},
+    "promotion_state": {"enum": ["rejected", "diagnostic_only", "promoted"]},
+    "blocked_consumers": {"type": "array", "items": {"type": "string"}},
+    "blocker_log": {"type": "array", "items": {"type": "string"}},
+    "claim_boundary": {"type": "string", "minLength": 1}
+  },
+  "additionalProperties": false
+}

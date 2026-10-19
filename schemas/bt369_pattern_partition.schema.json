@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://seameinit.local/schemas/bt369_pattern_partition.schema.json",
+  "title": "BT369 Pattern Partition Receipt",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "claim_boundary",
+    "panel_id",
+    "face_count",
+    "chart_count",
+    "policy",
+    "cells",
+    "partition",
+    "cut_edges",
+    "topology_hash",
+    "face_coverage_complete",
+    "faces_pairwise_disjoint",
+    "cut_reason_histogram",
+    "promotion",
+    "blockers"
+  ],
+  "properties": {
+    "schema_version": {"const": "smii.bt369_pattern_partition.v1"},
+    "claim_boundary": {
+      "const": "bt369_partition_is_candidate_panelization_not_manufacturing_authority"
+    },
+    "panel_id": {"type": "string", "minLength": 1},
+    "face_count": {"type": "integer", "minimum": 1},
+    "chart_count": {"type": "integer", "minimum": 1},
+    "policy": {
+      "type": "object",
+      "required": [
+        "orientation_jump_limit",
+        "refinement_depth_jump_limit",
+        "shared_prefix_depth",
+        "isolate_foldovers",
+        "cut_residual_trit_boundaries",
+        "max_depth",
+        "policy_key"
+      ]
+    },
+    "cells": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "face_index",
+          "residual",
+          "residual_trit",
+          "orientation_bin",
+          "depth",
+          "triadic_prefix",
+          "area_weight",
+          "foldover",
+          "high_distortion",
+          "centroid_uv"
+        ],
+        "properties": {
+          "face_index": {"type": "integer", "minimum": 0},
+          "residual": {"type": "number", "minimum": 0},
+          "residual_trit": {"enum": [-1, 0, 1]},
+          "orientation_bin": {"type": "integer", "minimum": 0, "maximum": 5},
+          "depth": {"type": "integer", "minimum": 0},
+          "triadic_prefix": {"type": "string", "pattern": "^[012]*$"},
+          "area_weight": {"type": "number", "minimum": 0},
+          "foldover": {"type": "boolean"},
+          "high_distortion": {"type": "boolean"},
+          "centroid_uv": {
+            "type": "array",
+            "prefixItems": [{"type": "number"}, {"type": "number"}],
+            "minItems": 2,
+            "maxItems": 2
+          }
+        }
+      }
+    },
+    "partition": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "array",
+        "minItems": 1,
+        "items": {"type": "integer", "minimum": 0},
+        "uniqueItems": true
+      }
+    },
+    "cut_edges": {"type": "array"},
+    "topology_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "face_coverage_complete": {"const": true},
+    "faces_pairwise_disjoint": {"const": true},
+    "cut_reason_histogram": {"type": "object"},
+    "promotion": {"const": 0},
+    "blockers": {
+      "type": "array",
+      "contains": {"const": "backend_metrics_not_recomputed"}
+    }
+  },
+  "additionalProperties": true
+}

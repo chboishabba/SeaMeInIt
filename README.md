@@ -115,6 +115,14 @@ receipt-chain blocker. The curated seven-image P3 lane promotes through Gate 5c;
 the current blocking gate there is panel unwrap distortion/corrected residual,
 not missing receipt plumbing.
 
+The next Gate 0 change makes measurement refinement a candidate rather than an
+implicit canonical-body update: a hash-linked policy and decision will permit
+`promote`, `abstain`, or `reject`. The raw image fit remains subject to its own
+body guard after refinement abstains. Similarly, the current depth-two panel
+operator search is diagnostic delta composition, not proof of sequential basis
+exhaustion; sequential materialized search precedes any BT369-native garment
+serializer decision.
+
 ## Current focus: manufacturable panels and morphology attribution
 
 The undersuit pipeline needs an explicit "panel" layer between geometry and export. We should treat paneling and sewability as

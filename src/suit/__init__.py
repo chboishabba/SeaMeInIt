@@ -1,5 +1,8 @@
 """Soft suit modelling package."""
 
+from importlib import import_module
+
+from .body_axes import BodyAxes, fit_body_axes
 from .material_model import (
     DirectionalElasticModulus,
     MaterialBlend,
@@ -9,36 +12,13 @@ from .material_model import (
     PressureComfortRatings,
     ThermalResistance,
 )
-from .body_axes import BodyAxes, fit_body_axes
-from .thermal_zones import (
-    DEFAULT_THERMAL_ZONE_SPEC,
-    ThermalZone,
-    ThermalZoneAssignment,
-    ThermalZoneSpec,
-)
-from .seam_generator import (
-    MeasurementLoop,
-    SeamGenerator,
-    SeamGraph,
-    SeamPanel,
-)
-from .panel_payload import PanelPayload
+from .panel_adapter import PanelPayloadSource, panel_to_payload
 from .panel_defaults import (
     MATERIAL_BUDGETS,
     NEOPRENE_DEFAULT_BUDGETS,
     SuitMaterial,
     WOVEN_DEFAULT_BUDGETS,
     panel_budgets_for,
-)
-from .panel_adapter import PanelPayloadSource, panel_to_payload
-from .panel_validation import (
-    PanelGateResult,
-    ValidationIssue,
-    ValidationResult,
-    combine_results,
-    gate_panel_validation,
-    validate_panel_budgets,
-    validate_panel_curvature,
 )
 from .panel_model import (
     Panel,
@@ -49,6 +29,28 @@ from .panel_model import (
     PanelSeams,
     PanelStatus,
     SurfacePatch,
+)
+from .panel_payload import PanelPayload
+from .panel_validation import (
+    PanelGateResult,
+    ValidationIssue,
+    ValidationResult,
+    combine_results,
+    gate_panel_validation,
+    validate_panel_budgets,
+    validate_panel_curvature,
+)
+from .seam_generator import (
+    MeasurementLoop,
+    SeamGenerator,
+    SeamGraph,
+    SeamPanel,
+)
+from .thermal_zones import (
+    DEFAULT_THERMAL_ZONE_SPEC,
+    ThermalZone,
+    ThermalZoneAssignment,
+    ThermalZoneSpec,
 )
 from .undersuit_generator import (
     LAYER_REFERENCE_MEASUREMENTS,

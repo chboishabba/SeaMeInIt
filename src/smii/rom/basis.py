@@ -29,6 +29,7 @@ class KernelBasis:
     matrix: np.ndarray
     vertices: np.ndarray | None
     metadata: BasisMetadata
+    mass_diagonal: np.ndarray | None = None
 
     @classmethod
     def from_arrays(
@@ -36,6 +37,7 @@ class KernelBasis:
         matrix: ArrayLike,
         *,
         vertices: ArrayLike | None = None,
+        mass_diagonal: ArrayLike | None = None,
         source_mesh: str | None = None,
         normalization: str | None = None,
         notes: str | None = None,
@@ -56,6 +58,12 @@ class KernelBasis:
             if not np.isfinite(vertices_arr).all():
                 raise ValueError("Vertex coordinates must be finite.")
 
+        mass_arr = None
+        if mass_diagonal is not None:
+            mass_arr = np.asarray(mass_diagonal, dtype=float)
+            if mass_arr.shape != (basis.shape[0],):
+                raise ValueError("Mass diagonal must match the number of vertices.")
+
         metadata = BasisMetadata(
             vertex_count=basis.shape[0],
             component_count=basis.shape[1],
@@ -63,7 +71,36 @@ class KernelBasis:
             normalization=normalization,
             notes=notes,
         )
-        return cls(matrix=basis, vertices=vertices_arr, metadata=metadata)
+        return cls(matrix=basis, vertices=vertices_arr, metadata=metadata, mass_diagonal=mass_arr)
+
+    @classmethod
+    def from_mesh(
+        cls,
+        vertices: ArrayLike,
+        faces: ArrayLike,
+        *,
+        components: int = 64,
+        config: object | None = None,
+        source_mesh: str | None = None,
+        notes: str | None = None,
+    ) -> "KernelBasis":
+        from .spectral_basis import SpectralBasisConfig, build_spectral_basis
+
+        cfg = (
+            config
+            if isinstance(config, SpectralBasisConfig)
+            else SpectralBasisConfig(components=components)
+        )
+        spectral_res = build_spectral_basis(vertices, faces, config=cfg)
+        return cls.from_arrays(
+            spectral_res.eigenvectors,
+            vertices=vertices,
+            mass_diagonal=spectral_res.mass_diagonal,
+            source_mesh=source_mesh,
+            normalization="mass_orthonormal_cotangent_laplacian",
+            notes=notes
+            or f"spectral cotangent laplace-beltrami, ortho_err={spectral_res.orthogonality_error:.2e}",
+        )
 
 
 def load_basis(path: str | Path) -> KernelBasis:
@@ -78,7 +115,11 @@ def load_basis(path: str | Path) -> KernelBasis:
     vertices = payload["vertices"] if "vertices" in payload else None
     meta_dict: MutableMapping[str, str] = {}
     if "meta" in payload:
-        meta_raw = payload["meta"].item() if getattr(payload["meta"], "shape", ()) == () else payload["meta"]
+        meta_raw = (
+            payload["meta"].item()
+            if getattr(payload["meta"], "shape", ()) == ()
+            else payload["meta"]
+        )
         if isinstance(meta_raw, Mapping):
             meta_dict.update({str(k): str(v) for k, v in meta_raw.items()})
 
@@ -137,12 +178,7 @@ class KernelProjector:
         return {name: self.project(vector) for name, vector in coeffs.items()}
 
     def encode(self, field: ArrayLike) -> np.ndarray:
-        """Encode a body field back into coefficient space.
-
-        The canonical basis emitted by this repo is QR-orthonormalized, so the
-        inverse projection is a simple transpose projection.
-        """
-
+        """Encode a body field back into coefficient space."""
         arr = np.asarray(field, dtype=float)
         if arr.ndim != 1:
             raise ValueError("Field vector must be 1-D.")
@@ -150,11 +186,12 @@ class KernelProjector:
             raise ValueError(
                 f"Field length {arr.shape[0]} does not match basis vertices {self.vertex_count}."
             )
+        if self.basis.mass_diagonal is not None:
+            return self.basis.matrix.T @ (self.basis.mass_diagonal * arr)
         return self.basis.matrix.T @ arr
 
     def encode_batch(self, fields: ArrayLike) -> np.ndarray:
         """Encode a batch of body fields shaped (N_vertices, batch)."""
-
         arr = np.asarray(fields, dtype=float)
         if arr.ndim != 2:
             raise ValueError("Batch fields must be 2-D (N_vertices, batch).")
@@ -163,4 +200,6 @@ class KernelProjector:
                 f"Batch field vertex dimension {arr.shape[0]} does not match basis vertices "
                 f"{self.vertex_count}."
             )
+        if self.basis.mass_diagonal is not None:
+            return self.basis.matrix.T @ (self.basis.mass_diagonal[:, np.newaxis] * arr)
         return self.basis.matrix.T @ arr

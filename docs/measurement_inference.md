@@ -21,6 +21,22 @@ calibration workflow.
 4. Coverage metrics surface in the CLI output bundle so downstream tools can
    visualise which values were observed versus interpolated.
 
+## Refinement Authority Boundary
+
+Measurement completion and measurement-based shape refinement are not authority
+to replace an image-derived body fit. The current least-squares refinement is a
+candidate-generation step. The planned Gate 0 contract will bind the effective
+measurement policy (matrix, normalisation, weights, scale rule, beta domain,
+prior/anchor weights, and solver settings) and use the image-derived beta
+vector as an explicit anchor.
+
+The bounded result must have measurement and skull diagnostics recomputed from
+the final candidate. A hash-linked refinement receipt will decide `promote`,
+`abstain`, or `reject`; only `promote` can select a refined pre-repair mesh as
+the canonical source. A refinement abstention leaves the raw image fit to its
+own body-trust guard. Post-solve clipping without recomputing those diagnostics
+is not an admissible refinement policy.
+
 ## Visualisation Hooks
 
 `MeasurementReport.visualization_payload()` returns a serialisable list of
