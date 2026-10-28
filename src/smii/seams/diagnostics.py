@@ -23,7 +23,7 @@ try:  # Optional heavy import
 except Exception:  # pragma: no cover
     SeamGraph = None  # type: ignore[assignment]
 
-__all__ = ["build_diagnostics_report", "save_report", "render_overlay"]
+__all__ = ["build_diagnostics_report", "save_report", "render_overlay", "render_objective_breakdown", "render_objective_breakdown_svg"]
 
 
 def _edge_breakdown(edge: tuple[int, int], kernel: EdgeKernel, weights: KernelWeights) -> Mapping[str, float]:
@@ -61,6 +61,7 @@ def build_diagnostics_report(
     *,
     vertices: np.ndarray,
     cost_field: SeamCostField | None = None,
+    solver_debug: Mapping[str, object] | None = None,
 ) -> Mapping[str, object]:
     """Generate a JSON-friendly diagnostics report."""
 
@@ -73,6 +74,8 @@ def build_diagnostics_report(
         "warnings": list(solution.warnings),
         "panels": {},
     }
+    if solver_debug is not None:
+        report["solver_debug"] = dict(solver_debug)
 
     for panel in seam_graph.panels:
         panel_solution = solution.panel_solutions.get(panel.name)
@@ -160,4 +163,105 @@ def render_overlay(
     output.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output, bbox_inches="tight", dpi=200)
     plt.close(fig)
+    return output
+
+
+
+def _objective_totals(report: Mapping[str, object]) -> tuple[list[str], list[float]]:
+    selected_totals: MutableMapping[str, float] = {
+        "rom_mean": 0.0,
+        "rom_max": 0.0,
+        "rom_grad": 0.0,
+        "curvature": 0.0,
+        "fabric": 0.0,
+    }
+    panels = report.get("panels", {})
+    if isinstance(panels, Mapping):
+        for panel in panels.values():
+            if not isinstance(panel, Mapping):
+                continue
+            edges = panel.get("edges", [])
+            if not isinstance(edges, Sequence):
+                continue
+            for entry in edges:
+                if not isinstance(entry, Mapping):
+                    continue
+                for name in selected_totals:
+                    selected_totals[name] += float(entry.get(name, 0.0))
+
+    mdl_breakdown = report.get("mdl_breakdown", {})
+    mdl_total = 0.0
+    if isinstance(mdl_breakdown, Mapping):
+        mdl_total = float(sum(float(value) for value in mdl_breakdown.values()))
+
+    labels = list(selected_totals) + ["mdl"]
+    values = [selected_totals[name] for name in selected_totals] + [mdl_total]
+    return labels, values
+
+
+def render_objective_breakdown(
+    report: Mapping[str, object],
+    *,
+    output: Path,
+) -> Path | None:
+    """Render selected-edge and MDL objective totals as a PNG when available."""
+
+    if plt is None:
+        return None
+
+    labels, values = _objective_totals(report)
+    fig, ax = plt.subplots(figsize=(8, 4))
+    ax.barh(labels, values)
+    ax.set_xlabel("objective contribution")
+    ax.set_title("PDA seam objective breakdown")
+    ax.grid(axis="x", alpha=0.25)
+    fig.tight_layout()
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output, bbox_inches="tight", dpi=180)
+    plt.close(fig)
+    return output
+
+
+
+def render_objective_breakdown_svg(
+    report: Mapping[str, object],
+    *,
+    output: Path,
+) -> Path:
+    """Render a dependency-free deterministic SVG objective summary."""
+
+    labels, values = _objective_totals(report)
+    width = 760
+    left = 150
+    row_height = 34
+    top = 42
+    height = top + row_height * len(labels) + 28
+    max_value = max([abs(value) for value in values] + [1e-12])
+    available = width - left - 40
+
+    rows: list[str] = []
+    for index, (label, value) in enumerate(zip(labels, values)):
+        y = top + index * row_height
+        bar_width = max(0.0, available * abs(value) / max_value)
+        rows.append(
+            f'<text x="8" y="{y + 17}" font-family="monospace" font-size="13">{label}</text>'
+        )
+        rows.append(
+            f'<rect x="{left}" y="{y + 4}" width="{bar_width:.3f}" height="18" fill="currentColor" opacity="0.65"/>'
+        )
+        rows.append(
+            f'<text x="{left + bar_width + 8:.3f}" y="{y + 17}" font-family="monospace" font-size="12">{value:.6g}</text>'
+        )
+
+    svg = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
+        f'viewBox="0 0 {width} {height}">'
+        '<title>PDA seam objective breakdown</title>'
+        '<text x="8" y="24" font-family="sans-serif" font-size="16">PDA seam objective breakdown</text>'
+        + "".join(rows)
+        + "</svg>\n"
+    )
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(svg, encoding="utf-8")
     return output

@@ -10,7 +10,7 @@ import numpy as np
 from smii.rom.constraints import ConstraintRegistry
 from smii.rom.seam_costs import SeamCostField
 from smii.seams.fabric_kernels import FabricAssignment, FabricProfile, fabric_penalty, rotate_grain
-from smii.seams.kernels import EdgeKernel, KernelWeights
+from smii.seams.kernels import EdgeKernel, KernelWeights, validate_kernel_weights
 from smii.seams.mdl import MDLPrior, mdl_cost
 from smii.seams.moves import merge_panels, reroute_edge, shorten_seam, split_panel
 from smii.seams.solver import PanelSolution, SeamSolution
@@ -451,6 +451,7 @@ def solve_seams_pda(
     fabric_grain: np.ndarray | None = None,
     panel_fabrics: Mapping[str, str] | None = None,
     grain_rotation_step: float = 10.0,
+    debug_out: MutableMapping[str, object] | None = None,
 ) -> SeamSolution:
     """PDA seam solver that optimizes ROM kernels under MDL prior."""
 
@@ -458,6 +459,13 @@ def solve_seams_pda(
         raise ImportError("suit.seam_generator.SeamGraph is required to run the PDA solver.")
     if budget < 0:
         raise ValueError("budget must be non-negative")
+    validate_kernel_weights(weights)
+    if witness_noise < 0.0:
+        raise ValueError("witness_noise must be non-negative")
+
+    debug_trace: list[dict[str, object]] = []
+    candidates_evaluated = 0
+    candidates_stable = 0
 
     default_fabric_id = next(iter(fabric_catalog.keys()), None) if fabric_catalog else None
     fabric_grain_arr = np.asarray(fabric_grain, dtype=float) if fabric_grain is not None else None
@@ -526,10 +534,15 @@ def solve_seams_pda(
             proposals = _panel_proposals(panel_solution, panel_edge_list, edge_costs_current)
             best_candidate = None
             best_cost = current_solution.total_cost
-            best_metadata: MutableMapping[str, float] = {}
+            best_metadata: Mapping[str, object] = {}
 
-            def _evaluate_candidate(candidate_panel: PanelSolution, description: str, candidate_metadata: Mapping[str, float]) -> None:
-                nonlocal best_candidate, best_cost, best_metadata
+            def _evaluate_candidate(
+                candidate_panel: PanelSolution,
+                description: str,
+                candidate_metadata: Mapping[str, object],
+            ) -> None:
+                nonlocal best_candidate, best_cost, best_metadata, candidates_evaluated, candidates_stable
+                candidates_evaluated += 1
                 candidate_panels = dict(current_solution.panel_solutions)
                 candidate_panels[panel.name] = candidate_panel
                 candidate_data = _data_cost_from_panels(candidate_panels)
@@ -549,26 +562,30 @@ def solve_seams_pda(
                         **candidate_metadata,
                     },
                 )
-                if candidate_total < best_cost and _witness_stable(
-                    candidate_solution,
-                    seam_graph,
-                    kernels,
-                    cost_field,
-                    constraints,
-                    mdl_prior,
-                    vertices,
-                    fabric_catalog=fabric_catalog,
-                    fabric_grain=fabric_grain_arr,
-                    weights=weights,
-                    vertex_weight=vertex_weight,
-                    symmetry_penalty_weight=symmetry_penalty_weight,
-                    max_branch_degree=max_branch_degree,
-                    branch_penalty_weight=branch_penalty_weight,
-                    noise=witness_noise,
-                ):
-                    best_candidate = candidate_solution
-                    best_cost = candidate_total
-                    best_metadata = candidate_solution.metadata
+                stable = False
+                if candidate_total < best_cost:
+                    stable = _witness_stable(
+                        candidate_solution,
+                        seam_graph,
+                        kernels,
+                        cost_field,
+                        constraints,
+                        mdl_prior,
+                        vertices,
+                        fabric_catalog=fabric_catalog,
+                        fabric_grain=fabric_grain_arr,
+                        weights=weights,
+                        vertex_weight=vertex_weight,
+                        symmetry_penalty_weight=symmetry_penalty_weight,
+                        max_branch_degree=max_branch_degree,
+                        branch_penalty_weight=branch_penalty_weight,
+                        noise=witness_noise,
+                    )
+                    if stable:
+                        candidates_stable += 1
+                        best_candidate = candidate_solution
+                        best_cost = candidate_total
+                        best_metadata = candidate_solution.metadata
 
             for candidate_edges, description, changed in proposals:
                 if not changed:
@@ -649,6 +666,18 @@ def solve_seams_pda(
                         _evaluate_candidate(candidate_panel, "rotate_grain", {"grain_rotation_deg": target_rotation})
 
             if best_candidate is not None:
+                previous_cost = float(current_solution.total_cost)
+                accepted_description = str(best_candidate.warnings[-1]) if best_candidate.warnings else "accepted"
+                debug_trace.append(
+                    {
+                        "iteration": int(iteration + 1),
+                        "panel": str(panel.name),
+                        "move": accepted_description,
+                        "before_cost": previous_cost,
+                        "after_cost": float(best_cost),
+                        "improvement": previous_cost - float(best_cost),
+                    }
+                )
                 current_solution = SeamSolution(
                     solver=best_candidate.solver,
                     panel_solutions=best_candidate.panel_solutions,
@@ -667,6 +696,21 @@ def solve_seams_pda(
     final_data = _data_cost_from_panels(current_solution.panel_solutions)
     temp_final = SeamSolution("pda", current_solution.panel_solutions, final_data, (), current_solution.metadata)
     final_mdl, final_breakdown = mdl_cost(temp_final, mdl_prior, vertices=vertices)
+    if debug_out is not None:
+        debug_out.clear()
+        debug_out.update(
+            {
+                "budget": int(budget),
+                "iterations_completed": int(current_solution.metadata.get("iterations", 0.0)),
+                "candidates_evaluated": int(candidates_evaluated),
+                "stable_improving_candidates": int(candidates_stable),
+                "accepted_move_count": int(len(debug_trace)),
+                "accepted_moves": debug_trace,
+                "final_data_cost": float(final_data),
+                "final_mdl_cost": float(final_mdl),
+                "final_total_cost": float(final_data + final_mdl),
+            }
+        )
     return SeamSolution(
         solver=current_solution.solver,
         panel_solutions=current_solution.panel_solutions,
