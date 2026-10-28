@@ -63,6 +63,9 @@ and dispatches to a common helper. Recognised commands:
   pytest        Execute the test suite (python -m pytest)
   download-smplx
                 Fetch SMPL-X assets (python tools/download_smplx.py)
+  verify-rom-runtime
+                Install the ROM runtime extra into this venv and verify
+                torch, smplx, and smii.rom.sampler_real.
 
 Any other command is executed verbatim inside the virtual environment.
 
@@ -106,6 +109,13 @@ run_command() {
             ;;
         download-smplx)
             exec -- python "${ROOT_DIR}/tools/download_smplx.py" "$@"
+            ;;
+        verify-rom-runtime)
+            (
+                cd "${ROOT_DIR}"
+                python -m pip install -e '.[rom]'
+                exec python "${ROOT_DIR}/tools/verify_rom_runtime.py" "$@"
+            )
             ;;
         *)
             exec -- "${cmd}" "$@"
