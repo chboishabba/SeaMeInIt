@@ -10,7 +10,7 @@ import numpy as np
 from smii.rom.constraints import ConstraintRegistry
 from smii.rom.seam_costs import SeamCostField
 from smii.seams.fabric_kernels import FabricAssignment, FabricProfile, fabric_penalty, rotate_grain
-from smii.seams.kernels import EdgeKernel, KernelWeights
+from smii.seams.kernels import EdgeKernel, KernelWeights, validate_kernel_weights
 from smii.seams.mdl import MDLPrior, mdl_cost
 from smii.seams.moves import merge_panels, reroute_edge, shorten_seam, split_panel
 from smii.seams.solver import PanelSolution, SeamSolution
@@ -459,6 +459,7 @@ def solve_seams_pda(
         raise ImportError("suit.seam_generator.SeamGraph is required to run the PDA solver.")
     if budget < 0:
         raise ValueError("budget must be non-negative")
+    validate_kernel_weights(weights)
     if witness_noise < 0.0:
         raise ValueError("witness_noise must be non-negative")
 
@@ -533,7 +534,7 @@ def solve_seams_pda(
             proposals = _panel_proposals(panel_solution, panel_edge_list, edge_costs_current)
             best_candidate = None
             best_cost = current_solution.total_cost
-            best_metadata: MutableMapping[str, float] = {}
+            best_metadata: Mapping[str, object] = {}
 
             def _evaluate_candidate(
                 candidate_panel: PanelSolution,
