@@ -21,6 +21,8 @@ __all__ = [
     "KernelWeights",
     "edge_energy",
     "build_edge_kernels",
+    "kernel_weight_preset",
+    "validate_kernel_weights",
 ]
 
 
@@ -46,9 +48,48 @@ class KernelWeights:
     fabric: float = 1.0
 
 
+_KERNEL_WEIGHT_PRESETS: Mapping[str, KernelWeights] = {
+    # Balanced defaults deliberately keep ROM response dominant while preventing
+    # a single max-cost vertex from overwhelming gradient and geometry terms.
+    "balanced": KernelWeights(rom_mean=1.0, rom_max=0.65, rom_grad=0.85, curvature=0.30, fabric=0.40),
+    "rom_sensitive": KernelWeights(rom_mean=1.15, rom_max=0.90, rom_grad=1.20, curvature=0.20, fabric=0.25),
+    "manufacturing": KernelWeights(rom_mean=0.85, rom_max=0.55, rom_grad=0.65, curvature=0.55, fabric=0.80),
+}
+
+
+def validate_kernel_weights(weights: KernelWeights) -> KernelWeights:
+    """Fail closed on non-finite or negative objective weights."""
+
+    values = {
+        "rom_mean": weights.rom_mean,
+        "rom_max": weights.rom_max,
+        "rom_grad": weights.rom_grad,
+        "curvature": weights.curvature,
+        "fabric": weights.fabric,
+    }
+    invalid = [name for name, value in values.items() if not np.isfinite(value) or value < 0.0]
+    if invalid:
+        raise ValueError(f"kernel weights must be finite and non-negative: {', '.join(sorted(invalid))}")
+    if not any(value > 0.0 for value in values.values()):
+        raise ValueError("at least one kernel weight must be positive")
+    return weights
+
+
+def kernel_weight_preset(name: str = "balanced") -> KernelWeights:
+    """Return a deterministic tuned kernel-weight preset."""
+
+    key = str(name).strip().lower()
+    try:
+        return _KERNEL_WEIGHT_PRESETS[key]
+    except KeyError as exc:
+        available = ", ".join(sorted(_KERNEL_WEIGHT_PRESETS))
+        raise ValueError(f"unknown kernel weight preset {name!r}; choose one of: {available}") from exc
+
+
 def edge_energy(kernel: EdgeKernel, weights: KernelWeights) -> float:
     """Compute scalar edge energy as a dot product of kernel and weights."""
 
+    weights = validate_kernel_weights(weights)
     return float(
         weights.rom_mean * kernel.rom_mean
         + weights.rom_max * kernel.rom_max
