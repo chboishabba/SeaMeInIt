@@ -23,7 +23,7 @@ try:  # Optional heavy import
 except Exception:  # pragma: no cover
     SeamGraph = None  # type: ignore[assignment]
 
-__all__ = ["build_diagnostics_report", "save_report", "render_overlay"]
+__all__ = ["build_diagnostics_report", "save_report", "render_overlay", "render_objective_breakdown"]
 
 
 def _edge_breakdown(edge: tuple[int, int], kernel: EdgeKernel, weights: KernelWeights) -> Mapping[str, float]:
@@ -61,6 +61,7 @@ def build_diagnostics_report(
     *,
     vertices: np.ndarray,
     cost_field: SeamCostField | None = None,
+    solver_debug: Mapping[str, object] | None = None,
 ) -> Mapping[str, object]:
     """Generate a JSON-friendly diagnostics report."""
 
@@ -73,6 +74,8 @@ def build_diagnostics_report(
         "warnings": list(solution.warnings),
         "panels": {},
     }
+    if solver_debug is not None:
+        report["solver_debug"] = dict(solver_debug)
 
     for panel in seam_graph.panels:
         panel_solution = solution.panel_solutions.get(panel.name)
@@ -159,5 +162,58 @@ def render_overlay(
         return None
     output.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output, bbox_inches="tight", dpi=200)
+    plt.close(fig)
+    return output
+
+
+
+def render_objective_breakdown(
+    report: Mapping[str, object],
+    *,
+    output: Path,
+) -> Path | None:
+    """Render deterministic selected-edge and MDL objective totals."""
+
+    if plt is None:
+        return None
+
+    selected_totals: MutableMapping[str, float] = {
+        "rom_mean": 0.0,
+        "rom_max": 0.0,
+        "rom_grad": 0.0,
+        "curvature": 0.0,
+        "fabric": 0.0,
+    }
+    panels = report.get("panels", {})
+    if isinstance(panels, Mapping):
+        for panel in panels.values():
+            if not isinstance(panel, Mapping):
+                continue
+            edges = panel.get("edges", [])
+            if not isinstance(edges, Sequence):
+                continue
+            for entry in edges:
+                if not isinstance(entry, Mapping):
+                    continue
+                for name in selected_totals:
+                    selected_totals[name] += float(entry.get(name, 0.0))
+
+    mdl_breakdown = report.get("mdl_breakdown", {})
+    mdl_total = 0.0
+    if isinstance(mdl_breakdown, Mapping):
+        mdl_total = float(sum(float(value) for value in mdl_breakdown.values()))
+
+    labels = list(selected_totals) + ["mdl"]
+    values = [selected_totals[name] for name in selected_totals] + [mdl_total]
+
+    fig, ax = plt.subplots(figsize=(8, 4))
+    ax.barh(labels, values)
+    ax.set_xlabel("objective contribution")
+    ax.set_title("PDA seam objective breakdown")
+    ax.grid(axis="x", alpha=0.25)
+    fig.tight_layout()
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output, bbox_inches="tight", dpi=180)
     plt.close(fig)
     return output
