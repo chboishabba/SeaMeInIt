@@ -22,7 +22,7 @@ from smii.rom.flex_heatmap import (
     project_flex_to_vertices,
 )
 from smii.rom.seam_costs import load_seam_cost_field
-from smii.seams.diagnostics import build_diagnostics_report, render_objective_breakdown, render_overlay, save_report
+from smii.seams.diagnostics import build_diagnostics_report, render_objective_breakdown, render_objective_breakdown_svg, render_overlay, save_report
 from smii.seams.fabric_kernels import FabricProfile, load_fabrics_from_dir
 from smii.seams.kernels import KernelWeights, build_edge_kernels, kernel_weight_preset
 from smii.seams.mdl import MDLPrior, mdl_prior_preset
@@ -426,6 +426,10 @@ def main() -> None:
     save_report(report, args.out / "seam_report.json")
     if pda_debug is not None:
         save_report(pda_debug, args.out / "pda_debug.json")
+    objective_svg_path = render_objective_breakdown_svg(
+        report,
+        output=args.out / "objective_breakdown.svg",
+    ) if args.pda_debug else None
     objective_path = render_objective_breakdown(
         report,
         output=args.out / "objective_breakdown.png",
@@ -550,8 +554,10 @@ def main() -> None:
         print(f"Overlay: {overlay_path}")
     if pda_debug is not None:
         print(f"PDA debug: {args.out / 'pda_debug.json'}")
+    if objective_svg_path:
+        print(f"Objective breakdown SVG: {objective_svg_path}")
     if objective_path:
-        print(f"Objective breakdown: {objective_path}")
+        print(f"Objective breakdown PNG: {objective_path}")
 
 
 if __name__ == "__main__":
