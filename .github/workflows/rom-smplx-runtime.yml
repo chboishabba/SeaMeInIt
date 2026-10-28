@@ -1,0 +1,45 @@
+name: rom-smplx-runtime
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'pyproject.toml'
+      - 'requirements-dev.txt'
+      - 'tools/run_smii.sh'
+      - 'tools/verify_rom_runtime.py'
+      - 'tests/tools/test_verify_rom_runtime.py'
+      - '.github/workflows/rom-smplx-runtime.yml'
+
+jobs:
+  verify-rom-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install ROM runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[rom,test]'
+
+      - name: Verify runtime imports and sampler entrypoint
+        run: python tools/verify_rom_runtime.py
+
+      - name: Run focused verifier tests
+        run: python -m pytest -q tests/tools/test_verify_rom_runtime.py
+
+      - name: Reject protected ESD changes
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch origin "${BASE_REF}" --depth=1
+          if git diff --name-only "origin/${BASE_REF}...HEAD" | grep -Ei '(^|/)(dashi_digital_esd|[^/]*digital_esd[^/]*|[^/]*ESD[^/]*)'; then
+            echo "protected ESD surface changed" >&2
+            exit 1
+          fi
