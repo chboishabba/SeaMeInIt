@@ -30,6 +30,10 @@ tools = [
     "requests>=2.31.0",
     "trimesh>=4.9.0",
 ]
+rom = [
+    "smplx>=0.1.28",
+    "torch>=2.1",
+]
 vision = [
     "mediapipe>=0.10",
     "Pillow>=9.0",
