@@ -22,10 +22,10 @@ from smii.rom.flex_heatmap import (
     project_flex_to_vertices,
 )
 from smii.rom.seam_costs import load_seam_cost_field
-from smii.seams.diagnostics import build_diagnostics_report, render_overlay, save_report
+from smii.seams.diagnostics import build_diagnostics_report, render_objective_breakdown, render_overlay, save_report
 from smii.seams.fabric_kernels import FabricProfile, load_fabrics_from_dir
-from smii.seams.kernels import KernelWeights, build_edge_kernels
-from smii.seams.mdl import MDLPrior
+from smii.seams.kernels import KernelWeights, build_edge_kernels, kernel_weight_preset
+from smii.seams.mdl import MDLPrior, mdl_prior_preset
 from smii.seams.pda import solve_seams_pda
 from smii.seams.solver import solve_seams
 from smii.seams.solvers_mincut import solve_seams_mincut
@@ -99,29 +99,31 @@ def _load_yaml_like(path: Path) -> Mapping[str, Any]:
         return yaml.safe_load(stream)
 
 
-def _weights_from_path(path: Path | None) -> KernelWeights:
+def _weights_from_path(path: Path | None, preset: str) -> KernelWeights:
+    base = kernel_weight_preset(preset)
     if path is None:
-        return KernelWeights()
+        return base
     payload = _load_yaml_like(path)
     return KernelWeights(
-        rom_mean=float(payload.get("rom_mean", 1.0)),
-        rom_max=float(payload.get("rom_max", 1.0)),
-        rom_grad=float(payload.get("rom_grad", 1.0)),
-        curvature=float(payload.get("curvature", 1.0)),
-        fabric=float(payload.get("fabric", 1.0)),
+        rom_mean=float(payload.get("rom_mean", base.rom_mean)),
+        rom_max=float(payload.get("rom_max", base.rom_max)),
+        rom_grad=float(payload.get("rom_grad", base.rom_grad)),
+        curvature=float(payload.get("curvature", base.curvature)),
+        fabric=float(payload.get("fabric", base.fabric)),
     )
 
 
-def _mdl_from_path(path: Path | None) -> MDLPrior:
+def _mdl_from_path(path: Path | None, preset: str) -> MDLPrior:
+    base = mdl_prior_preset(preset)
     if path is None:
-        return MDLPrior()
+        return base
     payload = _load_yaml_like(path)
     return MDLPrior(
-        seam_count=float(payload.get("seam_count", 1.0)),
-        seam_length=float(payload.get("seam_length", 1.0)),
-        panel_count=float(payload.get("panel_count", 0.5)),
-        boundary_roughness=float(payload.get("boundary_roughness", 0.25)),
-        symmetry_violation=float(payload.get("symmetry_violation", 0.5)),
+        seam_count=float(payload.get("seam_count", base.seam_count)),
+        seam_length=float(payload.get("seam_length", base.seam_length)),
+        panel_count=float(payload.get("panel_count", base.panel_count)),
+        boundary_roughness=float(payload.get("boundary_roughness", base.boundary_roughness)),
+        symmetry_violation=float(payload.get("symmetry_violation", base.symmetry_violation)),
     )
 
 
@@ -168,11 +170,26 @@ def main() -> None:
     parser.add_argument(
         "--weights",
         type=Path,
-        default=Path("configs/kernel_weights.yaml"),
-        help="YAML/JSON for kernel weights.",
+        default=None,
+        help="Optional YAML/JSON kernel-weight overrides. Omit to use the tuned preset.",
     )
     parser.add_argument(
-        "--mdl", type=Path, default=Path("configs/mdl_prior.yaml"), help="YAML/JSON for MDL prior."
+        "--kernel-preset",
+        choices=["balanced", "rom_sensitive", "manufacturing"],
+        default="balanced",
+        help="Tuned PDA kernel objective preset.",
+    )
+    parser.add_argument(
+        "--mdl",
+        type=Path,
+        default=None,
+        help="Optional YAML/JSON MDL overrides. Omit to use the tuned preset.",
+    )
+    parser.add_argument(
+        "--mdl-preset",
+        choices=["balanced", "simple", "symmetric"],
+        default="balanced",
+        help="Tuned PDA MDL preset.",
     )
     parser.add_argument(
         "--fabric-grain",
@@ -196,6 +213,16 @@ def main() -> None:
         "--vertex-weight", type=float, default=0.0, help="Vertex weight contribution for solvers."
     )
     parser.add_argument("--budget", type=int, default=8, help="Iteration budget for PDA solver.")
+    parser.add_argument("--pda-witness-noise", type=float, default=0.05)
+    parser.add_argument("--pda-max-branch-degree", type=int, default=None)
+    parser.add_argument("--pda-branch-penalty", type=float, default=0.15)
+    parser.add_argument("--pda-symmetry-penalty", type=float, default=0.40)
+    parser.add_argument(
+        "--pda-debug",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Emit deterministic PDA search trace and objective-breakdown visual.",
+    )
     parser.add_argument(
         "--reference-body",
         type=Path,
@@ -288,8 +315,8 @@ def main() -> None:
     if args.reference_body is not None:
         reference_vertices, _, _ = _load_body(args.reference_body)
 
-    weights = _weights_from_path(args.weights)
-    mdl_prior = _mdl_from_path(args.mdl)
+    weights = _weights_from_path(args.weights, args.kernel_preset)
+    mdl_prior = _mdl_from_path(args.mdl, args.mdl_preset)
     kernels = build_edge_kernels(
         cost_field,
         seam_graph,
@@ -304,6 +331,7 @@ def main() -> None:
         else None
     )
 
+    pda_debug: dict[str, object] | None = {} if args.solver == "pda" and args.pda_debug else None
     if args.solver == "pda":
         solution = solve_seams_pda(
             seam_graph,
@@ -315,9 +343,14 @@ def main() -> None:
             cost_field=cost_field,
             vertices=vertices,
             vertex_weight=args.vertex_weight,
+            symmetry_penalty_weight=float(args.pda_symmetry_penalty),
+            max_branch_degree=args.pda_max_branch_degree,
+            branch_penalty_weight=float(args.pda_branch_penalty),
+            witness_noise=float(args.pda_witness_noise),
             fabric_catalog=fabric_catalog,
             fabric_grain=fabric_grain,
             panel_fabrics=panel_fabrics,
+            debug_out=pda_debug,
         )
     elif args.solver == "mst":
         solution = solve_seams(
@@ -367,6 +400,7 @@ def main() -> None:
         mdl_prior,
         vertices=vertices,
         cost_field=cost_field,
+        solver_debug=pda_debug,
     )
     report = dict(report)
     seam_edges = _solution_unique_edges(solution)
@@ -390,6 +424,12 @@ def main() -> None:
     }
     args.out.mkdir(parents=True, exist_ok=True)
     save_report(report, args.out / "seam_report.json")
+    if pda_debug is not None:
+        save_report(pda_debug, args.out / "pda_debug.json")
+    objective_path = render_objective_breakdown(
+        report,
+        output=args.out / "objective_breakdown.png",
+    ) if args.pda_debug else None
     overlay_path = render_overlay(
         seam_graph,
         solution,
@@ -508,6 +548,10 @@ def main() -> None:
     print(f"Report: {args.out / 'seam_report.json'}")
     if overlay_path:
         print(f"Overlay: {overlay_path}")
+    if pda_debug is not None:
+        print(f"PDA debug: {args.out / 'pda_debug.json'}")
+    if objective_path:
+        print(f"Objective breakdown: {objective_path}")
 
 
 if __name__ == "__main__":
