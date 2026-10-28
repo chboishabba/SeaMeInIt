@@ -99,10 +99,14 @@ def split_panel(
 
 
 def merge_panels(panel_a_edges: Sequence[Edge], panel_b_edges: Sequence[Edge]) -> MoveResult:
-    """Merge two edge sets."""
+    """Merge two edge sets and report only edges introduced by the merge."""
 
-    merged = {_sorted_edge(edge) for edge in panel_a_edges} | {_sorted_edge(edge) for edge in panel_b_edges}
-    return MoveResult(edges=tuple(sorted(merged)), changed_edges=tuple(sorted(merged)), description="merge_panels")
+    left = {_sorted_edge(edge) for edge in panel_a_edges}
+    right = {_sorted_edge(edge) for edge in panel_b_edges}
+    merged = left | right
+    introduced = tuple(sorted(merged - left))
+    description = "merge_panels" if introduced else "no-op"
+    return MoveResult(edges=tuple(sorted(merged)), changed_edges=introduced, description=description)
 
 
 def switch_fabric(selected_edges: Sequence[Edge], fabrics: Sequence[str], current: str | None) -> MoveResult:
