@@ -9,7 +9,7 @@ import numpy as np
 
 from smii.seams.solver import SeamSolution
 
-__all__ = ["MDLPrior", "mdl_cost", "mdl_terms"]
+__all__ = ["MDLPrior", "mdl_cost", "mdl_terms", "mdl_prior_preset", "validate_mdl_prior"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,6 +21,58 @@ class MDLPrior:
     panel_count: float = 0.5
     boundary_roughness: float = 0.25
     symmetry_violation: float = 0.5
+
+
+_MDL_PRESETS: Mapping[str, MDLPrior] = {
+    "balanced": MDLPrior(
+        seam_count=0.35,
+        seam_length=0.20,
+        panel_count=0.30,
+        boundary_roughness=0.15,
+        symmetry_violation=0.40,
+    ),
+    "simple": MDLPrior(
+        seam_count=0.75,
+        seam_length=0.35,
+        panel_count=0.60,
+        boundary_roughness=0.20,
+        symmetry_violation=0.35,
+    ),
+    "symmetric": MDLPrior(
+        seam_count=0.30,
+        seam_length=0.20,
+        panel_count=0.30,
+        boundary_roughness=0.15,
+        symmetry_violation=1.00,
+    ),
+}
+
+
+def validate_mdl_prior(prior: MDLPrior) -> MDLPrior:
+    """Fail closed on invalid MDL coefficients."""
+
+    values = {
+        "seam_count": prior.seam_count,
+        "seam_length": prior.seam_length,
+        "panel_count": prior.panel_count,
+        "boundary_roughness": prior.boundary_roughness,
+        "symmetry_violation": prior.symmetry_violation,
+    }
+    invalid = [name for name, value in values.items() if not np.isfinite(value) or value < 0.0]
+    if invalid:
+        raise ValueError(f"MDL weights must be finite and non-negative: {', '.join(sorted(invalid))}")
+    return prior
+
+
+def mdl_prior_preset(name: str = "balanced") -> MDLPrior:
+    """Return a deterministic tuned MDL preset."""
+
+    key = str(name).strip().lower()
+    try:
+        return _MDL_PRESETS[key]
+    except KeyError as exc:
+        available = ", ".join(sorted(_MDL_PRESETS))
+        raise ValueError(f"unknown MDL preset {name!r}; choose one of: {available}") from exc
 
 
 def _edge_length(edge: tuple[int, int], vertices: np.ndarray) -> float:
@@ -73,6 +125,7 @@ def mdl_cost(
 ) -> tuple[float, Mapping[str, float]]:
     """Compute MDL cost and a breakdown for reporting."""
 
+    prior = validate_mdl_prior(prior)
     terms = mdl_terms(
         solution,
         vertices=vertices,
